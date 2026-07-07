@@ -1,0 +1,41 @@
+{
+  "name": "r2filebox",
+  "version": "1.0.0",
+  "private": true,
+  "license": "LGPL-3.0-or-later",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "npm --prefix frontend ci && npm --prefix frontend run build",
+    "deploy": "npm run db:migrate:remote && wrangler deploy",
+    "deploy:dry-run": "npm run build && wrangler deploy --dry-run",
+    "deploy:cf": "node scripts/deploy-cloudflare.mjs",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "typecheck": "tsc -p worker/tsconfig.json --noEmit",
+    "hash-password": "node worker/scripts/hash-password.mjs"
+  },
+  "dependencies": {
+    "hono": "^4.1.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260701.1",
+    "typescript": "^5.4.3",
+    "wrangler": "^4.107.0"
+  },
+  "cloudflare": {
+    "bindings": {
+      "ADMIN_PASSWORD": {
+        "description": "Required for one-click deploy. Set a strong admin password. Advanced users can instead set `ADMIN_PASSWORD_HASH` manually after deployment."
+      },
+      "CODE_HASH_PEPPER": {
+        "description": "Required. Random secret used to hash share extraction codes. Generate with `openssl rand -hex 32`."
+      },
+      "SESSION_SECRET": {
+        "description": "Required. Random secret used to sign admin sessions and short-lived download tokens. Generate with `openssl rand -hex 32`."
+      },
+      "TURNSTILE_SECRET_KEY": {
+        "description": "Optional. Only required if you enable Turnstile in the admin settings."
+      }
+    }
+  }
+}

@@ -1,0 +1,80 @@
+"$schema" = "./node_modules/wrangler/config-schema.json"
+
+name = "r2filebox"
+main = "worker/src/index.ts"
+compatibility_date = "2026-07-07"
+compatibility_flags = ["nodejs_compat"]
+
+workers_dev = true
+
+[cache]
+enabled = true
+
+[assets]
+directory = "frontend/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = [
+  "/api/*",
+  "/share/*",
+  "/admin/*",
+  "/setup/*",
+  "/health",
+  "/live",
+  "/ready",
+  "/ping"
+]
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "r2filebox-files"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "r2filebox-db"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "worker/migrations"
+
+[[kv_namespaces]]
+binding = "RATE_LIMIT"
+id = "00000000000000000000000000000000"
+
+[triggers]
+crons = [
+  "0 * * * *"
+]
+
+[observability]
+enabled = true
+head_sampling_rate = 0.1
+
+[vars]
+APP_NAME = "R2FileBox"
+APP_DESCRIPTION = "Private code-based file sharing on Cloudflare R2"
+
+CODE_LENGTH = "12"
+
+MAX_UPLOAD_BYTES = "52428800"
+MAX_TOTAL_STORAGE_BYTES = "8589934592"
+
+DEFAULT_EXPIRE_HOURS = "24"
+MAX_EXPIRE_HOURS = "168"
+DEFAULT_MAX_DOWNLOADS = "10"
+
+CLEANUP_BATCH_SIZE = "100"
+
+ENABLE_TEXT_SHARE = "true"
+ENABLE_FILE_SHARE = "true"
+ENABLE_PUBLIC_UPLOAD = "true"
+ENABLE_AUDIT_LOG = "true"
+ENABLE_ACCESS_LOG = "false"
+ENABLE_KV_RATE_LIMIT = "true"
+
+REQUIRE_TURNSTILE = "false"
+TURNSTILE_SITE_KEY = ""
+
+RATE_LIMIT_UPLOAD_PER_MINUTE = "10"
+RATE_LIMIT_UPLOAD_PART_PER_MINUTE = "80"
+RATE_LIMIT_RESOLVE_PER_MINUTE = "120"
+RATE_LIMIT_DOWNLOAD_PER_MINUTE = "120"
+RATE_LIMIT_AUTH_PER_15_MIN = "20"

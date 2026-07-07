@@ -1,0 +1,15 @@
+# Copy to .dev.vars for local development.
+# Do not commit .dev.vars.
+
+# For one-click/local setup, a strong admin password secret is enough.
+# Advanced: you can leave ADMIN_PASSWORD unset and use ADMIN_PASSWORD_HASH instead.
+ADMIN_PASSWORD=
+# ADMIN_PASSWORD_HASH=
+
+# Generate with:
+# openssl rand -hex 32
+CODE_HASH_PEPPER=
+SESSION_SECRET=
+
+# Optional. Required only when Turnstile is enabled.
+# TURNSTILE_SECRET_KEY=replace-with-turnstile-secret
