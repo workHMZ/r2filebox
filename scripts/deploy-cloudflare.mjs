@@ -76,7 +76,9 @@ async function main() {
   }
 
   const adminUsername = await ask('Admin username [admin]: ', 'admin')
-  if (!/^[A-Za-z0-9_.-]{1,64}$/.test(adminUsername)) throw new Error('Admin username format is invalid')
+  if (!adminUsername || adminUsername.length > 256 || /[\x00-\x1f\x7f]/.test(adminUsername)) {
+    throw new Error('Admin username format is invalid')
+  }
   const adminPassword = await askSecret('Admin password to hash and set as ADMIN_PASSWORD_HASH: ')
   if (adminPassword.length < 16 || adminPassword.length > 4096) throw new Error('Admin password must be 16-4096 characters')
 

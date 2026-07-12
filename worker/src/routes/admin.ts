@@ -57,7 +57,7 @@ app.post('/admin/login', async (c) => {
     const adminUser = c.env.ADMIN_USERNAME || 'admin'
     const adminHash = c.env.ADMIN_PASSWORD_HASH
     const adminPassword = c.env.ADMIN_PASSWORD
-    if (!/^[A-Za-z0-9_.-]{1,64}$/.test(adminUser)) {
+    if (!adminUser || adminUser.length > 256 || /[\x00-\x1f\x7f]/.test(adminUser)) {
       throw new Error('ADMIN_USERNAME is invalid')
     }
     if (!adminHash && !adminPassword) {
