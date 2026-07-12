@@ -12,18 +12,30 @@ import { hashIp, sha256Hex } from '../lib/code'
 import { cleanupExpiredShares } from '../lib/cleanup'
 import { getRuntimeConfig, type RuntimeConfig } from '../lib/runtime-config'
 import { checkRateLimit } from '../lib/rate-limit'
+import { BodyTooLargeError, InvalidBodyError, readStructuredBody } from '../lib/body'
 
 type Bindings = Env
+type JsonRecord = Record<string, unknown>
+type AdminSession = JsonRecord & {
+  sub: 'admin'
+  username: string
+  role: 'admin'
+}
 
-const app = new Hono<{ Bindings: Bindings, Variables: { user: any } }>()
+const app = new Hono<{ Bindings: Bindings, Variables: { user: AdminSession } }>()
+const MAX_LOGIN_BODY_BYTES = 8 * 1024
+const MAX_ADMIN_CONFIG_BODY_BYTES = 64 * 1024
 
 app.use('/admin/*', adminAuth)
 
 app.post('/admin/login', async (c) => {
   try {
-    const body = await c.req.json().catch(() => ({}))
+    const body = await readStructuredBody(c.req.raw, MAX_LOGIN_BODY_BYTES)
     const password = String(body.password || '')
     const username = String(body.username || 'admin')
+    if (password.length > 4096 || username.length > 256) {
+      return c.json(error('用户名或密码错误', 400), 400)
+    }
     const db = new DB(c.env.DB)
     const config = await getRuntimeConfig(c.env, db)
 
@@ -36,7 +48,7 @@ app.post('/admin/login', async (c) => {
       ipHash,
       15 * 60,
       config.rateLimitAuthPer15Min,
-      config.enableKvRateLimit,
+      false,
     )
     if (limited.limited) {
       return c.json(error('用户名或密码错误', 400), 400)
@@ -45,8 +57,14 @@ app.post('/admin/login', async (c) => {
     const adminUser = c.env.ADMIN_USERNAME || 'admin'
     const adminHash = c.env.ADMIN_PASSWORD_HASH
     const adminPassword = c.env.ADMIN_PASSWORD
+    if (!/^[A-Za-z0-9_.-]{1,64}$/.test(adminUser)) {
+      throw new Error('ADMIN_USERNAME is invalid')
+    }
     if (!adminHash && !adminPassword) {
       throw new Error('Missing ADMIN_PASSWORD or ADMIN_PASSWORD_HASH secret')
+    }
+    if (!adminHash && (adminPassword || '').length < 16) {
+      throw new Error('ADMIN_PASSWORD must contain at least 16 characters')
     }
     const sessionSecret = getRequiredSecret(c.env, 'SESSION_SECRET')
 
@@ -55,7 +73,6 @@ app.post('/admin/login', async (c) => {
       ? await verifyPassword(password, adminHash)
       : await verifyPlainPassword(password, adminPassword || '')
     if (!validUser || !validPassword) {
-      if (ipHash) await db.incrementAbuseCounter('admin_login_failed', ipHash, bucketStart(15 * 60))
       return c.json(error('用户名或密码错误', 400), 400)
     }
 
@@ -67,7 +84,7 @@ app.post('/admin/login', async (c) => {
     }, sessionSecret)
 
     await audit(db, c, 'admin_login', null, 'success', ipHash)
-    c.header('Set-Cookie', `admin_session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=43200`)
+    c.header('Set-Cookie', `admin_session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/admin; Max-Age=43200`)
 
     return c.json(success({
       token,
@@ -78,13 +95,13 @@ app.post('/admin/login', async (c) => {
         role: 'admin',
       },
     }, '登录成功'))
-  } catch (e: any) {
-    return c.json(error('登录失败: ' + e.message, 500), 500)
+  } catch (e: unknown) {
+    return adminRouteFailure(c, 'admin login', e, '登录失败')
   }
 })
 
 app.post('/admin/logout', (c) => {
-  c.header('Set-Cookie', 'admin_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0')
+  c.header('Set-Cookie', 'admin_session=; HttpOnly; Secure; SameSite=Strict; Path=/admin; Max-Age=0')
   return c.json(success(null, '退出成功'))
 })
 
@@ -93,8 +110,8 @@ app.get('/admin/stats', async (c) => {
     const db = new DB(c.env.DB)
     const stats = await db.getSystemStats()
     return c.json(success(stats))
-  } catch (e: any) {
-    return c.json(error('获取统计信息失败: ' + e.message, 500), 500)
+  } catch (e: unknown) {
+    return adminRouteFailure(c, 'get admin stats', e, '获取统计信息失败')
   }
 })
 
@@ -113,8 +130,8 @@ app.get('/admin/files', async (c) => {
       page,
       page_size: pageSize,
     }))
-  } catch (e: any) {
-    return c.json(error('获取文件列表失败: ' + e.message, 500), 500)
+  } catch (e: unknown) {
+    return adminRouteFailure(c, 'get admin files', e, '获取文件列表失败')
   }
 })
 
@@ -134,8 +151,8 @@ app.delete('/admin/files/:id', async (c) => {
     const pepper = getRequiredSecret(c.env, 'CODE_HASH_PEPPER')
     await audit(db, c, 'admin_delete_share', id, 'success', await hashIp(getClientIp(c), pepper))
     return c.json(success(null, '删除成功'))
-  } catch (e: any) {
-    return c.json(error('删除失败: ' + e.message, 500), 500)
+  } catch (e: unknown) {
+    return adminRouteFailure(c, 'delete admin share', e, '删除失败')
   }
 })
 
@@ -144,23 +161,43 @@ app.get('/admin/config', async (c) => {
     const db = new DB(c.env.DB)
     const config = await getRuntimeConfig(c.env, db)
     return c.json(success(adminConfigDto(config)))
-  } catch (e: any) {
-    return c.json(error('获取配置失败: ' + e.message, 500), 500)
+  } catch (e: unknown) {
+    return adminRouteFailure(c, 'get admin config', e, '获取配置失败')
   }
 })
 
 app.put('/admin/config', async (c) => {
   try {
-    const body = await c.req.json().catch(() => ({}))
+    const body = await readStructuredBody(c.req.raw, MAX_ADMIN_CONFIG_BODY_BYTES)
     const configBody = body.config || body
-    const settings = settingsFromAdminConfig(configBody)
+    if (typeof configBody !== 'object' || configBody === null || Array.isArray(configBody)) {
+      return c.json(error('配置格式无效', 400), 400)
+    }
+    const configRecord = configBody as JsonRecord
+    const security = asRecord(configRecord.security)
+    const enablingTurnstile = security?.require_turnstile === true ||
+      security?.require_turnstile === 1 ||
+      security?.require_turnstile === '1' ||
+      security?.require_turnstile === 'true'
+    if (
+      enablingTurnstile &&
+      (
+        typeof security?.turnstile_site_key !== 'string' ||
+        !security.turnstile_site_key.trim() ||
+        typeof c.env.TURNSTILE_SECRET_KEY !== 'string' ||
+        c.env.TURNSTILE_SECRET_KEY.length < 16
+      )
+    ) {
+      return c.json(error('启用 Turnstile 前必须配置 Site Key 和 TURNSTILE_SECRET_KEY', 400), 400)
+    }
+    const settings = settingsFromAdminConfig(configRecord)
     const db = new DB(c.env.DB)
     await db.upsertSettings(settings)
     await audit(db, c, 'admin_update_config', null, 'success', null)
     const config = await getRuntimeConfig(c.env, db)
     return c.json(success(adminConfigDto(config), '配置已保存'))
-  } catch (e: any) {
-    return c.json(error('保存配置失败: ' + e.message, 500), 500)
+  } catch (e: unknown) {
+    return adminRouteFailure(c, 'save admin config', e, '保存配置失败')
   }
 })
 
@@ -170,8 +207,8 @@ app.get('/admin/stats/trend', async (c) => {
     const db = new DB(c.env.DB)
     const trend = await db.getUploadTrend(days)
     return c.json(success(trend))
-  } catch (e: any) {
-    return c.json(error('获取趋势数据失败: ' + e.message, 500), 500)
+  } catch (e: unknown) {
+    return adminRouteFailure(c, 'get upload trend', e, '获取趋势数据失败')
   }
 })
 
@@ -180,8 +217,8 @@ app.get('/admin/stats/file-types', async (c) => {
     const db = new DB(c.env.DB)
     const distribution = await db.getFileTypeDistribution()
     return c.json(success(distribution))
-  } catch (e: any) {
-    return c.json(error('获取文件类型分布失败: ' + e.message, 500), 500)
+  } catch (e: unknown) {
+    return adminRouteFailure(c, 'get file type distribution', e, '获取文件类型分布失败')
   }
 })
 
@@ -216,19 +253,17 @@ app.get('/admin/logs/transfer', async (c) => {
       pagination: { page, page_size: pageSize, total: logs.total },
       stats,
     }))
-  } catch (e: any) {
-    return c.json(error('获取日志失败: ' + e.message, 500), 500)
+  } catch (e: unknown) {
+    return adminRouteFailure(c, 'get transfer logs', e, '获取日志失败')
   }
 })
 
 app.get('/admin/maintenance/system-info', (c) => {
   return c.json(success({
-    go_version: 'cloudflare-workers',
-    build_time: new Date().toISOString(),
-    git_commit: 'unknown',
-    os_info: 'v8-isolate',
-    cpu_cores: 1,
-    filecodebox_version: '2.0.0-cf',
+    runtime: 'Cloudflare Workers',
+    platform: 'V8 isolate',
+    storage: 'D1 + R2 + KV',
+    version: '1.0.0',
   }))
 })
 
@@ -241,28 +276,41 @@ app.post('/admin/maintenance/clean-expired', async (c) => {
       deleted_count: result.processed,
       deleted_r2_objects: result.deletedR2,
       aborted_uploads: result.abortedUploads,
+      purged_counters: result.purgedCounters,
+      purged_audit_logs: result.purgedAuditLogs,
+      purged_shares: result.purgedShares,
     }, '清理成功'))
-  } catch (e: any) {
-    return c.json(error('清理失败: ' + e.message, 500), 500)
+  } catch (e: unknown) {
+    return adminRouteFailure(c, 'cleanup expired shares', e, '清理失败')
   }
 })
 
-async function adminAuth(c: Context<{ Bindings: Bindings, Variables: { user: any } }>, next: Next) {
+async function adminAuth(c: Context<{ Bindings: Bindings, Variables: { user: AdminSession } }>, next: Next) {
   if (c.req.path === '/admin/login') {
     return next()
   }
 
-  const token = getBearerToken(c) || getCookie(c.req.header('Cookie') || '', 'admin_session')
+  const bearerToken = getBearerToken(c)
+  const cookieToken = getCookie(c.req.header('Cookie') || '', 'admin_session')
+  if (!bearerToken && cookieToken && !isSafeMethod(c.req.method) && !isSameOrigin(c)) {
+    return c.json(error('请求来源无效', 403), 403)
+  }
+  const token = bearerToken || cookieToken
   if (!token) {
     return c.json(error('未授权', 401), 401)
   }
 
   const payload = await verifyJWT(token, getRequiredSecret(c.env, 'SESSION_SECRET'))
-  if (!payload || payload.role !== 'admin') {
+  if (
+    !payload ||
+    payload.sub !== 'admin' ||
+    payload.role !== 'admin' ||
+    typeof payload.username !== 'string'
+  ) {
     return c.json(error('未授权或凭证无效', 401), 401)
   }
 
-  c.set('user', payload)
+  c.set('user', payload as AdminSession)
   await next()
 }
 
@@ -274,7 +322,26 @@ function getBearerToken(c: Context): string | null {
 
 function getCookie(cookieHeader: string, name: string): string | null {
   const match = cookieHeader.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))
-  return match ? decodeURIComponent(match.slice(name.length + 1)) : null
+  if (!match) return null
+  try {
+    return decodeURIComponent(match.slice(name.length + 1))
+  } catch {
+    return null
+  }
+}
+
+function isSafeMethod(method: string): boolean {
+  return method === 'GET' || method === 'HEAD' || method === 'OPTIONS'
+}
+
+function isSameOrigin(c: Context): boolean {
+  const origin = c.req.header('Origin')
+  if (!origin) return false
+  try {
+    return new URL(origin).origin === new URL(c.req.url).origin
+  } catch {
+    return false
+  }
 }
 
 function adminShareDto(share: Share) {
@@ -337,38 +404,50 @@ function adminConfigDto(config: RuntimeConfig) {
   }
 }
 
-function settingsFromAdminConfig(config: any): Record<string, string> {
+function settingsFromAdminConfig(config: JsonRecord): Record<string, string> {
   const settings: Record<string, string> = {}
-  if (config.base) {
-    setString(settings, 'APP_NAME', config.base.name)
-    setString(settings, 'APP_DESCRIPTION', config.base.description)
+  const base = asRecord(config.base)
+  if (base) {
+    setString(settings, 'APP_NAME', base.name)
+    setString(settings, 'APP_DESCRIPTION', base.description)
   }
-  if (config.storage) {
-    setNumber(settings, 'MAX_TOTAL_STORAGE_BYTES', config.storage.max_total_storage_bytes)
+  const storage = asRecord(config.storage)
+  if (storage) {
+    setNumber(settings, 'MAX_TOTAL_STORAGE_BYTES', storage.max_total_storage_bytes)
   }
-  if (config.transfer) {
-    setNumber(settings, 'DEFAULT_MAX_DOWNLOADS', config.transfer.max_count)
-    setNumber(settings, 'DEFAULT_EXPIRE_HOURS', config.transfer.expire_default)
-    if (config.transfer.upload) {
-      setBoolean(settings, 'ENABLE_PUBLIC_UPLOAD', config.transfer.upload.openupload)
-      setNumber(settings, 'MAX_UPLOAD_BYTES', config.transfer.upload.uploadsize)
+  const transfer = asRecord(config.transfer)
+  if (transfer) {
+    setNumber(settings, 'DEFAULT_MAX_DOWNLOADS', transfer.max_count)
+    setNumber(settings, 'DEFAULT_EXPIRE_HOURS', transfer.expire_default)
+    const upload = asRecord(transfer.upload)
+    if (upload) {
+      setBoolean(settings, 'ENABLE_PUBLIC_UPLOAD', upload.openupload)
+      setNumber(settings, 'MAX_UPLOAD_BYTES', upload.uploadsize)
     }
-    if (config.transfer.rate_limit) {
-      setBoolean(settings, 'ENABLE_KV_RATE_LIMIT', config.transfer.rate_limit.enable_kv)
-      setNumber(settings, 'RATE_LIMIT_UPLOAD_PER_MINUTE', config.transfer.rate_limit.upload_per_minute)
-      setNumber(settings, 'RATE_LIMIT_UPLOAD_PART_PER_MINUTE', config.transfer.rate_limit.upload_part_per_minute)
-      setNumber(settings, 'RATE_LIMIT_RESOLVE_PER_MINUTE', config.transfer.rate_limit.resolve_per_minute)
-      setNumber(settings, 'RATE_LIMIT_DOWNLOAD_PER_MINUTE', config.transfer.rate_limit.download_per_minute)
-      setNumber(settings, 'RATE_LIMIT_AUTH_PER_15_MIN', config.transfer.rate_limit.auth_per_15_min)
+    const rateLimit = asRecord(transfer.rate_limit)
+    if (rateLimit) {
+      setBoolean(settings, 'ENABLE_KV_RATE_LIMIT', rateLimit.enable_kv)
+      setNumber(settings, 'RATE_LIMIT_UPLOAD_PER_MINUTE', rateLimit.upload_per_minute)
+      setNumber(settings, 'RATE_LIMIT_UPLOAD_PART_PER_MINUTE', rateLimit.upload_part_per_minute)
+      setNumber(settings, 'RATE_LIMIT_RESOLVE_PER_MINUTE', rateLimit.resolve_per_minute)
+      setNumber(settings, 'RATE_LIMIT_DOWNLOAD_PER_MINUTE', rateLimit.download_per_minute)
+      setNumber(settings, 'RATE_LIMIT_AUTH_PER_15_MIN', rateLimit.auth_per_15_min)
     }
   }
-  if (config.security) {
-    setBoolean(settings, 'ENABLE_AUDIT_LOG', config.security.enable_audit_log)
-    setBoolean(settings, 'ENABLE_ACCESS_LOG', config.security.enable_access_log)
-    setBoolean(settings, 'REQUIRE_TURNSTILE', config.security.require_turnstile)
-    setString(settings, 'TURNSTILE_SITE_KEY', config.security.turnstile_site_key)
+  const security = asRecord(config.security)
+  if (security) {
+    setBoolean(settings, 'ENABLE_AUDIT_LOG', security.enable_audit_log)
+    setBoolean(settings, 'ENABLE_ACCESS_LOG', security.enable_access_log)
+    setBoolean(settings, 'REQUIRE_TURNSTILE', security.require_turnstile)
+    setString(settings, 'TURNSTILE_SITE_KEY', security.turnstile_site_key)
   }
   return settings
+}
+
+function asRecord(value: unknown): JsonRecord | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as JsonRecord
+    : null
 }
 
 function setString(settings: Record<string, string>, key: string, value: unknown) {
@@ -385,11 +464,6 @@ function setBoolean(settings: Record<string, string>, key: string, value: unknow
   settings[key] = value === true || value === 1 || value === '1' || value === 'true' ? 'true' : 'false'
 }
 
-function bucketStart(windowSeconds: number): string {
-  const interval = windowSeconds * 1000
-  return new Date(Math.floor(Date.now() / interval) * interval).toISOString()
-}
-
 function operationFromAction(action: string): string {
   if (action.includes('download') || action.includes('resolve')) return 'download'
   if (action.includes('upload') || action.includes('create')) return 'upload'
@@ -397,6 +471,16 @@ function operationFromAction(action: string): string {
   return 'view'
 }
 
+function adminRouteFailure(c: Context, operation: string, cause: unknown, message: string) {
+  if (cause instanceof BodyTooLargeError) {
+    return c.json(error('请求内容过大', 413), 413)
+  }
+  if (cause instanceof InvalidBodyError) {
+    return c.json(error('请求格式无效', 400), 400)
+  }
+  console.error(`${operation} failed:`, cause)
+  return c.json(error(message, 500), 500)
+}
 
 async function audit(
   db: DB,
@@ -406,18 +490,22 @@ async function audit(
   status: string,
   ipHash: string | null,
 ): Promise<void> {
-  const config = await getRuntimeConfig(c.env as Env, db)
-  if (!config.enableAuditLog) return
-  const userAgent = c.req.header('User-Agent')
-  await db.createAuditLog({
-    id: crypto.randomUUID(),
-    action,
-    share_id: shareId,
-    ip_hash: ipHash,
-    user_agent_hash: userAgent ? await sha256Hex(userAgent) : null,
-    status,
-    created_at: new Date().toISOString(),
-  })
+  try {
+    const config = await getRuntimeConfig(c.env as Env, db)
+    if (!config.enableAuditLog) return
+    const userAgent = c.req.header('User-Agent')
+    await db.createAuditLog({
+      id: crypto.randomUUID(),
+      action,
+      share_id: shareId,
+      ip_hash: ipHash,
+      user_agent_hash: userAgent ? await sha256Hex(userAgent) : null,
+      status,
+      created_at: new Date().toISOString(),
+    })
+  } catch (error) {
+    console.error('Failed to write admin audit log:', error)
+  }
 }
 
 export default app

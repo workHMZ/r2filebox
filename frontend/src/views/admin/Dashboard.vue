@@ -1,92 +1,58 @@
 <template>
   <div class="dashboard-container">
-    <!-- 统计卡片 -->
-    <el-row :gutter="24" class="stats-row">
-      <el-col :span="8">
-        <div class="stat-card gradient-blue">
-          <div class="stat-icon">
-            <el-icon size="32"><Monitor /></el-icon>
-          </div>
-          <div class="stat-content">
-            <div class="stat-value">{{ animatedStats.activeShares }}</div>
-            <div class="stat-label">{{ t('dashboard.activeShares') }}</div>
-          </div>
-          <div class="stat-decoration"></div>
+    <div class="stats-grid">
+      <div class="stat-card stat-card--teal">
+        <div class="stat-icon"><el-icon><Monitor /></el-icon></div>
+        <div class="stat-content">
+          <div class="stat-value">{{ animatedStats.activeShares }}</div>
+          <div class="stat-label">{{ t('dashboard.activeShares') }}</div>
         </div>
-      </el-col>
-      
-      <el-col :span="8">
-        <div class="stat-card gradient-purple">
-          <div class="stat-icon">
-            <el-icon size="32"><Folder /></el-icon>
-          </div>
-          <div class="stat-content">
-            <div class="stat-value">{{ animatedStats.fileCount }}</div>
-            <div class="stat-label">{{ t('dashboard.fileShares') }}</div>
-          </div>
-          <div class="stat-decoration"></div>
-        </div>
-      </el-col>
+      </div>
 
-      <el-col :span="8">
-        <div class="stat-card gradient-indigo">
-          <div class="stat-icon">
-            <el-icon size="32"><Document /></el-icon>
-          </div>
-          <div class="stat-content">
-            <div class="stat-value">{{ animatedStats.textShares }}</div>
-            <div class="stat-label">{{ t('dashboard.textShares') }}</div>
-          </div>
-          <div class="stat-decoration"></div>
+      <div class="stat-card stat-card--blue">
+        <div class="stat-icon"><el-icon><Folder /></el-icon></div>
+        <div class="stat-content">
+          <div class="stat-value">{{ animatedStats.fileCount }}</div>
+          <div class="stat-label">{{ t('dashboard.fileShares') }}</div>
         </div>
-      </el-col>
-    </el-row>
+      </div>
 
-    <el-row :gutter="24" class="stats-row">
-      <el-col :span="8">
-        <div class="stat-card gradient-green">
-          <div class="stat-icon">
-            <el-icon size="32"><Coin /></el-icon>
-          </div>
-          <div class="stat-content">
-            <div class="stat-value">{{ formatFileSize(stats.totalStorage) }}</div>
-            <div class="stat-label">{{ t('dashboard.totalStorage') }}</div>
-          </div>
-          <div class="stat-decoration"></div>
+      <div class="stat-card stat-card--slate">
+        <div class="stat-icon"><el-icon><Document /></el-icon></div>
+        <div class="stat-content">
+          <div class="stat-value">{{ animatedStats.textShares }}</div>
+          <div class="stat-label">{{ t('dashboard.textShares') }}</div>
         </div>
-      </el-col>
-      
-      <el-col :span="8">
-        <div class="stat-card gradient-orange">
-          <div class="stat-icon">
-            <el-icon size="32"><TrendCharts /></el-icon>
-          </div>
-          <div class="stat-content">
-            <div class="stat-value">{{ animatedStats.todayUploads }} / {{ animatedStats.todayDownloads }}</div>
-            <div class="stat-label">{{ t('dashboard.todayTransfer') }}</div>
-          </div>
-          <div class="stat-decoration"></div>
-        </div>
-      </el-col>
+      </div>
 
-      <el-col :span="8">
-        <div class="stat-card gradient-red">
-          <div class="stat-icon">
-            <el-icon size="32"><Delete /></el-icon>
-          </div>
-          <div class="stat-content">
-            <div class="stat-value">{{ animatedStats.expiredShares }}</div>
-            <div class="stat-label">{{ t('dashboard.expiredShares') }}</div>
-          </div>
-          <div class="stat-decoration"></div>
+      <div class="stat-card stat-card--green">
+        <div class="stat-icon"><el-icon><Coin /></el-icon></div>
+        <div class="stat-content">
+          <div class="stat-value">{{ formatFileSize(stats.totalStorage) }}</div>
+          <div class="stat-label">{{ t('dashboard.totalStorage') }}</div>
         </div>
-      </el-col>
-    </el-row>
+      </div>
 
-    <!-- 图表区域 -->
+      <div class="stat-card stat-card--orange">
+        <div class="stat-icon"><el-icon><TrendCharts /></el-icon></div>
+        <div class="stat-content">
+          <div class="stat-value">{{ animatedStats.todayUploads }} / {{ animatedStats.totalDownloads }}</div>
+          <div class="stat-label">{{ t('dashboard.todayTransfer') }}</div>
+        </div>
+      </div>
+
+      <div class="stat-card stat-card--red">
+        <div class="stat-icon"><el-icon><Delete /></el-icon></div>
+        <div class="stat-content">
+          <div class="stat-value">{{ animatedStats.expiredShares }}</div>
+          <div class="stat-label">{{ t('dashboard.expiredShares') }}</div>
+        </div>
+      </div>
+    </div>
+
     <el-row :gutter="24" class="charts-row">
-      <el-col :span="14">
-        <el-card class="chart-card" shadow="hover">
+      <el-col :xs="24" :lg="14">
+        <el-card class="chart-card" shadow="never">
           <template #header>
             <div class="card-header">
               <h3>{{ t('dashboard.uploadTrend') }}</h3>
@@ -100,8 +66,8 @@
         </el-card>
       </el-col>
       
-      <el-col :span="10">
-        <el-card class="chart-card" shadow="hover">
+      <el-col :xs="24" :lg="10">
+        <el-card class="chart-card" shadow="never">
           <template #header>
             <div class="card-header">
               <h3>{{ t('dashboard.fileTypes') }}</h3>
@@ -116,10 +82,9 @@
       </el-col>
     </el-row>
 
-    <!-- 最新数据 -->
     <el-row :gutter="24" class="recent-row">
       <el-col :span="24">
-        <el-card class="recent-card" shadow="hover">
+        <el-card class="recent-card" shadow="never">
           <template #header>
             <div class="card-header">
               <h3>
@@ -200,7 +165,7 @@ const stats = reactive({
   textShares: 0,
   totalStorage: 0,
   todayUploads: 0,
-  todayDownloads: 0,
+  totalDownloads: 0,
   expiredShares: 0
 })
 
@@ -209,11 +174,17 @@ const animatedStats = reactive({
   fileCount: 0,
   textShares: 0,
   todayUploads: 0,
-  todayDownloads: 0,
+  totalDownloads: 0,
   expiredShares: 0
 })
 
-const recentFiles = ref<any[]>([])
+interface RecentFile {
+  filename: string
+  file_size: number
+  created_at: string
+}
+
+const recentFiles = ref<RecentFile[]>([])
 
 // Chart Data
 const trendData = reactive({
@@ -221,10 +192,10 @@ const trendData = reactive({
   datasets: [
     {
       label: t('dashboard.uploads'),
-      backgroundColor: 'rgba(15, 118, 110, 0.14)',
-      borderColor: '#0f766e',
+      backgroundColor: 'rgba(8, 111, 104, 0.12)',
+      borderColor: '#086f68',
       pointBackgroundColor: '#ffffff',
-      pointBorderColor: '#0f766e',
+      pointBorderColor: '#086f68',
       borderWidth: 2,
       fill: true,
       tension: 0.4,
@@ -265,12 +236,12 @@ const typeData = reactive({
   datasets: [
     {
       backgroundColor: [
-        '#0f766e',
+        '#086f68',
         '#2563eb',
-        '#b45309',
-        '#15803d',
+        '#f6821f',
+        '#20824a',
         '#64748b',
-        '#dc2626'
+        '#c33a3a'
       ],
       data: [] as number[]
     }
@@ -338,14 +309,14 @@ const fetchDashboardStats = async () => {
       stats.textShares = res.data.text_shares || 0
       stats.totalStorage = res.data.total_size || res.data.total_storage_bytes || 0
       stats.todayUploads = res.data.today_uploads || 0
-      stats.todayDownloads = res.data.today_downloads || 0
+      stats.totalDownloads = res.data.total_downloads || 0
       stats.expiredShares = res.data.expired_shares || 0
 
       animateNumber('activeShares', stats.activeShares)
       animateNumber('fileCount', stats.fileCount)
       animateNumber('textShares', stats.textShares)
       animateNumber('todayUploads', stats.todayUploads)
-      animateNumber('todayDownloads', stats.todayDownloads)
+      animateNumber('totalDownloads', stats.totalDownloads)
       animateNumber('expiredShares', stats.expiredShares)
     }
   } catch (error) {
@@ -358,15 +329,15 @@ const fetchCharts = async () => {
     // Trend
     const trendRes = await adminApi.getUploadTrend(7)
     if (trendRes.code === 200 && trendRes.data) {
-      trendData.labels = trendRes.data.map((item: any) => item.date.substring(5)) // mm-dd
-      trendData.datasets[0]!.data = trendRes.data.map((item: any) => item.uploads)
+      trendData.labels = trendRes.data.map((item) => item.date.substring(5))
+      trendData.datasets[0]!.data = trendRes.data.map((item) => item.uploads)
     }
 
     // Type
     const typeRes = await adminApi.getFileTypeDistribution()
     if (typeRes.code === 200 && typeRes.data) {
-      typeData.labels = typeRes.data.map((item: any) => item.mime_type)
-      typeData.datasets[0]!.data = typeRes.data.map((item: any) => item.count)
+      typeData.labels = typeRes.data.map((item) => item.mime_type)
+      typeData.datasets[0]!.data = typeRes.data.map((item) => item.count)
     }
   } catch (error) {
     console.error('获取图表数据失败:', error)
@@ -378,13 +349,11 @@ const fetchRecentFiles = async () => {
     const res = await adminApi.getRecentFiles()
     if (res.code === 200) {
       if (res.data && Array.isArray(res.data.list)) {
-        recentFiles.value = res.data.list.slice(0, 5).map((file: any) => ({
+        recentFiles.value = res.data.list.slice(0, 5).map((file) => ({
           filename: file.uuid_file_name || file.file_name || file.code,
-          file_size: file.file_size || file.size || 0,
+          file_size: file.size || 0,
           created_at: file.CreatedAt || file.created_at || ''
         }))
-      } else if (Array.isArray(res.data)) {
-        recentFiles.value = res.data.slice(0, 5)
       } else {
         recentFiles.value = []
       }
@@ -411,72 +380,75 @@ onMounted(async () => {
 
 <style scoped>
 .dashboard-container {
-  animation: fadeIn 0.5s ease-in;
+  animation: fadeIn 0.28s ease-out;
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(20px); }
+  from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-.stats-row {
+.stats-grid {
+  display: grid;
   margin-bottom: 24px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .stat-card {
-  position: relative;
-  padding: 24px;
-  border-radius: var(--radius-xl);
-  color: var(--text-primary);
+  display: flex;
+  min-width: 0;
+  min-height: 116px;
+  padding: 20px;
+  align-items: center;
+  gap: 15px;
   border: 1px solid var(--border-subtle);
-  overflow: hidden;
-  transition: all 0.3s ease;
-  cursor: pointer;
+  border-radius: var(--radius-xl);
+  background: #ffffff;
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(17, 31, 38, 0.03), 0 8px 22px rgba(17, 31, 38, 0.04);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .stat-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.08);
+  border-color: var(--border-strong);
+  box-shadow: 0 2px 4px rgba(17, 31, 38, 0.04), 0 12px 28px rgba(17, 31, 38, 0.06);
 }
-
-.gradient-blue { background: #eff6ff; }
-.gradient-purple { background: #f0fdfa; }
-.gradient-indigo { background: #f8fafc; }
-.gradient-green { background: #f0fdf4; }
-.gradient-orange { background: #fffbeb; }
-.gradient-red { background: #fef2f2; }
 
 .stat-icon {
-  position: relative;
-  z-index: 1;
-  margin-bottom: 16px;
-  opacity: 0.9;
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-lg);
+  font-size: 21px;
 }
 
-.stat-content {
-  position: relative;
-  z-index: 1;
-}
+.stat-card--teal .stat-icon { background: var(--primary-soft); color: var(--primary-color); }
+.stat-card--blue .stat-icon { background: #edf4ff; color: #2563eb; }
+.stat-card--slate .stat-icon { background: #eef2f4; color: #526570; }
+.stat-card--green .stat-icon { background: #edf8f1; color: var(--success-color); }
+.stat-card--orange .stat-icon { background: var(--accent-soft); color: #c45c0c; }
+.stat-card--red .stat-icon { background: #fff0f0; color: var(--danger-color); }
+
+.stat-content { min-width: 0; }
 
 .stat-value {
-  font-size: 28px;
-  font-weight: 700;
-  margin-bottom: 8px;
+  overflow: hidden;
+  margin-bottom: 3px;
+  color: var(--text-primary);
+  font-size: 25px;
+  font-weight: 740;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stat-label {
-  font-size: 14px;
-  opacity: 0.9;
-}
-
-.stat-decoration {
-  position: absolute;
-  right: -20px;
-  bottom: -20px;
-  width: 120px;
-  height: 120px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  font-size: 13px;
 }
 
 .charts-row {
@@ -484,8 +456,6 @@ onMounted(async () => {
 }
 
 .chart-card {
-  border-radius: 16px;
-  border: none;
   height: 100%;
 }
 
@@ -502,7 +472,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #1a1f3a;
+  color: var(--text-primary);
 }
 
 .chart-container {
@@ -522,16 +492,45 @@ onMounted(async () => {
 }
 
 .recent-card {
-  border-radius: 16px;
-  border: none;
+  overflow: hidden;
 }
 
 :deep(.el-card__header) {
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--border-subtle);
   padding: 16px 20px;
 }
 
 :deep(.el-card__body) {
   padding: 20px;
+}
+
+@media (max-width: 1200px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .charts-row :deep(.el-col + .el-col) {
+    margin-top: 20px;
+  }
+}
+
+@media (max-width: 640px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .stat-card {
+    min-height: 92px;
+    padding: 16px;
+  }
+
+  .stat-value {
+    font-size: 22px;
+  }
+
+  .chart-container {
+    height: 240px;
+  }
 }
 </style>

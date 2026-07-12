@@ -1,11 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { adminApi } from '@/api/admin'
-
+import type { AdminUser } from '@/api/admin'
 
 export const useUserStore = defineStore('user', () => {
   const token = ref<string>(localStorage.getItem('token') || '')
-  const userInfo = ref<any | null>(null)
+  const userInfo = ref<AdminUser | null>(null)
 
   const isLoggedIn = computed(() => !!token.value)
   const isAdmin = computed(() => userInfo.value?.role === 'admin')
@@ -22,11 +22,19 @@ export const useUserStore = defineStore('user', () => {
     throw new Error(res.message)
   }
 
-  const logout = () => {
-    token.value = ''
-    userInfo.value = null
-    localStorage.removeItem('token')
-    localStorage.removeItem('userRole')
+  const logout = async (): Promise<boolean> => {
+    let serverLoggedOut = true
+    try {
+      await adminApi.logout()
+    } catch {
+      serverLoggedOut = false
+    } finally {
+      token.value = ''
+      userInfo.value = null
+      localStorage.removeItem('token')
+      localStorage.removeItem('userRole')
+    }
+    return serverLoggedOut
   }
 
 
@@ -37,6 +45,5 @@ export const useUserStore = defineStore('user', () => {
     isAdmin,
     login,
     logout,
-    
   }
 })

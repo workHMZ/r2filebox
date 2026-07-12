@@ -1,19 +1,11 @@
 <template>
   <div class="admin-layout">
-    <!-- 动态流动背景 (应用到整个管理后台视图中) -->
-    <div class="bg-decoration">
-      <div class="circle circle1"></div>
-      <div class="circle circle2"></div>
-      <div class="circle circle3"></div>
-    </div>
+    <div class="bg-decoration"></div>
 
     <el-container class="admin-container">
-      <!-- 侧边栏 -->
-      <el-aside width="240px" class="admin-aside">
+      <el-aside width="224px" :class="['admin-aside', { 'is-open': sidebarOpen }]">
         <div class="admin-logo">
-          <div class="logo-icon">
-            <el-icon size="24"><Box /></el-icon>
-          </div>
+          <AppLogo size="small" />
           <div class="logo-text">
             <h2>R2FileBox</h2>
             <p>{{ t('admin.subtitle') }}</p>
@@ -24,6 +16,7 @@
           :default-active="$route.path"
           class="admin-menu"
           router
+          @select="closeSidebar"
         >
           <el-menu-item index="/admin/dashboard">
             <el-icon><Monitor /></el-icon>
@@ -63,12 +56,26 @@
           </el-button>
         </div>
       </el-aside>
+      <button
+        v-if="sidebarOpen"
+        class="aside-overlay"
+        type="button"
+        :aria-label="t('common.close')"
+        @click="closeSidebar"
+      ></button>
       
-      <!-- 右侧容器 -->
       <el-container class="main-container">
-        <!-- 顶部导航 -->
         <el-header class="admin-header">
           <div class="header-left">
+            <el-button
+              class="menu-toggle"
+              text
+              :aria-label="t('admin.title')"
+              :title="t('admin.title')"
+              @click="sidebarOpen = true"
+            >
+              <el-icon><Expand /></el-icon>
+            </el-button>
             <h3>{{ pageTitle }}</h3>
           </div>
           
@@ -97,10 +104,8 @@
           </div>
         </el-header>
         
-        <!-- 内容区 -->
         <el-main class="admin-main">
-          <!-- 内嵌视图，利用局部玻璃层浮动在主背景上 -->
-          <div class="admin-content-card glass-card">
+          <div class="admin-content">
             <router-view />
           </div>
         </el-main>
@@ -110,21 +115,23 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { 
   Monitor, Folder, Setting, ArrowDown, 
-  Box, Document, Tools, Promotion, SwitchButton 
+  Box, Document, Tools, Promotion, SwitchButton, Expand
 } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { useI18n } from '@/i18n'
 import LanguageSwitch from '@/components/LanguageSwitch.vue'
+import AppLogo from '@/components/AppLogo.vue'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 const { t } = useI18n()
+const sidebarOpen = ref(false)
 
 const pageTitle = computed(() => {
   const titles: Record<string, string> = {
@@ -140,8 +147,14 @@ const pageTitle = computed(() => {
 })
 
 const goToUser = () => {
-  window.open('/', '_blank')
+  window.open('/', '_blank', 'noopener,noreferrer')
 }
+
+const closeSidebar = () => {
+  sidebarOpen.value = false
+}
+
+watch(() => route.path, closeSidebar)
 
 const handleCommand = async (command: string) => {
   switch (command) {
@@ -152,10 +165,14 @@ const handleCommand = async (command: string) => {
           confirmButtonText: t('common.confirm'),
           cancelButtonText: t('common.cancel')
         })
-        userStore.logout()
-        ElMessage.success(t('admin.logoutDone'))
+        const serverLoggedOut = await userStore.logout()
+        if (serverLoggedOut) {
+          ElMessage.success(t('admin.logoutDone'))
+        } else {
+          ElMessage.warning(t('request.network'))
+        }
         router.push('/admin/login')
-      } catch (error: any) {
+      } catch (error: unknown) {
         if (error !== 'cancel') {
           console.error('登出故障:', error)
         }
@@ -170,6 +187,7 @@ const handleCommand = async (command: string) => {
   height: 100vh;
   position: relative;
   overflow: hidden;
+  background: var(--surface-canvas);
 }
 
 .admin-container {
@@ -179,47 +197,34 @@ const handleCommand = async (command: string) => {
 }
 
 .main-container {
+  min-width: 0;
   height: 100%;
   display: flex;
   flex-direction: column;
 }
 
-/* 侧边栏 */
 .admin-aside {
   background: #ffffff !important;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
   border-right: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
-  box-shadow: 10px 0 30px rgba(15, 23, 42, 0.04);
+  box-shadow: 6px 0 20px rgba(17, 31, 38, 0.025);
+  z-index: 20;
 }
 
 .admin-logo {
-  height: 72px;
+  height: 64px;
   display: flex;
   align-items: center;
-  padding: 0 20px;
-  gap: 12px;
+  padding: 0 18px;
+  gap: 11px;
   border-bottom: 1px solid var(--border-subtle);
-}
-
-.logo-icon {
-  width: 38px;
-  height: 38px;
-  background: var(--primary-gradient);
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #ffffff;
-  box-shadow: 0 4px 12px rgba(15, 118, 110, 0.18);
 }
 
 .logo-text h2 {
   margin: 0;
   font-size: 15px;
-  font-weight: 800;
+  font-weight: 760;
   color: var(--text-primary);
   letter-spacing: 0;
   text-align: left;
@@ -236,27 +241,27 @@ const handleCommand = async (command: string) => {
   border: none;
   background: transparent;
   flex: 1;
-  padding: 16px 0;
+  padding: 14px 0;
 }
 
 .admin-menu :deep(.el-menu-item) {
   color: var(--text-secondary);
-  height: 46px;
-  line-height: 46px;
-  margin: 4px 12px;
-  border-radius: 10px;
+  height: 42px;
+  line-height: 42px;
+  margin: 3px 10px;
+  border-radius: var(--radius-md);
   font-weight: 600;
   font-size: 13px;
-  transition: all 0.3s;
+  transition: color 0.18s ease, background 0.18s ease;
 }
 
 .admin-menu :deep(.el-menu-item:hover) {
-  background: #f8fafc !important;
+  background: var(--surface-page) !important;
   color: var(--text-primary);
 }
 
 .admin-menu :deep(.el-menu-item.is-active) {
-  background: #f0fdfa !important;
+  background: var(--primary-soft) !important;
   color: var(--primary-color) !important;
   box-shadow: none;
 }
@@ -267,7 +272,7 @@ const handleCommand = async (command: string) => {
 }
 
 .sidebar-footer {
-  padding: 16px;
+  padding: 14px;
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -276,67 +281,88 @@ const handleCommand = async (command: string) => {
   background: #ffffff !important;
   border: 1px solid var(--border-subtle) !important;
   color: var(--text-primary) !important;
-  border-radius: 10px;
-  transition: all 0.3s;
+  border-radius: var(--radius-md);
+  transition: border-color 0.18s ease, color 0.18s ease;
   font-weight: 600;
   font-size: 12px;
   height: 38px;
 }
 
 .user-page-btn:hover {
-  background: #f8fafc !important;
-  border-color: var(--border-strong) !important;
-  transform: translateY(-2px);
+  background: var(--surface-page) !important;
+  border-color: var(--primary-color) !important;
+  color: var(--primary-color) !important;
 }
 
-/* 顶部导航 */
 .admin-header {
-  background: rgba(255, 255, 255, 0.9) !important;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.96) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 24px;
-  height: 72px;
+  padding: 0 22px;
+  height: 64px;
+  flex: 0 0 64px;
+}
+
+.header-left {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
 }
 
 .header-left h3 {
+  min-width: 0;
+  overflow: hidden;
   margin: 0;
   font-size: 18px;
-  font-weight: 800;
+  font-weight: 740;
   color: var(--text-primary);
   letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .header-right {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+}
+
+.menu-toggle {
+  display: none;
+  width: 36px;
+  height: 36px;
+  padding: 0 !important;
+  font-size: 20px;
 }
 
 .user-info {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 12px;
-  border-radius: 12px;
-  background: #f8fafc;
-  border: 1px solid var(--border-subtle);
+  min-height: 38px;
+  gap: 9px;
+  padding: 3px 7px 3px 5px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  border: 1px solid transparent;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: background 0.18s ease, border-color 0.18s ease;
 }
 
 .user-info:hover {
-  background: #ffffff;
-  border-color: var(--border-strong);
-  transform: translateY(-1px);
+  background: var(--surface-page);
+  border-color: var(--border-subtle);
 }
 
 .user-avatar {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--accent-soft);
+  color: #9a480b;
   font-weight: 800;
 }
 
@@ -364,13 +390,82 @@ const handleCommand = async (command: string) => {
 
 /* 内容区 */
 .admin-main {
-  padding: 24px;
-  height: calc(100vh - 72px);
+  padding: 22px;
+  height: calc(100vh - 64px);
   overflow-y: auto;
 }
 
-/* 后台子页玻璃态包装器 */
-.admin-content-card {
+.admin-content {
   min-height: 100%;
+}
+
+.aside-overlay {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .admin-aside {
+    position: fixed;
+    inset: 0 auto 0 0;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+  }
+
+  .admin-aside.is-open {
+    transform: translateX(0);
+  }
+
+  .aside-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 15;
+    display: block;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: rgba(24, 34, 41, 0.34);
+  }
+
+  .menu-toggle {
+    display: inline-flex;
+  }
+
+  .admin-header {
+    padding: 0 14px;
+  }
+
+  .admin-main {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 640px) {
+  .header-left h3 {
+    font-size: 16px;
+  }
+
+  .user-details,
+  .arrow-icon {
+    display: none;
+  }
+
+  .user-info {
+    padding-right: 4px;
+  }
+}
+
+@media (max-width: 460px) {
+  .header-right {
+    gap: 2px;
+  }
+
+  .header-right :deep(.language-switch) {
+    width: 126px;
+  }
+
+  .header-right :deep(.language-select) {
+    width: 94px;
+  }
 }
 </style>

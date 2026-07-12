@@ -7,9 +7,6 @@ compatibility_flags = ["nodejs_compat"]
 
 workers_dev = true
 
-[cache]
-enabled = true
-
 [assets]
 directory = "frontend/dist"
 binding = "ASSETS"
@@ -18,7 +15,6 @@ run_worker_first = [
   "/api/*",
   "/share/*",
   "/admin/*",
-  "/setup/*",
   "/health",
   "/live",
   "/ready",

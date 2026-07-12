@@ -1,11 +1,10 @@
 <template>
   <div class="maintenance-tools">
-    <!-- 系统状态卡片 -->
     <el-row :gutter="20" class="status-row">
-      <el-col :span="6">
-        <el-card class="status-card">
+      <el-col :xs="12" :md="6">
+        <el-card class="status-card" shadow="never">
           <div class="status-item">
-            <el-icon size="30" color="#67c23a"><CircleCheckFilled /></el-icon>
+            <el-icon class="status-icon status-icon--success"><CircleCheckFilled /></el-icon>
             <div class="status-info">
               <h4>{{ t('maintenance.systemStatus') }}</h4>
               <p class="text-success">{{ t('storage.statusOk') }}</p>
@@ -14,10 +13,10 @@
         </el-card>
       </el-col>
 
-      <el-col :span="6">
-        <el-card class="status-card">
+      <el-col :xs="12" :md="6">
+        <el-card class="status-card" shadow="never">
           <div class="status-item">
-            <el-icon size="30" color="#409eff"><Timer /></el-icon>
+            <el-icon class="status-icon status-icon--info"><Timer /></el-icon>
             <div class="status-info">
               <h4>{{ t('common.version') }}</h4>
               <p>{{ systemInfo.version }}</p>
@@ -26,10 +25,10 @@
         </el-card>
       </el-col>
 
-      <el-col :span="6">
-        <el-card class="status-card">
+      <el-col :xs="12" :md="6">
+        <el-card class="status-card" shadow="never">
           <div class="status-item">
-            <el-icon size="30" color="#e6a23c"><Files /></el-icon>
+            <el-icon class="status-icon status-icon--warning"><Files /></el-icon>
             <div class="status-info">
               <h4>{{ t('storage.totalFiles') }}</h4>
               <p>{{ systemInfo.totalFiles }}</p>
@@ -38,10 +37,10 @@
         </el-card>
       </el-col>
 
-      <el-col :span="6">
-        <el-card class="status-card">
+      <el-col :xs="12" :md="6">
+        <el-card class="status-card" shadow="never">
           <div class="status-item">
-            <el-icon size="30" color="#f56c6c"><Folder /></el-icon>
+            <el-icon class="status-icon status-icon--danger"><Folder /></el-icon>
             <div class="status-info">
               <h4>{{ t('storage.totalSize') }}</h4>
               <p>{{ formatFileSize(systemInfo.totalSize) }}</p>
@@ -51,10 +50,9 @@
       </el-col>
     </el-row>
 
-    <!-- 维护工具 -->
     <el-row :gutter="20">
-      <el-col :span="12">
-        <el-card class="tool-card">
+      <el-col :xs="24" :lg="12">
+        <el-card class="tool-card" shadow="never">
           <template #header>
             <div class="card-header">
               <el-icon><Delete /></el-icon>
@@ -80,8 +78,8 @@
         </el-card>
       </el-col>
 
-      <el-col :span="12">
-        <el-card class="tool-card">
+      <el-col :xs="24" :lg="12">
+        <el-card class="tool-card" shadow="never">
           <template #header>
             <div class="card-header">
               <el-icon><DocumentChecked /></el-icon>
@@ -91,19 +89,13 @@
 
           <el-descriptions :column="1" border>
             <el-descriptions-item :label="t('common.runtime')">
-              {{ systemInfo.goVersion }}
+              {{ systemInfo.runtime }}
             </el-descriptions-item>
-            <el-descriptions-item :label="t('common.buildTime')">
-              {{ systemInfo.buildTime }}
-            </el-descriptions-item>
-            <el-descriptions-item :label="t('maintenance.gitCommit')">
-              {{ systemInfo.gitCommit }}
+            <el-descriptions-item :label="t('storage.dataLayer')">
+              {{ systemInfo.storage }}
             </el-descriptions-item>
             <el-descriptions-item :label="t('common.platform')">
-              {{ systemInfo.osInfo }}
-            </el-descriptions-item>
-            <el-descriptions-item :label="t('maintenance.cpu')">
-              {{ systemInfo.cpuCores }}
+              {{ systemInfo.platform }}
             </el-descriptions-item>
           </el-descriptions>
         </el-card>
@@ -131,11 +123,9 @@ const { t } = useI18n()
 
 const systemInfo = reactive({
   version: '-',
-  goVersion: '-',
-  buildTime: '-',
-  gitCommit: '-',
-  osInfo: '-',
-  cpuCores: 0,
+  runtime: '-',
+  platform: '-',
+  storage: '-',
   totalFiles: 0,
   totalSize: 0
 })
@@ -168,7 +158,7 @@ const cleanExpiredFiles = async () => {
     } else {
       ElMessage.error(res.message || t('maintenance.cleanFailed'))
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error !== 'cancel') {
       ElMessage.error(t('maintenance.cleanFailed'))
     }
@@ -182,12 +172,10 @@ const fetchSystemInfo = async () => {
     // 获取系统信息
     const infoRes = await adminApi.getSystemInfo()
     if (infoRes.code === 200 && infoRes.data) {
-      systemInfo.version = infoRes.data.filecodebox_version || '-'
-      systemInfo.goVersion = infoRes.data.go_version || '-'
-      systemInfo.buildTime = infoRes.data.build_time || '-'
-      systemInfo.gitCommit = infoRes.data.git_commit || '-'
-      systemInfo.osInfo = infoRes.data.os_info || '-'
-      systemInfo.cpuCores = infoRes.data.cpu_cores || 0
+      systemInfo.version = infoRes.data.version || '-'
+      systemInfo.runtime = infoRes.data.runtime || '-'
+      systemInfo.platform = infoRes.data.platform || '-'
+      systemInfo.storage = infoRes.data.storage || '-'
     }
 
     // 获取统计数据
@@ -222,24 +210,38 @@ onMounted(() => {
 .status-item {
   display: flex;
   align-items: center;
-  gap: 15px;
+  gap: 12px;
 }
+
+.status-icon {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  padding: 8px;
+  border-radius: var(--radius-lg);
+  font-size: 22px;
+}
+
+.status-icon--success { background: #edf8f1; color: var(--success-color); }
+.status-icon--info { background: #edf4ff; color: var(--info-color); }
+.status-icon--warning { background: var(--accent-soft); color: #c45c0c; }
+.status-icon--danger { background: #fff0f0; color: var(--danger-color); }
 
 .status-info h4 {
   margin: 0 0 5px;
   font-size: 14px;
-  color: #909399;
+  color: var(--text-secondary);
 }
 
 .status-info p {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-  color: #303133;
+  color: var(--text-primary);
 }
 
 .text-success {
-  color: #67c23a !important;
+  color: var(--success-color) !important;
 }
 
 .tool-card {
@@ -274,6 +276,33 @@ onMounted(() => {
 .tool-info p {
   margin: 0;
   font-size: 14px;
-  color: #909399;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 1199px) {
+  .tool-card {
+    margin-bottom: 14px;
+  }
+}
+
+@media (max-width: 767px) {
+  .status-row {
+    margin-bottom: 6px;
+  }
+
+  .status-row .el-col {
+    margin-bottom: 14px;
+  }
+
+  .status-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .tool-item {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 16px;
+  }
 }
 </style>

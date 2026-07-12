@@ -1,243 +1,198 @@
 import { request } from '@/utils/request'
-import type { ApiResponse, PaginatedResponse } from '@/types/common'
+import type { ApiResponse } from '@/types/common'
+
+export interface AdminStats {
+  total_files: number
+  text_shares: number
+  total_shares: number
+  active_shares: number
+  expired_shares: number
+  total_size: number
+  total_storage_bytes: number
+  today_uploads: number
+  total_downloads: number
+}
+
+export interface AdminUser {
+  id: string
+  username: string
+  nickname: string
+  role: 'admin'
+}
+
+export interface AdminShare {
+  id: string
+  code: string
+  type: 'text' | 'file'
+  text: boolean
+  uuid_file_name: string | null
+  display_name: string | null
+  file_name: string | null
+  size: number
+  used_count: number
+  download_count: number
+  max_downloads: number | null
+  CreatedAt: string
+  created_at: string
+  expired_at: string
+  expire_time: string
+}
+
+export interface AdminConfig {
+  base: {
+    name: string
+    description: string
+    port: number
+    production: boolean
+  }
+  storage: {
+    type: string
+    max_size: number
+    max_total_storage_bytes: number
+  }
+  transfer: {
+    max_count: number
+    expire_default: number
+    upload: {
+      openupload: number
+      uploadsize: number
+      enablechunk: number
+      chunksize: number
+    }
+    rate_limit: {
+      enable_kv: number
+      upload_per_minute: number
+      upload_part_per_minute: number
+      resolve_per_minute: number
+      download_per_minute: number
+      auth_per_15_min: number
+    }
+  }
+  security: {
+    enable_audit_log: number
+    enable_access_log: number
+    require_turnstile: number
+    turnstile_site_key: string
+  }
+}
+
+export interface TransferLog {
+  id: string
+  operation: string
+  action: string
+  file_code: string
+  file_name: string
+  file_size: number
+  username: string
+  ip: string
+  status: string
+  created_at: string
+}
+
+interface AdminFilesData {
+  items: AdminShare[]
+  list: AdminShare[]
+  total: number
+  page: number
+  page_size: number
+}
+
+interface TransferLogsData {
+  items: TransferLog[]
+  logs: TransferLog[]
+  total: number
+  page: number
+  page_size: number
+  pagination: { page: number; page_size: number; total: number }
+  stats: { total: number; uploads: number; downloads: number; activeUsers: number }
+}
 
 export const adminApi = {
-  // 管理员登录
-  login: (data: { username: string; password: string }) => {
-    return request<ApiResponse<{
-      token: string
-      user: {
-        id: string
-        username: string
-        nickname: string
-        role: string
-      }
-    }>>({
-      url: '/admin/login',
-      method: 'POST',
-      data,
-    })
-  },
+  login: (data: { username: string; password: string }) => request<ApiResponse<{
+    token: string
+    user: AdminUser
+  }>>({
+    url: '/admin/login',
+    method: 'POST',
+    data,
+  }),
 
-  // 获取系统统计
-  getStats: () => {
-    return request<ApiResponse<{
-      total_files: number
-      text_shares: number
-      total_shares: number
-      active_shares: number
-      expired_shares: number
-      total_size: number
-      today_uploads: number
-      today_downloads: number
-    }>>({
-      url: '/admin/stats',
-      method: 'GET',
-    })
-  },
+  logout: () => request<ApiResponse<void>>({
+    url: '/admin/logout',
+    method: 'POST',
+  }),
 
-  // 别名：获取仪表板统计
+  getStats: () => request<ApiResponse<AdminStats>>({
+    url: '/admin/stats',
+    method: 'GET',
+  }),
+
   getDashboardStats: () => adminApi.getStats(),
 
-  // 获取文件列表
-  getFiles: (params: {
-    page?: number
-    page_size?: number
-    keyword?: string
-    sort_by?: string
-  }) => {
-    return request<PaginatedResponse<{
-      id: number
-      code: string
-      file_name: string
-      file_size: number
-      expire_time: string
-      view_count: number
-      download_count: number
-      created_at: string
-    }>>({
-      url: '/admin/files',
-      method: 'GET',
-      params,
-    })
-  },
+  getFiles: (params: { page?: number; page_size?: number }) => request<ApiResponse<AdminFilesData>>({
+    url: '/admin/files',
+    method: 'GET',
+    params,
+  }),
 
-  // 别名：获取文件列表
-  getFilesList: (params: {
-    page?: number
-    page_size?: number
-    keyword?: string
-    sort_by?: string
-  }) => adminApi.getFiles(params),
+  deleteFile: (id: string) => request<ApiResponse<void>>({
+    url: `/admin/files/${encodeURIComponent(id)}`,
+    method: 'DELETE',
+  }),
 
-  // 删除文件（按Code）
-  deleteFile: (code: string) => {
-    return request<ApiResponse<void>>({
-      url: `/admin/files/${code}`,
-      method: 'DELETE',
-    })
-  },
+  getRecentFiles: () => request<ApiResponse<AdminFilesData>>({
+    url: '/admin/files',
+    method: 'GET',
+    params: { page: 1, page_size: 5 },
+  }),
 
-  // 删除文件（按ID）
-  deleteFileById: (id: number) => {
-    return request<ApiResponse<void>>({
-      url: `/admin/files/${id}`,
-      method: 'DELETE',
-    })
-  },
+  getUploadTrend: (days = 7) => request<ApiResponse<Array<{ date: string; uploads: number }>>>({
+    url: '/admin/stats/trend',
+    method: 'GET',
+    params: { days },
+  }),
 
-  // 删除文件（按Code）
-  deleteFileByCode: (code: string) => {
-    return request<ApiResponse<void>>({
-      url: `/admin/files/${code}`,
-      method: 'DELETE',
-    })
-  },
+  getFileTypeDistribution: () => request<ApiResponse<Array<{ mime_type: string; count: number }>>>({
+    url: '/admin/stats/file-types',
+    method: 'GET',
+  }),
 
-  // 获取最新文件（用于 Dashboard）
-  getRecentFiles: () => {
-    return request<ApiResponse<any[]>>({
-      url: '/admin/files',
-      method: 'GET',
-      params: { page: 1, page_size: 5 }
-    })
-  },
+  getConfig: () => request<ApiResponse<AdminConfig>>({
+    url: '/admin/config',
+    method: 'GET',
+  }),
 
-  // 批量删除文件（后端未实现，待后端实现后启用）
-  batchDeleteFiles: (codes: string[]) => {
-    return request<ApiResponse<{ deleted_count: number }>>({
-      url: '/admin/files/batch',
-      method: 'DELETE',
-      data: { codes }
-    })
-  },
+  updateConfig: (config: unknown) => request<ApiResponse<AdminConfig>>({
+    url: '/admin/config',
+    method: 'PUT',
+    data: { config },
+  }),
 
+  getTransferLogs: (params: { page?: number; page_size?: number }) => request<ApiResponse<TransferLogsData>>({
+    url: '/admin/logs/transfer',
+    method: 'GET',
+    params,
+  }),
 
-  getUploadTrend: (days: number = 7) => {
-    return request<ApiResponse<any[]>>({
-      url: '/admin/stats/trend',
-      method: 'GET',
-      params: { days }
-    })
-  },
+  getSystemInfo: () => request<ApiResponse<{
+    runtime: string
+    platform: string
+    storage: string
+    version: string
+  }>>({
+    url: '/admin/maintenance/system-info',
+    method: 'GET',
+  }),
 
-  getFileTypeDistribution: () => {
-    return request<ApiResponse<any[]>>({
-      url: '/admin/stats/file-types',
-      method: 'GET'
-    })
-  },
-  // 获取系统配置
-  getConfig: () => {
-    return request<ApiResponse<{
-      base: {
-        name: string
-        description: string
-        port: number
-      }
-      storage: {
-        type: string
-        max_size: number
-      }
-      transfer: {
-        max_count: number
-        expire_default: number
-        upload?: any
-        rate_limit?: any
-      }
-      user?: any
-      security?: any
-    }>>({
-      url: '/admin/config',
-      method: 'GET',
-    })
-  },
-
-  // 别名：获取系统配置
-  getSystemConfig: () => adminApi.getConfig(),
-
-  // 更新系统配置
-  updateConfig: (config: any) => {
-    return request<ApiResponse<void>>({
-      url: '/admin/config',
-      method: 'PUT',
-      data: { config },
-    })
-  },
-
-  // 更新基础配置
-  updateBasicConfig: (data: any) => adminApi.updateConfig({ basic: data }),
-
-  // 更新安全配置
-  updateSecurityConfig: (data: any) => adminApi.updateConfig({ security: data }),
-
-  // 更新邮件配置
-  updateEmailConfig: (data: any) => adminApi.updateConfig({ email: data }),
-
-  // 获取传输日志
-  getTransferLogs: (params: {
-    page?: number
-    page_size?: number
-  }) => {
-    return request<PaginatedResponse<any>>({
-      url: '/admin/logs/transfer',
-      method: 'GET',
-      params,
-    })
-  },
-
-  // 获取系统信息
-  getSystemInfo: () => {
-    return request<ApiResponse<{
-      go_version: string
-      build_time: string
-      git_commit: string
-      os_info: string
-      cpu_cores: number
-      filecodebox_version: string
-    }>>({
-      url: '/admin/maintenance/system-info',
-      method: 'GET'
-    })
-  },
-
-  // 测试邮件（后端未实现，待后端实现后启用）
-  testEmail: () => {
-    return request<ApiResponse<void>>({
-      url: '/admin/email/test',
-      method: 'POST'
-    })
-  },
-
-  // 清理过期文件
-  cleanExpiredFiles: () => {
-    return request<ApiResponse<{ deleted_count: number }>>({
-      url: '/admin/maintenance/clean-expired',
-      method: 'POST'
-    })
-  },
-
-  // 清理孤立文件（后端未实现，待后端实现后启用）
-  cleanOrphanFiles: () => {
-    return request<ApiResponse<{ deleted_count: number }>>({
-      url: '/admin/maintenance/clean-orphan',
-      method: 'POST'
-    })
-  },
-
-  // 优化数据库（后端未实现，待后端实现后启用）
-  optimizeDatabase: () => {
-    return request<ApiResponse<void>>({
-      url: '/admin/maintenance/optimize',
-      method: 'POST'
-    })
-  },
-
-  // 导出数据（后端未实现，待后端实现后启用）
-  exportData: () => {
-    return request<ApiResponse<{ download_url: string }>>({
-      url: '/admin/export',
-      method: 'GET'
-    })
-  },
+  cleanExpiredFiles: () => request<ApiResponse<{
+    deleted_count: number
+    deleted_r2_objects: number
+    aborted_uploads: number
+    purged_counters: number
+    purged_audit_logs: number
+    purged_shares: number
+  }>>({
+    url: '/admin/maintenance/clean-expired',
+    method: 'POST',
+  }),
 }

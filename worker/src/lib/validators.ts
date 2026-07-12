@@ -1,11 +1,18 @@
 export const sanitizeFilename = (filename: string): string => {
-  // Remove path traversal attempts
   let safe = filename.replace(/^.*[\\\/]/, '')
-  // Remove non-printable characters
-  safe = safe.replace(/[\x00-\x1F\x7F]/g, '')
-  
-  // If filename becomes empty after sanitization, use a default
-  return safe || 'unnamed_file'
+  safe = safe
+    .replace(/[\x00-\x1F\x7F]/g, '')
+    .replace(/[\u202A-\u202E\u2066-\u2069]/g, '')
+    .trim()
+  if (!safe || safe === '.' || safe === '..') return 'unnamed_file'
+  return [...safe].slice(0, 200).join('')
+}
+
+export const sanitizeMimeType = (mimeType: string): string => {
+  const value = mimeType.trim().slice(0, 128)
+  return /^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$/.test(value)
+    ? value
+    : 'application/octet-stream'
 }
 
 export const calculateExpireAt = (
@@ -51,10 +58,8 @@ export const calculateExpireAt = (
     hoursToAdd = defaultHours
   }
 
-  // Cap at max limit (unless it's 'forever' which returned null above)
-  if (hoursToAdd > maxHours) {
-    hoursToAdd = maxHours
-  }
+  if (!Number.isFinite(hoursToAdd) || hoursToAdd <= 0) hoursToAdd = defaultHours
+  hoursToAdd = Math.min(hoursToAdd, Math.max(maxHours, 1))
 
   const expireDate = new Date()
   // hoursToAdd can be fractional (e.g. for minutes)

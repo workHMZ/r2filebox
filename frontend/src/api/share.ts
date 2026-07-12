@@ -2,18 +2,32 @@ import { request } from '@/utils/request'
 import type { ApiResponse } from '@/types/common'
 import { t } from '@/i18n'
 
+export interface ResolvedShare {
+  code: string
+  type: 'text' | 'file'
+  text?: string
+  file_name?: string
+  filename?: string
+  file_size: number
+  size?: number
+  mimeType?: string
+  has_password: false
+  expire_time: string
+  views: number
+  max_views: number | null
+  downloadCount: number
+  maxDownloads: number | null
+  download_url?: string
+}
+
 export const shareApi = {
   // 分享文本
   shareText: (data: {
     text: string
     expire_value: number
     expire_style: string
+    turnstileToken?: string
   }) => {
-    const formData = new FormData()
-    formData.append('text', data.text)
-    formData.append('expire_value', String(data.expire_value))
-    formData.append('expire_style', data.expire_style)
-
     return request<ApiResponse<{
       code: string
       share_url: string
@@ -22,7 +36,7 @@ export const shareApi = {
     }>>({
       url: '/api/share/text',
       method: 'POST',
-      data: formData,
+      data,
     })
   },
 
@@ -33,6 +47,7 @@ export const shareApi = {
     size: number
     expire_value: number
     expire_style: string
+    turnstileToken?: string
   }) => {
     return request<ApiResponse<{
       code: string
@@ -103,19 +118,11 @@ export const shareApi = {
   },
 
   // 获取分享内容
-  getShare: (code: string, password?: string) => {
-    return request<ApiResponse<{
-      code: string
-      text?: string
-      file_name?: string
-      file_size?: string
-      url?: string
-      has_password: boolean
-      expire_time: string
-    }>>({
+  getShare: (code: string) => {
+    return request<ApiResponse<ResolvedShare>>({
       url: '/api/share/resolve',
       method: 'POST',
-      data: { code, password },
+      data: { code },
     })
   },
 

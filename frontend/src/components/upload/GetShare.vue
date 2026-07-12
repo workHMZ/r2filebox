@@ -1,34 +1,31 @@
 <template>
   <div class="get-share-container">
     <div class="input-section">
-      <div class="input-icon">
-        <div class="icon-ring">
-          <el-icon size="42"><Search /></el-icon>
-        </div>
+      <div class="lookup-row">
+        <el-input
+          v-model="shareCode"
+          size="large"
+          :placeholder="t('get.placeholder')"
+          class="code-input"
+          clearable
+          @keyup.enter="handleGetShare"
+        >
+          <template #prefix>
+            <el-icon class="input-key-icon"><Key /></el-icon>
+          </template>
+        </el-input>
+        <el-button
+          type="primary"
+          size="large"
+          class="get-btn"
+          @click="handleGetShare"
+        >
+          <template #icon>
+            <el-icon><Download /></el-icon>
+          </template>
+          {{ t('get.button') }}
+        </el-button>
       </div>
-      <el-input
-        v-model="shareCode"
-        size="large"
-        :placeholder="t('get.placeholder')"
-        class="code-input"
-        clearable
-        @keyup.enter="handleGetShare"
-      >
-        <template #prefix>
-          <el-icon class="input-key-icon"><Key /></el-icon>
-        </template>
-      </el-input>
-      <el-button
-        type="primary"
-        size="large"
-        class="get-btn"
-        @click="handleGetShare"
-      >
-        <template #icon>
-          <el-icon><Download /></el-icon>
-        </template>
-        {{ t('get.button') }}
-      </el-button>
     </div>
 
     <div class="tips-section">
@@ -48,10 +45,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Search, Key, Download, HelpFilled } from '@element-plus/icons-vue'
+import { Key, Download, HelpFilled } from '@element-plus/icons-vue'
 import { useI18n } from '@/i18n'
 
 interface Props {
@@ -72,14 +69,6 @@ watch(() => props.initialCode, (newCode) => {
   }
 }, { immediate: true })
 
-// 组件挂载时检查
-onMounted(() => {
-  if (props.initialCode) {
-    shareCode.value = props.initialCode
-    handleGetShare()
-  }
-})
-
 const handleGetShare = () => {
   if (!shareCode.value.trim()) {
     ElMessage.warning(t('get.empty'))
@@ -93,44 +82,29 @@ const handleGetShare = () => {
 
 <style scoped>
 .get-share-container {
-  padding: 10px 0;
+  padding: 8px 0 0;
 }
 
 .input-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 28px;
-  margin-bottom: 40px;
+  margin: 8px 0 36px;
 }
 
-.input-icon {
-  position: relative;
+.lookup-row {
   display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.icon-ring {
-  width: 80px;
-  height: 80px;
-  background: #ecfdf5;
-  border: 1px solid #99f6e4;
-  border-radius: var(--radius-xl);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--primary-color);
-  box-shadow: 0 10px 28px rgba(15, 118, 110, 0.1);
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  align-items: stretch;
+  gap: 10px;
 }
 
 .code-input {
-  width: 100%;
-  max-width: 480px;
+  flex: 1;
 }
 
 .code-input :deep(.el-input__wrapper) {
-  padding: 14px 20px !important;
+  min-height: 50px !important;
+  padding: 10px 16px !important;
   font-size: 16px !important;
 }
 
@@ -140,13 +114,12 @@ const handleGetShare = () => {
 }
 
 .get-btn {
-  width: 100%;
-  max-width: 480px;
-  height: 52px;
-  font-size: 16px;
+  width: 150px;
+  height: 50px;
+  flex: 0 0 150px;
+  font-size: 15px;
   font-weight: 700;
   border-radius: var(--radius-md);
-  margin-top: 4px;
 }
 
 .tips-section {
@@ -155,10 +128,8 @@ const handleGetShare = () => {
 }
 
 .tips-card {
-  background: #f8fafc;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  padding: 24px;
+  padding: 20px 0 0;
+  border-top: 1px solid var(--border-subtle);
   text-align: left;
 }
 
@@ -173,7 +144,7 @@ const handleGetShare = () => {
 }
 
 .tip-spark {
-  color: #fbbf24;
+  color: var(--accent-color);
 }
 
 .tips-list {
@@ -192,5 +163,16 @@ const handleGetShare = () => {
 
 .tips-list li strong {
   color: var(--primary-color);
+}
+
+@media (max-width: 560px) {
+  .lookup-row {
+    flex-direction: column;
+  }
+
+  .get-btn {
+    width: 100%;
+    flex-basis: 50px;
+  }
 }
 </style>

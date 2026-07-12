@@ -1,19 +1,14 @@
 <template>
   <div class="login-container">
-    <!-- 动态背景 -->
-    <div class="bg-decoration">
-      <div class="circle circle1"></div>
-      <div class="circle circle2"></div>
-      <div class="circle circle3"></div>
+    <div class="bg-decoration"></div>
+
+    <div class="login-toolbar">
+      <LanguageSwitch inline />
     </div>
 
     <div class="login-card glass-card">
       <div class="login-header">
-        <div class="logo-wrapper">
-          <div class="logo-icon">
-            <el-icon size="36"><Box /></el-icon>
-          </div>
-        </div>
+        <AppLogo size="large" />
         <h1>R2FileBox</h1>
         <p>{{ t('admin.login.subtitle') }}</p>
       </div>
@@ -74,10 +69,11 @@
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { User, Lock, Box, Promotion, Back } from '@element-plus/icons-vue'
-import { adminApi } from '@/api/admin'
+import { User, Lock, Promotion, Back } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { useI18n } from '@/i18n'
+import AppLogo from '@/components/AppLogo.vue'
+import LanguageSwitch from '@/components/LanguageSwitch.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -108,20 +104,11 @@ const handleLogin = async () => {
 
     loading.value = true
     try {
-      const res = await adminApi.login(loginForm)
-      if (res.code === 200) {
-        localStorage.setItem('token', res.data.token)
-        localStorage.setItem('userRole', res.data.user.role || 'admin')
-        userStore.token = res.data.token
-        userStore.userInfo = res.data.user
-        
-        ElMessage.success(t('admin.login.done'))
-        router.push('/admin')
-      } else {
-        ElMessage.error(res.message || t('admin.login.failed'))
-      }
-    } catch (error: any) {
-      ElMessage.error(error.message || t('admin.login.failed'))
+      await userStore.login(loginForm.username, loginForm.password)
+      ElMessage.success(t('admin.login.done'))
+      router.push('/admin')
+    } catch (error: unknown) {
+      ElMessage.error(error instanceof Error ? error.message : t('admin.login.failed'))
     } finally {
       loading.value = false
     }
@@ -139,11 +126,19 @@ const handleLogin = async () => {
   overflow: hidden;
 }
 
+.login-toolbar {
+  position: absolute;
+  top: 22px;
+  right: 24px;
+  z-index: 2;
+}
+
 .login-card {
   width: 100%;
-  max-width: 440px;
+  max-width: 420px;
   margin: 20px;
-  padding: 48px 36px 36px;
+  padding: 42px 34px 30px;
+  border-top: 3px solid var(--primary-color);
 }
 
 .login-header {
@@ -155,26 +150,10 @@ const handleLogin = async () => {
   gap: 12px;
 }
 
-.logo-wrapper {
-  margin-bottom: 4px;
-}
-
-.logo-icon {
-  width: 64px;
-  height: 64px;
-  background: var(--primary-gradient);
-  border-radius: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #ffffff;
-  box-shadow: 0 10px 24px rgba(15, 118, 110, 0.18);
-}
-
 .login-header h1 {
   margin: 0;
   font-size: 26px;
-  font-weight: 800;
+  font-weight: 760;
   color: var(--text-primary);
   letter-spacing: 0;
 }
@@ -220,8 +199,14 @@ const handleLogin = async () => {
 }
 
 @media (max-width: 480px) {
+  .login-toolbar {
+    top: 12px;
+    right: 12px;
+  }
+
   .login-card {
-    padding: 36px 20px 24px;
+    margin: 74px 12px 20px;
+    padding: 34px 20px 24px;
   }
 }
 </style>

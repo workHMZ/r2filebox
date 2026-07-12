@@ -1,11 +1,11 @@
 <template>
   <div class="storage-management">
-    <el-card v-loading="loading">
+    <el-card v-loading="loading" shadow="never">
       <template #header>
         <h3>{{ t('storage.title') }}</h3>
       </template>
 
-      <el-descriptions :column="2" border>
+      <el-descriptions :column="isMobile ? 1 : 2" border>
         <el-descriptions-item :label="t('storage.type')">
           <el-tag type="info">{{ t('storage.cloudflare') }}</el-tag>
         </el-descriptions-item>
@@ -17,9 +17,6 @@
         </el-descriptions-item>
         <el-descriptions-item :label="t('storage.totalSize')">
           {{ formatFileSize(storageInfo.totalSize) }}
-        </el-descriptions-item>
-        <el-descriptions-item :label="t('storage.startedAt')">
-          {{ formatDate(storageInfo.sysStart) }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('common.status')">
           <el-tag type="success">{{ t('storage.statusOk') }}</el-tag>
@@ -46,16 +43,17 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { adminApi } from '@/api/admin'
-import { getLocaleTag, useI18n } from '@/i18n'
+import { useI18n } from '@/i18n'
 
 const loading = ref(false)
-const { t, locale } = useI18n()
+const { t } = useI18n()
+const isMobile = useMediaQuery('(max-width: 720px)')
 
 const storageInfo = reactive({
   totalFiles: 0,
   totalSize: 0,
-  sysStart: '',
   version: ''
 })
 
@@ -67,22 +65,12 @@ const formatFileSize = (bytes: number): string => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
-const formatDate = (timestamp: string): string => {
-  if (!timestamp) return '-'
-  try {
-    const date = /^\d+$/.test(timestamp) ? new Date(parseInt(timestamp, 10)) : new Date(timestamp)
-    return date.toLocaleString(getLocaleTag(locale.value))
-  } catch {
-    return '-'
-  }
-}
-
 const fetchStorageInfo = async () => {
   loading.value = true
   try {
     const res = await adminApi.getSystemInfo()
     if (res.code === 200 && res.data) {
-      storageInfo.version = res.data.filecodebox_version || 'v1.0.0'
+      storageInfo.version = res.data.version || '1.0.0'
     }
 
     // 获取统计数据
@@ -90,7 +78,6 @@ const fetchStorageInfo = async () => {
     if (statsRes.code === 200 && statsRes.data) {
       storageInfo.totalFiles = statsRes.data.total_files || 0
       storageInfo.totalSize = statsRes.data.total_size || 0
-      storageInfo.sysStart = statsRes.data.sys_start || ''
     }
   } catch (error) {
     console.error('Failed to load storage info:', error)

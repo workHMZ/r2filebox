@@ -1,16 +1,18 @@
 export const generateCode = (length: number = 6): string => {
-  // Exclude confusing characters: 0, O, I, l, 1
   const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
   let code = ''
-  
-  // Use crypto for better randomness
-  const randomBytes = new Uint8Array(length)
-  crypto.getRandomValues(randomBytes)
-  
-  for (let i = 0; i < length; i++) {
-    code += chars[randomBytes[i] % chars.length]
+
+  const unbiasedLimit = Math.floor(256 / chars.length) * chars.length
+  while (code.length < length) {
+    const randomBytes = new Uint8Array(Math.max(16, length - code.length))
+    crypto.getRandomValues(randomBytes)
+    for (const value of randomBytes) {
+      if (value >= unbiasedLimit) continue
+      code += chars[value % chars.length]
+      if (code.length === length) break
+    }
   }
-  
+
   return code
 }
 

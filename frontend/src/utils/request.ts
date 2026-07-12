@@ -12,7 +12,7 @@ const instance: AxiosInstance = axios.create({
 instance.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token')
-    if (token) {
+    if (token && isAdminApi(config.url) && config.url !== '/admin/login') {
       config.headers.Authorization = `Bearer ${token}`
     }
     return config
@@ -32,8 +32,11 @@ instance.interceptors.response.use(
       switch (error.response.status) {
         case 401:
           ElMessage.error(t('request.unauthorized'))
-          localStorage.removeItem('token')
-          window.location.href = '/#/admin/login'
+          if (isAdminApi(error.config?.url)) {
+            localStorage.removeItem('token')
+            localStorage.removeItem('userRole')
+            window.location.href = '/#/admin/login'
+          }
           break
         case 403:
           ElMessage.error(t('request.forbidden'))
@@ -54,8 +57,19 @@ instance.interceptors.response.use(
   }
 )
 
-export const request = <T = any>(config: AxiosRequestConfig): Promise<T> => {
-  return instance.request<any, T>(config)
+export const request = <T = unknown>(config: AxiosRequestConfig): Promise<T> => {
+  return instance.request<unknown, T>(config)
+}
+
+function isAdminApi(url: string | undefined): boolean {
+  if (!url) return false
+  try {
+    const parsed = new URL(url, window.location.origin)
+    return parsed.origin === window.location.origin &&
+      (parsed.pathname === '/admin' || parsed.pathname.startsWith('/admin/'))
+  } catch {
+    return false
+  }
 }
 
 export default instance

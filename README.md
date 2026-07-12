@@ -20,12 +20,12 @@ R2FileBox 是一个简单的匿名文本/文件分享工具：访客上传文字
 - 提取码访问，D1 只保存提取码哈希，不保存明文提取码。
 - 文件和大文本存储在 R2，R2 bucket 不需要公开访问。
 - 文件使用 R2 multipart upload，前端按分片上传，支持断点续传。
-- KV 固定窗口限流，覆盖上传、分片上传、访问、下载和后台登录。
+- KV 固定窗口限流覆盖公开接口，后台登录使用 D1 强一致限流。
 - 单管理员后台，无用户注册和平台用户系统。
 - 管理后台可调整上传限制、访问日志、Turnstile、限流等运行配置。
 - 下载使用短期 token，R2 key 和对象地址不会暴露给用户。
 - 定时任务自动清理过期分享和过期上传会话。
-- Workers Cache 已在配置中开启，用于静态资源和可缓存响应。
+- Workers Static Assets 直接提供带内容哈希的前端资源；动态 API 全部禁止缓存。
 
 ### 架构
 
@@ -51,12 +51,13 @@ Cloudflare 资源：
 
 本仓库的 `wrangler.toml` 放在仓库根目录，Cloudflare Deploy Button 能直接读取 D1/R2/KV 绑定并在部署流程中创建或绑定资源。部署时请配置这些 secret：
 
-- `ADMIN_PASSWORD`：管理员登录密码，推荐至少 16 位随机字符串。
+- `ADMIN_PASSWORD`：管理员登录密码，必须至少 16 位，推荐使用随机字符串。
 - `CODE_HASH_PEPPER`：提取码哈希 pepper。
 - `SESSION_SECRET`：后台会话和下载 token 签名密钥。
 - `TURNSTILE_SECRET_KEY`：可选，仅启用 Turnstile 时需要。
 
 高级用法：如果你不想保存明文后台密码 secret，可以改用 `ADMIN_PASSWORD_HASH`。它会优先于 `ADMIN_PASSWORD` 生效。
+管理员用户名默认为 `admin`，可通过 `ADMIN_USERNAME` secret 修改。
 
 如果一键部署页面没有自动填入配置，说明 GitHub 端还不是最新代码，先确认仓库根目录存在 `wrangler.toml` 和 `package.json` 的 `build`/`deploy` 脚本。
 
@@ -79,7 +80,7 @@ npm run deploy:cf
 - 执行 D1 migration。
 - 部署 Worker。
 
-如果你有多个 Cloudflare 账号，先指定账号：
+如果你有多个 Cloudflare 账号，脚本会要求选择；也可以提前指定：
 
 ```bash
 export CLOUDFLARE_ACCOUNT_ID="你的 account id"
@@ -104,7 +105,7 @@ npx wrangler kv namespace create r2filebox-rate-limit
 设置 secret：
 
 ```bash
-printf '%s' 'replace-with-a-strong-admin-password' | npx wrangler secret put ADMIN_PASSWORD
+npx wrangler secret put ADMIN_PASSWORD
 openssl rand -hex 32 | npx wrangler secret put CODE_HASH_PEPPER
 openssl rand -hex 32 | npx wrangler secret put SESSION_SECRET
 ```
@@ -112,8 +113,8 @@ openssl rand -hex 32 | npx wrangler secret put SESSION_SECRET
 如果使用哈希登录，先生成哈希：
 
 ```bash
-npm run hash-password -- 'replace-with-a-strong-admin-password'
-printf '%s' 'pbkdf2$...' | npx wrangler secret put ADMIN_PASSWORD_HASH
+npm run hash-password
+npx wrangler secret put ADMIN_PASSWORD_HASH
 ```
 
 执行迁移并部署：
@@ -130,7 +131,7 @@ npm run deploy
 cp .dev.vars.example .dev.vars
 ```
 
-把 `ADMIN_PASSWORD`、`CODE_HASH_PEPPER` 和 `SESSION_SECRET` 写入 `.dev.vars`，然后运行：
+把 `ADMIN_USERNAME`、`ADMIN_PASSWORD`、`CODE_HASH_PEPPER` 和 `SESSION_SECRET` 写入 `.dev.vars`，然后运行：
 
 ```bash
 npm install
@@ -157,6 +158,10 @@ npm run deploy:dry-run
 - R2 bucket 不要开启 public access，也不要绑定公开自定义域名。
 - 默认关闭详细访问日志，减少 D1 写入。
 - KV 限流是低成本固定窗口限流，不是强一致计数；公开服务建议叠加 Cloudflare WAF 速率限制和 Turnstile。
+- 文本请求体限制为 1MiB；文件分片在流式写入 R2 时按会话声明大小逐字节校验。
+- 文件上传会话和文本分享通过 D1 原子写入共同受总存储上限约束，避免并发请求绕过软限制。
+- 静态页面和 API 都设置了 CSP、禁止嵌入、MIME 嗅探防护和严格缓存策略。
+- 启用 Turnstile 前，需要在后台填写 Site Key，并配置 `TURNSTILE_SECRET_KEY` secret。
 - 不要提交 `.dev.vars`、真实 secret、私钥或 Cloudflare API token。
 - `wrangler.toml` 中的 D1/KV ID 对公开仓库不是密码，但模板仓库应保留占位值，真实 ID 只留在你自己的部署副本里。
 
@@ -185,12 +190,12 @@ This project references the FileCodeBox family of projects, but is an independen
 - Extraction-code access; D1 stores code hashes, not raw codes.
 - Files and large text payloads are stored in R2.
 - Resumable multipart upload backed by R2.
-- KV fixed-window rate limiting for upload, part upload, resolve, download, and auth endpoints.
+- KV fixed-window rate limiting for public endpoints and D1-backed strict throttling for admin login.
 - Single-admin backend; no public user registration.
 - Runtime settings for upload limits, access logs, Turnstile, and rate limits.
 - Short-lived download tokens; R2 keys are never exposed to users.
 - Scheduled cleanup for expired shares and stale upload sessions.
-- Workers Cache enabled in `wrangler.toml`.
+- Workers Static Assets serves fingerprinted frontend assets directly; dynamic API responses are not cached.
 
 ### Deploy From GitHub
 
@@ -198,12 +203,13 @@ Click the **Deploy to Cloudflare** button at the top of this README.
 
 The repository root contains the Worker `wrangler.toml`, so Cloudflare can read the D1, R2, and KV bindings during the Deploy Button flow. Configure these secrets when prompted:
 
-- `ADMIN_PASSWORD`
+- `ADMIN_PASSWORD` (minimum 16 characters)
 - `CODE_HASH_PEPPER`
 - `SESSION_SECRET`
 - `TURNSTILE_SECRET_KEY` if Turnstile is enabled
 
 Advanced users can use `ADMIN_PASSWORD_HASH` instead of `ADMIN_PASSWORD`; the hash takes precedence when both are set.
+The admin username defaults to `admin` and can be changed with the `ADMIN_USERNAME` secret.
 
 ### Deploy From Local CLI
 
@@ -241,6 +247,14 @@ Open `http://localhost:8787`.
 npm run typecheck
 npm run deploy:dry-run
 ```
+
+### Security Notes
+
+- Text request bodies are capped at 1 MiB. File parts are byte-counted while streaming to R2.
+- File upload reservations and text shares use atomic D1 writes to enforce the shared storage cap under concurrency.
+- Static pages and APIs include CSP, frame, MIME-sniffing, referrer, and cache protections.
+- KV counters are intentionally low-cost and eventually consistent. For a public instance, combine them with Cloudflare WAF rate limiting and Turnstile.
+- Enabling Turnstile requires both a Site Key in the admin settings and a `TURNSTILE_SECRET_KEY` secret.
 
 ### Acknowledgements and License
 

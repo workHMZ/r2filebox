@@ -10,16 +10,16 @@
     >
       <div class="upload-content">
         <div class="upload-icon-wrapper">
-          <el-icon size="50"><UploadFilled /></el-icon>
-          </div>
-          <div class="upload-text">
+          <el-icon size="30"><UploadFilled /></el-icon>
+        </div>
+        <div class="upload-text">
           <h3>{{ t('upload.drop.title') }}</h3>
           <p>{{ t('upload.drop.browse') }}</p>
-          </div>
-          <div class="upload-hint">
-            <el-icon><InfoFilled /></el-icon>
+        </div>
+        <div class="upload-hint">
+          <el-icon><InfoFilled /></el-icon>
           {{ t('upload.hint') }}
-          </div>
+        </div>
       </div>
     </el-upload>
 
@@ -41,6 +41,8 @@
             circle 
             size="small"
             class="clear-file-btn"
+            :aria-label="t('common.delete')"
+            :title="t('common.delete')"
             @click.stop="clearFile"
           >
             <el-icon><Close /></el-icon>
@@ -81,12 +83,20 @@
       </div>
     </div>
 
+    <TurnstileWidget
+      v-if="requiresTurnstile && !hasResumableUpload"
+      ref="turnstileRef"
+      :site-key="turnstileSiteKey"
+      action="file-share"
+      @verify="turnstileToken = $event"
+    />
+
     <el-button
       type="primary"
       size="large"
       class="upload-btn"
       :loading="uploading"
-      :disabled="!selectedFile"
+      :disabled="!selectedFile || (requiresTurnstile && !hasResumableUpload && !turnstileToken)"
       @click="handleUpload"
     >
       <template #icon>
@@ -101,7 +111,6 @@
           :percentage="uploadProgress" 
           :stroke-width="6"
           :show-text="true"
-          status="warning"
         />
         <p class="progress-status-text">{{ uploadStatusText }}</p>
       </div>
@@ -110,7 +119,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { shareApi } from '@/api/share'
 import { ElMessage } from 'element-plus'
 import { 
@@ -119,12 +128,15 @@ import {
 } from '@element-plus/icons-vue'
 import type { UploadFile } from 'element-plus'
 import { useI18n } from '@/i18n'
+import { useConfigStore } from '@/stores/config'
+import TurnstileWidget from '@/components/TurnstileWidget.vue'
 
 const emit = defineEmits<{
   success: [result: { code: string; share_url: string; full_share_url: string; qr_code_data: string }]
 }>()
 
 const { t } = useI18n()
+const configStore = useConfigStore()
 
 type UploadedPart = {
   partNumber: number
@@ -151,6 +163,14 @@ const selectedFile = ref<File | null>(null)
 const uploading = ref(false)
 const uploadProgress = ref(0)
 const uploadStatusText = ref('')
+const turnstileToken = ref('')
+const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
+
+const requiresTurnstile = computed(() => configStore.config?.requireTurnstile === true)
+const turnstileSiteKey = computed(() => configStore.config?.turnstileSiteKey || '')
+const hasResumableUpload = computed(() =>
+  selectedFile.value ? Boolean(loadUploadState(selectedFile.value)) : false,
+)
 
 const form = ref({
   expire_value: 1,
@@ -203,12 +223,18 @@ const handleUpload = async () => {
     return
   }
 
+  await configStore.fetchConfig()
+  let state = loadUploadState(file)
+  if (!state && requiresTurnstile.value && !turnstileToken.value) {
+    ElMessage.warning(t('turnstile.required'))
+    return
+  }
+
   uploading.value = true
   uploadProgress.value = 0
   uploadStatusText.value = t('upload.prepare')
 
   try {
-    let state = loadUploadState(file)
     if (state) {
       uploadStatusText.value = t('upload.resume')
     } else {
@@ -216,6 +242,7 @@ const handleUpload = async () => {
         filename: file.name,
         mimeType: file.type || 'application/octet-stream',
         size: file.size,
+        turnstileToken: turnstileToken.value || undefined,
         ...form.value,
       })
 
@@ -268,6 +295,7 @@ const handleUpload = async () => {
     }
 
     removeUploadState(file)
+    turnstileRef.value?.reset()
     uploadProgress.value = 100
     uploadStatusText.value = t('upload.successStatus')
     ElMessage.success(t('upload.done'))
@@ -284,8 +312,9 @@ const handleUpload = async () => {
       uploading.value = false
       uploadProgress.value = 0
     }, 2000)
-  } catch (error: any) {
-    ElMessage.error(error.message || t('upload.failed'))
+  } catch (error: unknown) {
+    turnstileRef.value?.reset()
+    ElMessage.error(error instanceof Error ? error.message : t('upload.failed'))
     uploading.value = false
   }
 }
@@ -347,28 +376,27 @@ const removeUploadState = (file: File) => {
 
 <style scoped>
 .file-upload-container {
-  padding: 10px 0;
+  padding: 0;
 }
 
 .upload-dragger {
-  margin-bottom: 24px;
+  margin-bottom: 22px;
 }
 
 .upload-dragger :deep(.el-upload-dragger) {
   border: 1px dashed var(--border-strong) !important;
-  border-radius: var(--radius-xl) !important;
-  background: #f8fafc !important;
-  backdrop-filter: var(--glass-blur);
-  transition: all 0.4s ease !important;
-  padding: 44px 20px !important;
+  border-radius: var(--radius-lg) !important;
+  background: var(--surface-raised) !important;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease !important;
+  padding: 34px 20px !important;
   position: relative;
   overflow: hidden;
 }
 
 .upload-dragger :deep(.el-upload-dragger:hover) {
   border-color: var(--primary-color) !important;
-  background: #f0fdfa !important;
-  box-shadow: 0 14px 32px rgba(15, 118, 110, 0.1) !important;
+  background: var(--primary-soft) !important;
+  box-shadow: inset 0 0 0 1px var(--primary-border) !important;
 }
 
 .upload-content {
@@ -376,29 +404,19 @@ const removeUploadState = (file: File) => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 9px;
 }
 
 .upload-icon-wrapper {
-  width: 72px;
-  height: 72px;
-  background: #ecfdf5;
-  border: 1px solid #99f6e4;
-  border-radius: var(--radius-xl);
+  width: 56px;
+  height: 56px;
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-lg);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--primary-color);
-  box-shadow: 0 8px 24px rgba(15, 118, 110, 0.12);
-}
-
-@keyframes floatBounce {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-8px);
-  }
 }
 
 .upload-text h3 {
@@ -410,7 +428,7 @@ const removeUploadState = (file: File) => {
 }
 
 .upload-text p {
-  margin: 6px 0 0;
+  margin: 4px 0 0;
   color: var(--glass-text-secondary);
   font-size: 13px;
 }
@@ -427,7 +445,7 @@ const removeUploadState = (file: File) => {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 .selected-file {
@@ -451,7 +469,7 @@ const removeUploadState = (file: File) => {
   align-items: center;
   gap: 16px;
   padding: 16px;
-  background: #f8fafc;
+  background: var(--surface-page);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
 }
@@ -459,9 +477,9 @@ const removeUploadState = (file: File) => {
 .file-icon-box {
   width: 48px;
   height: 48px;
-  border-radius: 12px;
-  background: #ecfdf5;
-  border: 1px solid #99f6e4;
+  border-radius: var(--radius-lg);
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-border);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -503,25 +521,24 @@ const removeUploadState = (file: File) => {
 }
 
 .clear-file-btn {
-  background: rgba(239, 68, 68, 0.15) !important;
-  border: 1px solid rgba(239, 68, 68, 0.3) !important;
-  color: #fca5a5 !important;
+  background: #ffffff !important;
+  border: 1px solid #e7b8b8 !important;
+  color: var(--danger-color) !important;
+  box-shadow: none !important;
 }
 
 .clear-file-btn:hover {
-  background: rgba(239, 68, 68, 0.3) !important;
-  box-shadow: 0 0 10px rgba(239, 68, 68, 0.3) !important;
+  background: #fff1f1 !important;
+  border-color: var(--danger-color) !important;
 }
 
 .upload-settings-panel {
-  margin-bottom: 24px;
-  padding: 20px 24px;
-  background: #ffffff;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+  display: grid;
+  margin-bottom: 22px;
+  padding: 20px 0 0;
+  grid-template-columns: minmax(0, 1.45fr) minmax(180px, 0.55fr);
+  gap: 24px;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .setting-row {
@@ -538,7 +555,7 @@ const removeUploadState = (file: File) => {
   font-weight: 600;
   color: var(--glass-text-regular);
   font-size: 13px;
-  letter-spacing: 0.5px;
+  letter-spacing: 0;
 }
 
 .label-icon {
@@ -560,9 +577,9 @@ const removeUploadState = (file: File) => {
 
 .auth-mode-tag {
   width: fit-content;
-  border-color: #99f6e4;
-  color: #115e59;
-  background: #f0fdfa;
+  border-color: var(--primary-border);
+  color: var(--primary-active);
+  background: var(--primary-soft);
 }
 
 .upload-btn {
@@ -576,7 +593,7 @@ const removeUploadState = (file: File) => {
 .upload-progress-box {
   margin-top: 24px;
   padding: 16px 20px;
-  background: #f8fafc;
+  background: var(--surface-page);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   text-align: left;
@@ -597,5 +614,30 @@ const removeUploadState = (file: File) => {
 .fade-enter-from, .fade-leave-to {
   opacity: 0;
   transform: translateY(5px);
+}
+
+@media (max-width: 640px) {
+  .upload-dragger :deep(.el-upload-dragger) {
+    padding: 28px 14px !important;
+  }
+
+  .upload-settings-panel {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .expire-inputs {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 112px;
+  }
+
+  .number-input,
+  .expire-select {
+    width: 100%;
+  }
+
+  .file-name {
+    max-width: 50vw;
+  }
 }
 </style>

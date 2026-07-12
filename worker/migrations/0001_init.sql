@@ -60,11 +60,9 @@ CREATE TABLE settings (
   updated_at TEXT NOT NULL
 );
 
-CREATE INDEX idx_shares_code_hash ON shares(code_hash);
 CREATE INDEX idx_shares_expire_at ON shares(expire_at);
 CREATE INDEX idx_shares_deleted_at ON shares(deleted_at);
 CREATE INDEX idx_shares_created_at ON shares(created_at);
-CREATE INDEX idx_upload_sessions_share_id ON upload_sessions(share_id);
 CREATE INDEX idx_upload_sessions_expire_at ON upload_sessions(expire_at);
 CREATE INDEX idx_upload_sessions_created_at ON upload_sessions(created_at);
 CREATE INDEX idx_abuse_counters_bucket ON abuse_counters(action, ip_hash, bucket_start);

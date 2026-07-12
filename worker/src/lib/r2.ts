@@ -9,13 +9,6 @@ export class R2Storage {
   }
 
   /**
-   * Upload stream to R2
-   */
-  async uploadStream(key: string, stream: ReadableStream, options?: R2PutOptions): Promise<R2Object> {
-    return await this.bucket.put(key, stream, options)
-  }
-
-  /**
    * Get an object from R2
    */
   async getObject(key: string): Promise<R2ObjectBody | null> {

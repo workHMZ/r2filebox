@@ -54,8 +54,8 @@ async function checkKvRateLimit(
       expirationTtl: ttl,
     })
     return result(false, count + 1, maxCount, windowSeconds, 'kv')
-  } catch (e: any) {
-    const message = String(e?.message || e)
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e)
     if (message.includes('429') || message.toLowerCase().includes('too many')) {
       return result(true, maxCount, maxCount, windowSeconds, 'kv')
     }

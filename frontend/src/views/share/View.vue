@@ -1,22 +1,17 @@
 <template>
   <div class="share-view-container">
-    <!-- 动态背景 -->
-    <div class="bg-decoration">
-      <div class="circle circle1"></div>
-      <div class="circle circle2"></div>
-      <div class="circle circle3"></div>
-    </div>
+    <div class="bg-decoration"></div>
 
-    <!-- 主容器 -->
     <div class="main-wrapper">
+      <div class="page-toolbar">
+        <LanguageSwitch inline />
+      </div>
       <div class="glass-card">
-        <!-- 加载状态 -->
         <div v-if="loading" class="loading-section">
           <el-icon class="loading-icon" :size="60"><Loading /></el-icon>
           <p>{{ t('shareView.loading') }}</p>
         </div>
 
-        <!-- 错误状态 -->
         <div v-else-if="error" class="error-section">
           <el-result icon="error" :title="t('shareView.invalid')" :sub-title="error">
             <template #extra>
@@ -28,49 +23,10 @@
           </el-result>
         </div>
 
-        <!-- 需要密码 -->
-        <div v-else-if="needPassword" class="password-section">
-          <el-result icon="warning" :title="t('shareView.passwordTitle')">
-            <template #sub-title>
-              <span class="password-subtitle">{{ t('shareView.passwordSubtitle') }}</span>
-            </template>
-            <template #extra>
-              <div class="password-input-box">
-                <el-input
-                  v-model="password"
-                  type="password"
-                  :placeholder="t('shareView.passwordPlaceholder')"
-                  show-password
-                  size="large"
-                  @keyup.enter="fetchShareWithPassword"
-                  class="pwd-input"
-                >
-                  <template #prefix>
-                    <el-icon><Lock /></el-icon>
-                  </template>
-                </el-input>
-                <el-button 
-                  type="primary" 
-                  size="large"
-                  @click="fetchShareWithPassword" 
-                  :loading="loading"
-                  class="verify-btn"
-                >
-                  {{ t('shareView.verify') }}
-                </el-button>
-              </div>
-            </template>
-          </el-result>
-        </div>
-
-        <!-- 分享内容 -->
         <div v-else-if="shareData" class="content-section">
-          <!-- 头部 -->
           <div class="share-header">
             <div class="logo-section">
-              <div class="logo-icon">
-                <el-icon size="28"><Box /></el-icon>
-              </div>
+              <AppLogo />
               <div class="logo-text">
                 <h1>{{ t('shareView.header') }}</h1>
                 <p>{{ t('shareView.codePrefix') }}: <span class="badge-code">{{ shareCode }}</span></p>
@@ -84,8 +40,7 @@
 
           <el-divider class="glass-divider" />
 
-          <!-- 文本分享 -->
-          <div v-if="shareData.text" class="text-share-content">
+          <div v-if="shareData.type === 'text'" class="text-share-content">
             <div class="content-label">
               <el-icon><Document /></el-icon>
               <span>{{ t('shareView.textContent') }}</span>
@@ -101,22 +56,18 @@
             </div>
           </div>
 
-          <!-- 文件分享 -->
-          <div v-else-if="shareData.name || shareData.file_name" class="file-share-content">
+          <div v-else class="file-share-content">
             <div class="file-card">
               <div class="file-icon">
                 <div class="icon-glow-ring">
-                  <el-icon :size="54"><Folder /></el-icon>
+                  <el-icon :size="36"><Folder /></el-icon>
                 </div>
               </div>
               <div class="file-info">
-                <h3 class="file-name">{{ shareData.name || shareData.file_name }}</h3>
+                <h3 class="file-name">{{ shareData.file_name || shareData.filename }}</h3>
                 <div class="file-meta">
                   <el-tag type="info" size="large" class="meta-tag">
-                    {{ formatFileSize(shareData.size || shareData.file_size || 0) }}
-                  </el-tag>
-                  <el-tag v-if="shareData.upload_type" type="success" size="large" class="meta-tag">
-                    {{ shareData.upload_type === 'text' ? t('shareView.fileTypeText') : t('shareView.fileTypeBinary') }}
+                    {{ formatFileSize(shareData.size ?? shareData.file_size) }}
                   </el-tag>
                 </div>
               </div>
@@ -127,7 +78,6 @@
             </div>
           </div>
 
-          <!-- 分享信息 -->
           <div class="share-info">
             <div class="info-table-card">
               <div class="info-row">
@@ -137,8 +87,8 @@
               <div class="info-row">
                 <span class="info-key">{{ t('shareView.type') }}</span>
                 <span class="info-val">
-                  <span class="type-indicator" :class="shareData.text ? 'text' : 'file'">
-                    {{ shareData.text ? t('shareView.textType') : t('shareView.fileType') }}
+                  <span class="type-indicator" :class="shareData.type">
+                    {{ shareData.type === 'text' ? t('shareView.textType') : t('shareView.fileType') }}
                   </span>
                 </span>
               </div>
@@ -159,10 +109,13 @@ import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { 
-  Box, HomeFilled, Document, Folder, Download, CopyDocument, Loading, Lock
+  HomeFilled, Document, Folder, Download, CopyDocument, Loading
 } from '@element-plus/icons-vue'
 import { shareApi } from '@/api/share'
+import type { ResolvedShare } from '@/api/share'
 import { useI18n } from '@/i18n'
+import AppLogo from '@/components/AppLogo.vue'
+import LanguageSwitch from '@/components/LanguageSwitch.vue'
 
 const route = useRoute()
 const { t } = useI18n()
@@ -170,9 +123,7 @@ const { t } = useI18n()
 const shareCode = ref('')
 const loading = ref(false)
 const error = ref('')
-const needPassword = ref(false)
-const password = ref('')
-const shareData = ref<any>(null)
+const shareData = ref<ResolvedShare | null>(null)
 
 const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 B'
@@ -192,34 +143,23 @@ const formatTime = (timeStr: string) => {
   }
 }
 
-const fetchShare = async (pwd?: string) => {
+const fetchShare = async () => {
   loading.value = true
   error.value = ''
-  needPassword.value = false
 
   try {
-    const res = await shareApi.getShare(shareCode.value, pwd)
+    const res = await shareApi.getShare(shareCode.value)
 
     if (res.code === 200) {
       shareData.value = res.data
-    } else if (res.code === 403 || res.data?.has_password) {
-      needPassword.value = true
     } else {
       error.value = res.message || t('shareView.notFound')
     }
-  } catch (err: any) {
-    error.value = err.message || t('shareView.networkFailed')
+  } catch (err: unknown) {
+    error.value = err instanceof Error ? err.message : t('shareView.networkFailed')
   } finally {
     loading.value = false
   }
-}
-
-const fetchShareWithPassword = () => {
-  if (!password.value.trim()) {
-    ElMessage.warning(t('shareView.passwordPlaceholder'))
-    return
-  }
-  fetchShare(password.value)
 }
 
 const copyText = async () => {
@@ -236,11 +176,12 @@ const copyText = async () => {
 const downloadFile = () => {
   if (!shareCode.value) return
   
-  let url = shareData.value?.download_url || `/share/download?code=${shareCode.value}`
-  if (!shareData.value?.download_url && password.value) {
-    url += `&password=${encodeURIComponent(password.value)}`
+  const url = shareData.value?.download_url
+  if (!url) {
+    ElMessage.error(t('shareView.networkFailed'))
+    return
   }
-  window.open(url, '_blank')
+  window.open(url, '_blank', 'noopener,noreferrer')
 }
 
 onMounted(() => {
@@ -265,17 +206,27 @@ onMounted(() => {
 .main-wrapper {
   position: relative;
   z-index: 1;
-  max-width: 750px;
+  width: min(100% - 40px, 760px);
   margin: 0 auto;
-  padding: 60px 20px;
+  padding: 28px 0;
   min-height: 100vh;
   display: flex;
+  flex-direction: column;
+  gap: 14px;
   align-items: center;
   justify-content: center;
 }
 
+.page-toolbar {
+  display: flex;
+  width: 100%;
+  justify-content: flex-end;
+}
+
 .glass-card {
   width: 100%;
+  padding: 32px;
+  border-top: 3px solid var(--primary-color);
 }
 
 /* 加载状态 */
@@ -301,45 +252,12 @@ onMounted(() => {
   font-weight: 500;
 }
 
-/* 密码保护 */
-.password-section {
-  padding: 10px;
-}
-
-.password-subtitle {
-  color: var(--glass-text-secondary);
-  font-size: 14px;
-}
-
-.password-input-box {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  width: 100%;
-  max-width: 360px;
-  margin: 0 auto;
-}
-
-.pwd-input {
-  width: 100%;
-}
-
-.pwd-input :deep(.el-input__wrapper) {
-  padding: 12px 18px !important;
-  font-size: 15px !important;
-}
-
-.verify-btn {
-  width: 100%;
-}
-
 /* 头部 */
 .share-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 22px;
   gap: 16px;
 }
 
@@ -349,22 +267,10 @@ onMounted(() => {
   gap: 16px;
 }
 
-.logo-icon {
-  width: 48px;
-  height: 48px;
-  background: var(--primary-gradient);
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #ffffff;
-  box-shadow: 0 8px 20px rgba(15, 118, 110, 0.18);
-}
-
 .logo-text h1 {
   margin: 0;
-  font-size: 22px;
-  font-weight: 800;
+  font-size: 20px;
+  font-weight: 760;
   color: var(--text-primary);
 }
 
@@ -376,10 +282,10 @@ onMounted(() => {
 }
 
 .badge-code {
-  color: #115e59;
+  color: var(--primary-active);
   font-weight: 700;
-  background: #f0fdfa;
-  border: 1px solid #99f6e4;
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-border);
   padding: 1px 6px;
   border-radius: 4px;
 }
@@ -388,14 +294,14 @@ onMounted(() => {
   background: #ffffff !important;
   border: 1px solid var(--border-subtle) !important;
   color: var(--text-primary) !important;
-  border-radius: 12px;
-  transition: all 0.3s;
+  border-radius: var(--radius-md);
+  transition: border-color 0.18s ease, color 0.18s ease;
 }
 
 .home-btn:hover {
-  background: #f8fafc !important;
-  border-color: var(--border-strong) !important;
-  transform: translateY(-2px);
+  background: var(--surface-page) !important;
+  border-color: var(--primary-color) !important;
+  color: var(--primary-color) !important;
 }
 
 .glass-divider {
@@ -419,7 +325,7 @@ onMounted(() => {
 }
 
 .text-box {
-  background: #f8fafc;
+  background: var(--surface-page);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   padding: 24px;
@@ -448,8 +354,8 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 44px 20px;
-  background: #f8fafc;
+  padding: 34px 20px;
+  background: var(--surface-page);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xl);
   margin-bottom: 28px;
@@ -460,21 +366,15 @@ onMounted(() => {
 }
 
 .icon-glow-ring {
-  width: 96px;
-  height: 96px;
-  background: #ecfdf5;
-  border: 1px solid #99f6e4;
-  border-radius: var(--radius-xl);
+  width: 72px;
+  height: 72px;
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-lg);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--primary-color);
-  box-shadow: 0 10px 30px rgba(15, 118, 110, 0.1);
-}
-
-@keyframes floatBounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
 }
 
 .file-info {
@@ -485,8 +385,8 @@ onMounted(() => {
 
 .file-name {
   margin: 0 0 12px;
-  font-size: 20px;
-  font-weight: 800;
+  font-size: 19px;
+  font-weight: 760;
   color: var(--text-primary);
   line-height: 1.4;
   word-break: break-all;
@@ -547,9 +447,9 @@ onMounted(() => {
 }
 
 .code-tag {
-  background: #f0fdfa !important;
-  border-color: #99f6e4 !important;
-  color: #115e59 !important;
+  background: var(--primary-soft) !important;
+  border-color: var(--primary-border) !important;
+  color: var(--primary-active) !important;
 }
 
 .type-indicator {
@@ -557,14 +457,15 @@ onMounted(() => {
 }
 
 .expire-time {
-  color: #b45309;
+  color: var(--warning-color);
   font-family: var(--font-accent);
 }
 
 /* 响应式 */
 @media (max-width: 768px) {
   .main-wrapper {
-    padding: 30px 12px;
+    width: min(100% - 24px, 760px);
+    padding: 16px 0;
   }
 
   .glass-card {
@@ -582,7 +483,7 @@ onMounted(() => {
   }
 
   .file-card {
-    padding: 32px 16px;
+    padding: 28px 16px;
   }
   
   .info-row {

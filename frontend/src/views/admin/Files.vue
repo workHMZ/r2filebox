@@ -52,7 +52,7 @@
         <el-table-column :label="t('files.uploadType')" width="120" align="center">
           <template #default="{ row }">
             <el-tag :type="row.text ? 'success' : 'primary'" effect="light">
-              <el-icon><component :is="row.text ? 'Document' : 'Picture'" /></el-icon>
+              <el-icon><component :is="row.text ? Document : Picture" /></el-icon>
               {{ row.text ? t('common.text') : t('common.file') }}
             </el-tag>
           </template>
@@ -87,7 +87,6 @@
               type="danger"
               size="small"
               @click="deleteFile(row)"
-              round
             >
               <el-icon><Delete /></el-icon>
               {{ t('common.delete') }}
@@ -114,16 +113,18 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import type { Component } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { 
   Refresh, Document, Picture, Download, Delete,
   VideoPlay, Headset, Reading
 } from '@element-plus/icons-vue'
 import { adminApi } from '@/api/admin'
+import type { AdminShare } from '@/api/admin'
 import { getLocaleTag, useI18n } from '@/i18n'
 
 const loading = ref(false)
-const filesList = ref<any[]>([])
+const filesList = ref<AdminShare[]>([])
 const { t, locale } = useI18n()
 
 const pagination = reactive({
@@ -158,11 +159,11 @@ const isExpired = (dateStr: string): boolean => {
   }
 }
 
-const getFileIcon = (row: any) => {
+const getFileIcon = (row: AdminShare) => {
   const filename = row.uuid_file_name || ''
   const ext = filename.split('.').pop()?.toLowerCase()
   
-  const iconMap: Record<string, any> = {
+  const iconMap: Record<string, Component> = {
     'jpg': Picture,
     'jpeg': Picture,
     'png': Picture,
@@ -176,7 +177,7 @@ const getFileIcon = (row: any) => {
   return iconMap[ext || ''] || Document
 }
 
-const getFileIconColor = (row: any) => {
+const getFileIconColor = (row: AdminShare) => {
   const filename = row.uuid_file_name || ''
   const ext = filename.split('.').pop()?.toLowerCase()
   
@@ -203,19 +204,8 @@ const fetchFiles = async () => {
     })
     
     if (res.code === 200) {
-      if (res.data && Array.isArray(res.data.list)) {
-        filesList.value = res.data.list
-        pagination.total = res.data.total || res.data.list.length
-      } else if (res.data && Array.isArray(res.data.items)) {
-        filesList.value = res.data.items
-        pagination.total = res.data.total || res.data.items.length
-      } else if (Array.isArray(res.data)) {
-        filesList.value = res.data
-        pagination.total = res.data.length
-      } else {
-        filesList.value = []
-        pagination.total = 0
-      }
+      filesList.value = res.data.list
+      pagination.total = res.data.total
     }
   } catch (error) {
     console.error('Failed to load files:', error)
@@ -225,7 +215,7 @@ const fetchFiles = async () => {
   }
 }
 
-const deleteFile = async (file: any) => {
+const deleteFile = async (file: AdminShare) => {
   try {
     await ElMessageBox.confirm(
       t('files.deleteConfirm', { name: file.uuid_file_name || file.code }),
@@ -237,15 +227,14 @@ const deleteFile = async (file: any) => {
       }
     )
     
-    // 使用 code 而不是 ID
-    const res = await adminApi.deleteFileByCode(file.code)
+    const res = await adminApi.deleteFile(file.id)
     if (res.code === 200) {
       ElMessage.success(t('files.deleteDone'))
       await fetchFiles()
     } else {
       ElMessage.error(res.message || t('files.deleteFailed'))
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error !== 'cancel') {
       ElMessage.error(t('files.deleteFailed'))
     }
@@ -268,13 +257,13 @@ onMounted(() => {
 
 <style scoped>
 .files-container {
-  animation: fadeIn 0.5s ease-in;
+  animation: fadeIn 0.28s ease-out;
 }
 
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -283,8 +272,7 @@ onMounted(() => {
 }
 
 .files-card {
-  border-radius: 16px;
-  border: none;
+  overflow: hidden;
 }
 
 .card-header {
@@ -295,28 +283,29 @@ onMounted(() => {
 
 .header-title h2 {
   margin: 0 0 4px;
-  font-size: 24px;
-  font-weight: 600;
-  color: #1a1f3a;
+  font-size: 22px;
+  font-weight: 740;
+  color: var(--text-primary);
 }
 
 .header-title p {
   margin: 0;
   font-size: 14px;
-  color: #909399;
+  color: var(--text-secondary);
 }
 
 .refresh-btn {
-  border-radius: 10px;
+  min-height: 38px;
+  border-radius: var(--radius-md);
   background: var(--primary-color);
   border: 1px solid var(--primary-color);
   color: #ffffff;
-  transition: all 0.3s;
+  transition: background 0.18s ease, border-color 0.18s ease;
 }
 
 .refresh-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 18px rgba(15, 118, 110, 0.18);
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
 }
 
 .files-table {
@@ -330,10 +319,11 @@ onMounted(() => {
 }
 
 .file-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 12px;
-  background: #f5f7fa;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-page);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -345,7 +335,7 @@ onMounted(() => {
 
 .file-name {
   font-weight: 600;
-  color: #1a1f3a;
+  color: var(--text-primary);
   margin-bottom: 6px;
   font-size: 15px;
 }
@@ -353,11 +343,6 @@ onMounted(() => {
 .file-code {
   display: flex;
   gap: 8px;
-}
-
-.anonymous {
-  color: #909399;
-  font-size: 14px;
 }
 
 .download-count {
@@ -370,11 +355,11 @@ onMounted(() => {
 }
 
 .expire-time {
-  color: #606266;
+  color: var(--text-regular);
 }
 
 .expire-time.expired {
-  color: #f56c6c;
+  color: var(--danger-color);
   font-weight: 600;
 }
 
@@ -385,14 +370,14 @@ onMounted(() => {
 }
 
 :deep(.el-table) {
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 
 :deep(.el-table th) {
-  background: #fafafa !important;
+  background: var(--surface-page) !important;
   font-weight: 600;
-  color: #1a1f3a;
+  color: var(--text-primary);
 }
 
 :deep(.el-table td) {
@@ -400,6 +385,29 @@ onMounted(() => {
 }
 
 :deep(.el-table--striped .el-table__body tr.el-table__row--striped td) {
-  background: #fafafa;
+  background: var(--surface-page);
+}
+
+@media (max-width: 720px) {
+  .card-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .refresh-btn {
+    align-self: stretch;
+  }
+
+  .pagination-wrapper {
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .pagination-wrapper :deep(.el-pagination__jump),
+  .pagination-wrapper :deep(.el-pagination__sizes) {
+    display: none;
+  }
 }
 </style>

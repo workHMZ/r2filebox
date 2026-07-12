@@ -1,6 +1,6 @@
 <template>
   <div class="transfer-logs">
-    <el-card v-loading="loading">
+    <el-card v-loading="loading" shadow="never">
       <template #header>
         <div class="card-header">
           <h3>{{ t('logs.title') }}</h3>
@@ -12,25 +12,25 @@
 
       <!-- 统计卡片 -->
       <el-row :gutter="20" class="stats-row">
-        <el-col :span="6">
+        <el-col :xs="12" :md="6">
           <div class="stat-item">
             <div class="stat-value">{{ stats.totalOperations }}</div>
             <div class="stat-label">{{ t('logs.totalOperations') }}</div>
           </div>
         </el-col>
-        <el-col :span="6">
+        <el-col :xs="12" :md="6">
           <div class="stat-item upload">
             <div class="stat-value">{{ stats.uploads }}</div>
             <div class="stat-label">{{ t('logs.uploads') }}</div>
           </div>
         </el-col>
-        <el-col :span="6">
+        <el-col :xs="12" :md="6">
           <div class="stat-item download">
             <div class="stat-value">{{ stats.downloads }}</div>
             <div class="stat-label">{{ t('logs.downloads') }}</div>
           </div>
         </el-col>
-        <el-col :span="6">
+        <el-col :xs="12" :md="6">
           <div class="stat-item">
             <div class="stat-value">{{ stats.activeUsers }}</div>
             <div class="stat-label">{{ t('logs.activeClients') }}</div>
@@ -90,10 +90,11 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { adminApi } from '@/api/admin'
+import type { TransferLog } from '@/api/admin'
 import { getLocaleTag, useI18n } from '@/i18n'
 
 const loading = ref(false)
-const logsList = ref<any[]>([])
+const logsList = ref<TransferLog[]>([])
 const { t, locale } = useI18n()
 
 const pagination = reactive({
@@ -155,21 +156,12 @@ const fetchLogs = async () => {
     })
 
     if (res.code === 200) {
-      if (res.data && Array.isArray(res.data.logs)) {
-        logsList.value = res.data.logs
-        pagination.total = res.data.pagination?.total || res.data.logs.length
-        if (res.data.stats) {
-          stats.totalOperations = res.data.stats.total || 0
-          stats.uploads = res.data.stats.uploads || 0
-          stats.downloads = res.data.stats.downloads || 0
-          stats.activeUsers = res.data.stats.activeUsers || 0
-        }
-      } else if (Array.isArray(res.data)) {
-        logsList.value = res.data
-        pagination.total = res.data.length
-      } else {
-        logsList.value = []
-      }
+      logsList.value = res.data.logs
+      pagination.total = res.data.pagination.total
+      stats.totalOperations = res.data.stats.total
+      stats.uploads = res.data.stats.uploads
+      stats.downloads = res.data.stats.downloads
+      stats.activeUsers = res.data.stats.activeUsers
     }
   } catch (error) {
     console.error('Failed to load transfer logs:', error)
@@ -212,23 +204,22 @@ onMounted(() => {
 
 .stats-row {
   margin-bottom: 20px;
+  padding: 4px 0 18px;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .stat-item {
   text-align: center;
-  padding: 20px;
-  background: #f5f7fa;
-  border-radius: 8px;
+  padding: 14px;
+  border-right: 1px solid var(--border-subtle);
 }
 
 .stat-item.upload {
-  background: #f0fdfa;
-  color: #115e59;
+  color: var(--primary-color);
 }
 
 .stat-item.download {
-  background: #eff6ff;
-  color: #1d4ed8;
+  color: var(--info-color);
 }
 
 .stat-value {
@@ -246,5 +237,32 @@ onMounted(() => {
   margin-top: 20px;
   display: flex;
   justify-content: center;
+}
+
+@media (min-width: 768px) {
+  .stats-row .el-col:last-child .stat-item {
+    border-right: 0;
+  }
+}
+
+@media (max-width: 767px) {
+  .stat-item {
+    border-right: 0;
+  }
+
+  .stats-row .el-col:nth-child(odd) .stat-item {
+    border-right: 1px solid var(--border-subtle);
+  }
+
+  .pagination-container {
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .pagination-container :deep(.el-pagination__jump),
+  .pagination-container :deep(.el-pagination__sizes) {
+    display: none;
+  }
 }
 </style>

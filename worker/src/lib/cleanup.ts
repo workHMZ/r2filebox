@@ -5,7 +5,14 @@ export async function cleanupExpiredShares(
   db: D1Database, 
   bucket: R2Bucket, 
   batchSize: number = 100
-): Promise<{ processed: number, deletedR2: number, abortedUploads: number }> {
+): Promise<{
+  processed: number
+  deletedR2: number
+  abortedUploads: number
+  purgedCounters: number
+  purgedAuditLogs: number
+  purgedShares: number
+}> {
   const dbClient = new DB(db)
   const r2Client = new R2Storage(bucket)
   
@@ -36,12 +43,22 @@ export async function cleanupExpiredShares(
     try {
       const multipart = r2Client.resumeMultipartUpload(session.r2_key, session.upload_id)
       await multipart.abort()
-      await dbClient.deleteUploadSession(session.id)
       abortedUploads++
     } catch (e) {
       console.error(`Failed to cleanup upload session ${session.id}:`, e)
     }
+    try {
+      await dbClient.deleteUploadSession(session.id)
+    } catch (e) {
+      console.error(`Failed to delete upload session ${session.id}:`, e)
+    }
   }
+
+  const [purgedCounters, purgedAuditLogs, purgedShares] = await Promise.all([
+    dbClient.purgeAbuseCounters(new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()),
+    dbClient.purgeAuditLogs(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()),
+    dbClient.purgeDeletedShares(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()),
+  ])
   
-  return { processed, deletedR2, abortedUploads }
+  return { processed, deletedR2, abortedUploads, purgedCounters, purgedAuditLogs, purgedShares }
 }

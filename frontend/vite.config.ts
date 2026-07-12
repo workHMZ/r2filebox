@@ -17,15 +17,7 @@ export default defineConfig({
         target: 'http://localhost:8787',
         changeOrigin: true,
       },
-      '/user': {
-        target: 'http://localhost:8787',
-        changeOrigin: true,
-      },
       '/admin': {
-        target: 'http://localhost:8787',
-        changeOrigin: true,
-      },
-      '/chunk': {
         target: 'http://localhost:8787',
         changeOrigin: true,
       },
@@ -34,10 +26,6 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/health': {
-        target: 'http://localhost:8787',
-        changeOrigin: true,
-      },
-      '/setup': {
         target: 'http://localhost:8787',
         changeOrigin: true,
       },

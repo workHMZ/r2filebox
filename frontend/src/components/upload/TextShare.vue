@@ -45,12 +45,20 @@
       </div>
     </div>
 
+    <TurnstileWidget
+      v-if="requiresTurnstile"
+      ref="turnstileRef"
+      :site-key="turnstileSiteKey"
+      action="text-share"
+      @verify="turnstileToken = $event"
+    />
+
     <el-button
       type="primary"
       size="large"
       class="share-btn"
       :loading="sharing"
-      :disabled="!textContent.trim()"
+      :disabled="!textContent.trim() || (requiresTurnstile && !turnstileToken)"
       @click="handleShare"
     >
       <template #icon>
@@ -62,20 +70,28 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { shareApi } from '@/api/share'
 import { ElMessage } from 'element-plus'
 import { Clock, Lock, Promotion } from '@element-plus/icons-vue'
 import { useI18n } from '@/i18n'
+import { useConfigStore } from '@/stores/config'
+import TurnstileWidget from '@/components/TurnstileWidget.vue'
 
 const emit = defineEmits<{
   success: [result: { code: string; share_url: string; full_share_url: string; qr_code_data: string }]
 }>()
 
 const { t } = useI18n()
+const configStore = useConfigStore()
 
 const textContent = ref('')
 const sharing = ref(false)
+const turnstileToken = ref('')
+const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
+
+const requiresTurnstile = computed(() => configStore.config?.requireTurnstile === true)
+const turnstileSiteKey = computed(() => configStore.config?.turnstileSiteKey || '')
 
 const form = ref({
   expire_value: 1,
@@ -88,11 +104,18 @@ const handleShare = async () => {
     return
   }
 
+  await configStore.fetchConfig()
+  if (requiresTurnstile.value && !turnstileToken.value) {
+    ElMessage.warning(t('turnstile.required'))
+    return
+  }
+
   sharing.value = true
 
   try {
     const res = await shareApi.shareText({
       text: textContent.value,
+      turnstileToken: turnstileToken.value || undefined,
       ...form.value,
     })
 
@@ -111,9 +134,10 @@ const handleShare = async () => {
     } else {
       throw new Error(res.message || t('text.failed'))
     }
-  } catch (error: any) {
-    ElMessage.error(error.message || t('text.failed'))
+  } catch (error: unknown) {
+    ElMessage.error(error instanceof Error ? error.message : t('text.failed'))
   } finally {
+    turnstileRef.value?.reset()
     sharing.value = false
   }
 }
@@ -121,27 +145,27 @@ const handleShare = async () => {
 
 <style scoped>
 .text-share-container {
-  padding: 10px 0;
+  padding: 0;
 }
 
 .text-input-area {
-  margin-bottom: 24px;
+  margin-bottom: 22px;
 }
 
 .text-area :deep(.el-textarea__inner) {
+  min-height: 230px !important;
+  padding: 16px !important;
   font-size: 15px !important;
-  line-height: 1.6 !important;
+  line-height: 1.7 !important;
 }
 
 .upload-settings-panel {
-  margin-bottom: 24px;
-  padding: 20px 24px;
-  background: #ffffff;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+  display: grid;
+  margin-bottom: 22px;
+  padding: 20px 0 0;
+  grid-template-columns: minmax(0, 1.45fr) minmax(180px, 0.55fr);
+  gap: 24px;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .setting-row {
@@ -158,7 +182,7 @@ const handleShare = async () => {
   font-weight: 600;
   color: var(--glass-text-regular);
   font-size: 13px;
-  letter-spacing: 0.5px;
+  letter-spacing: 0;
 }
 
 .label-icon {
@@ -180,9 +204,9 @@ const handleShare = async () => {
 
 .auth-mode-tag {
   width: fit-content;
-  border-color: #99f6e4;
-  color: #115e59;
-  background: #f0fdfa;
+  border-color: var(--primary-border);
+  color: var(--primary-active);
+  background: var(--primary-soft);
 }
 
 .share-btn {
@@ -191,5 +215,22 @@ const handleShare = async () => {
   font-size: 16px;
   font-weight: 700;
   border-radius: var(--radius-md);
+}
+
+@media (max-width: 640px) {
+  .upload-settings-panel {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .expire-inputs {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 112px;
+  }
+
+  .number-input,
+  .expire-select {
+    width: 100%;
+  }
 }
 </style>

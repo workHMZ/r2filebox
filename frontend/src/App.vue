@@ -1,16 +1,13 @@
 <template>
-  <LanguageSwitch v-if="!isAdminRoute" />
   <router-view />
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { watch } from 'vue'
 import { useRoute } from 'vue-router'
-import LanguageSwitch from '@/components/LanguageSwitch.vue'
 import { locale, t } from '@/i18n'
 
 const route = useRoute()
-const isAdminRoute = computed(() => route.path.startsWith('/admin'))
 
 watch(
   [() => route.meta.titleKey, locale],

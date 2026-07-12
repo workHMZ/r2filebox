@@ -25,7 +25,7 @@
   "cloudflare": {
     "bindings": {
       "ADMIN_PASSWORD": {
-        "description": "Required for one-click deploy. Set a strong admin password. Advanced users can instead set `ADMIN_PASSWORD_HASH` manually after deployment."
+        "description": "Required for one-click deploy. Use at least 16 characters. Advanced users can instead set `ADMIN_PASSWORD_HASH` manually after deployment."
       },
       "CODE_HASH_PEPPER": {
         "description": "Required. Random secret used to hash share extraction codes. Generate with `openssl rand -hex 32`."

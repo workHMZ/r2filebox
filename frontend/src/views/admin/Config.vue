@@ -1,6 +1,6 @@
 <template>
   <div class="system-config">
-    <el-card v-loading="loading">
+    <el-card v-loading="loading" shadow="never">
       <template #header>
         <div class="card-header">
           <h3>{{ t('config.title') }}</h3>
@@ -13,7 +13,7 @@
       <el-tabs v-model="activeTab">
         <!-- 基础配置 -->
         <el-tab-pane :label="t('config.basic')" name="basic">
-          <el-form :model="configForm.base" label-width="140px" style="max-width: 600px">
+          <el-form :model="configForm.base" label-width="140px" class="config-form">
             <el-form-item :label="t('config.siteName')">
               <el-input v-model="configForm.base.name" />
             </el-form-item>
@@ -34,7 +34,7 @@
 
         <!-- 上传配置 -->
         <el-tab-pane :label="t('config.upload')" name="upload">
-          <el-form :model="configForm.transfer.upload" label-width="140px" style="max-width: 600px">
+          <el-form :model="configForm.transfer.upload" label-width="140px" class="config-form">
             <el-form-item :label="t('config.openUpload')">
               <el-switch v-model="configForm.transfer.upload.openupload" :active-value="1" :inactive-value="0" />
             </el-form-item>
@@ -46,7 +46,7 @@
                 :step="1048576"
                 controls-position="right"
               />
-              <span style="margin-left: 10px; color: #909399">{{ t('config.uploadSizeHint') }}</span>
+              <span class="field-hint">{{ t('config.uploadSizeHint') }}</span>
             </el-form-item>
 
             <el-form-item :label="t('config.chunkUpload')">
@@ -56,14 +56,14 @@
         </el-tab-pane>
 
         <el-tab-pane :label="t('config.security')" name="security">
-          <el-form :model="configForm.security" label-width="160px" style="max-width: 720px">
+          <el-form :model="configForm.security" label-width="160px" class="config-form config-form--wide">
             <el-form-item :label="t('config.auditLog')">
               <el-switch v-model="configForm.security.enable_audit_log" :active-value="1" :inactive-value="0" />
             </el-form-item>
 
             <el-form-item :label="t('config.accessLog')">
               <el-switch v-model="configForm.security.enable_access_log" :active-value="1" :inactive-value="0" />
-              <span style="margin-left: 10px; color: #909399">{{ t('config.accessLogHint') }}</span>
+              <span class="field-hint">{{ t('config.accessLogHint') }}</span>
             </el-form-item>
 
             <el-form-item :label="t('config.kvRateLimit')">
@@ -213,5 +213,49 @@ onMounted(() => {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
+}
+
+.config-form {
+  max-width: 620px;
+  padding-top: 12px;
+}
+
+.config-form--wide {
+  max-width: 740px;
+}
+
+.field-hint {
+  margin-left: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .card-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .config-form :deep(.el-form-item) {
+    display: block;
+  }
+
+  .config-form :deep(.el-form-item__label) {
+    width: auto !important;
+    height: auto;
+    margin-bottom: 7px;
+    line-height: 1.4;
+  }
+
+  .config-form :deep(.el-form-item__content) {
+    margin-left: 0 !important;
+  }
+
+  .field-hint {
+    display: block;
+    width: 100%;
+    margin: 7px 0 0;
+  }
 }
 </style>
