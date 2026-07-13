@@ -263,7 +263,9 @@ app.get('/admin/maintenance/system-info', (c) => {
     runtime: 'Cloudflare Workers',
     platform: 'V8 isolate',
     storage: 'D1 + R2 + KV',
-    version: '1.0.0',
+    version: c.env.APP_VERSION,
+    r2_bucket_name: c.env.R2_BUCKET_NAME || null,
+    d1_database_name: c.env.D1_DATABASE_NAME || null,
   }))
 })
 
@@ -369,8 +371,6 @@ function adminConfigDto(config: RuntimeConfig) {
     base: {
       name: config.appName,
       description: config.appDescription,
-      port: 0,
-      production: true,
     },
     storage: {
       type: 'r2',
@@ -383,8 +383,6 @@ function adminConfigDto(config: RuntimeConfig) {
       upload: {
         openupload: config.enablePublicUpload ? 1 : 0,
         uploadsize: config.maxUploadBytes,
-        enablechunk: 1,
-        chunksize: 8 * 1024 * 1024,
       },
       rate_limit: {
         enable_kv: config.enableKvRateLimit ? 1 : 0,

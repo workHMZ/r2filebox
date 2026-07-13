@@ -183,6 +183,8 @@ function patchWranglerNames(bucketName, dbName) {
   const toml = readFileSync(wranglerTomlPath, 'utf8')
     .replace(/bucket_name = ".*"/, `bucket_name = "${bucketName}"`)
     .replace(/database_name = ".*"/, `database_name = "${dbName}"`)
+    .replace(/^R2_BUCKET_NAME = ".*"$/m, `R2_BUCKET_NAME = "${bucketName}"`)
+    .replace(/^D1_DATABASE_NAME = ".*"$/m, `D1_DATABASE_NAME = "${dbName}"`)
   writeFileSync(wranglerTomlPath, toml)
 }
 

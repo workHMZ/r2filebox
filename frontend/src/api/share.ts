@@ -52,7 +52,6 @@ export const shareApi = {
     return request<ApiResponse<{
       code: string
       uploadToken: string
-      uploadId: string
       partSize: number
       partCount: number
       share_url: string
@@ -103,16 +102,6 @@ export const shareApi = {
       data: {
         code: data.code,
         parts: data.parts,
-      },
-    })
-  },
-
-  abortFileUpload: (uploadToken: string) => {
-    return request<ApiResponse<void>>({
-      url: '/api/share/file/abort',
-      method: 'POST',
-      headers: {
-        'X-Upload-Token': uploadToken,
       },
     })
   },

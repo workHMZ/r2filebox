@@ -660,11 +660,10 @@ function getCookieValue(cookieHeader: string, name: string): string | null {
 async function verifyTurnstileIfRequired(
   c: Context<{ Bindings: Bindings }>,
   body: Record<string, unknown>,
-  config?: RuntimeConfig,
-  expectedAction?: string,
+  config: RuntimeConfig,
+  expectedAction: string,
 ): Promise<boolean> {
-  const runtimeConfig = config || await getRuntimeConfig(c.env)
-  if (!runtimeConfig.requireTurnstile) return true
+  if (!config.requireTurnstile) return true
 
   const token = body.turnstileToken || body.turnstile_token || body['cf-turnstile-response']
   if (!token || typeof token !== 'string' || token.length > 2048) return false
@@ -686,7 +685,7 @@ async function verifyTurnstileIfRequired(
     const result = await response.json<{ success?: boolean, hostname?: string, action?: string }>()
     if (result.success !== true || !result.hostname) return false
     if (!sameTurnstileHostname(result.hostname, new URL(c.req.url).hostname)) return false
-    if (expectedAction && result.action !== expectedAction) return false
+    if (result.action !== expectedAction) return false
     return true
   } catch (e) {
     console.error('Turnstile verification failed:', e)

@@ -24,14 +24,6 @@
             <el-form-item :label="t('config.siteDescription')">
               <el-input v-model="configForm.base.description" type="textarea" :rows="3" />
             </el-form-item>
-
-            <el-form-item :label="t('config.port')">
-              <el-input-number v-model="configForm.base.port" :min="1" :max="65535" />
-            </el-form-item>
-
-            <el-form-item :label="t('config.production')">
-              <el-switch v-model="configForm.base.production" />
-            </el-form-item>
           </el-form>
         </el-tab-pane>
 
@@ -43,20 +35,21 @@
             </el-form-item>
 
             <el-form-item :label="t('config.uploadSize')">
-              <el-input-number
-                v-describedby="'config-upload-size-hint'"
-                v-model="configForm.transfer.upload.uploadsize"
-                :min="1048576"
-                :step="1048576"
-                controls-position="right"
-              />
-              <span id="config-upload-size-hint" class="field-hint">
-                {{ t('config.uploadSizeHint') }}
-              </span>
-            </el-form-item>
-
-            <el-form-item :label="t('config.chunkUpload')">
-              <el-switch v-model="configForm.transfer.upload.enablechunk" :active-value="1" :inactive-value="0" />
+              <div class="upload-size-field">
+                <div class="upload-size-input">
+                  <el-input-number
+                    v-describedby="'config-upload-size-hint'"
+                    v-model="uploadSizeMb"
+                    :min="1"
+                    :step="1"
+                    controls-position="right"
+                  />
+                  <span class="upload-size-unit">MB</span>
+                </div>
+                <span id="config-upload-size-hint" class="field-hint">
+                  {{ t('config.uploadSizeHint') }}
+                </span>
+              </div>
             </el-form-item>
           </el-form>
         </el-tab-pane>
@@ -118,7 +111,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted } from 'vue'
 import type { Directive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { adminApi } from '@/api/admin'
@@ -130,6 +123,7 @@ const saving = ref(false)
 const activeTab = ref('basic')
 const configStore = useConfigStore()
 const { t } = useI18n()
+const BYTES_PER_MB = 1024 * 1024
 
 const connectDescription = (root: HTMLElement, descriptionId: string) => {
   const control = root.matches('input, textarea, select, [role="switch"], [role="spinbutton"]')
@@ -156,17 +150,12 @@ const vDescribedby: Directive<HTMLElement, string> = {
 const configForm = reactive({
   base: {
     name: '',
-    description: '',
-    port: 12346,
-    host: '0.0.0.0',
-    production: false
+    description: ''
   },
   transfer: {
     upload: {
       openupload: 1,
-      uploadsize: 10485760,
-      enablechunk: 1,
-      chunksize: 2097152
+      uploadsize: 10485760
     },
     rate_limit: {
       enable_kv: 1,
@@ -182,6 +171,14 @@ const configForm = reactive({
     enable_access_log: 0,
     require_turnstile: 0,
     turnstile_site_key: ''
+  }
+})
+
+const uploadSizeMb = computed({
+  get: () => Math.round((configForm.transfer.upload.uploadsize / BYTES_PER_MB) * 100) / 100,
+  set: (value: number | undefined) => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return
+    configForm.transfer.upload.uploadsize = Math.round(value * BYTES_PER_MB)
   }
 })
 
@@ -266,6 +263,35 @@ onMounted(() => {
   font-size: 12px;
 }
 
+.upload-size-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.upload-size-input {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.upload-size-input :deep(.el-input-number) {
+  width: 180px;
+}
+
+.upload-size-unit {
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.upload-size-field .field-hint {
+  margin-left: 0;
+  line-height: 1.5;
+}
+
 @media (max-width: 640px) {
   .card-header {
     align-items: stretch;
@@ -292,6 +318,14 @@ onMounted(() => {
     display: block;
     width: 100%;
     margin: 7px 0 0;
+  }
+
+  .upload-size-field {
+    width: 100%;
+  }
+
+  .upload-size-field .field-hint {
+    margin-top: 0;
   }
 }
 </style>

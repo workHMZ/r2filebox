@@ -15,13 +15,19 @@
         <el-descriptions-item :label="t('storage.dataLayer')">
           D1 / R2 / Workers
         </el-descriptions-item>
+        <el-descriptions-item :label="t('storage.r2BucketName')">
+          <code class="resource-name">{{ storageInfo.r2BucketName }}</code>
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('storage.d1DatabaseName')">
+          <code class="resource-name">{{ storageInfo.d1DatabaseName }}</code>
+        </el-descriptions-item>
         <el-descriptions-item :label="t('storage.totalFiles')">
           {{ storageInfo.totalFiles }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('storage.totalSize')">
           {{ formatFileSize(storageInfo.totalSize) }}
         </el-descriptions-item>
-        <el-descriptions-item :label="t('common.status')">
+        <el-descriptions-item :label="t('common.status')" :span="isMobile ? 1 : 2">
           <el-tag type="success">{{ t('storage.statusOk') }}</el-tag>
         </el-descriptions-item>
       </el-descriptions>
@@ -38,7 +44,6 @@
             <li>{{ t('storage.tipR2') }}</li>
             <li>{{ t('storage.tipD1') }}</li>
             <li>{{ t('storage.tipWorker') }}</li>
-            <li>{{ t('storage.version') }}：{{ storageInfo.version }}</li>
           </ul>
         </el-alert>
       </div>
@@ -59,7 +64,8 @@ const isMobile = useMediaQuery('(max-width: 720px)')
 const storageInfo = reactive({
   totalFiles: 0,
   totalSize: 0,
-  version: ''
+  r2BucketName: '-',
+  d1DatabaseName: '-'
 })
 
 const formatFileSize = (bytes: number): string => {
@@ -75,7 +81,8 @@ const fetchStorageInfo = async () => {
   try {
     const res = await adminApi.getSystemInfo()
     if (res.code === 200 && res.data) {
-      storageInfo.version = res.data.version || '1.0.0'
+      storageInfo.r2BucketName = res.data.r2_bucket_name || '-'
+      storageInfo.d1DatabaseName = res.data.d1_database_name || '-'
     }
 
     // 获取统计数据
@@ -113,5 +120,10 @@ onMounted(() => {
 .storage-tips li {
   margin: 5px 0;
   line-height: 1.8;
+}
+
+.resource-name {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
 }
 </style>

@@ -162,7 +162,6 @@ type UploadedPart = {
 type UploadState = {
   fingerprint: string
   uploadToken: string
-  uploadId: string
   code: string
   partSize: number
   partCount: number
@@ -284,7 +283,6 @@ const handleUpload = async () => {
       state = {
         fingerprint: getFileFingerprint(file),
         uploadToken: initRes.data.uploadToken,
-        uploadId: initRes.data.uploadId,
         code: initRes.data.code,
         partSize: initRes.data.partSize,
         partCount: initRes.data.partCount,

@@ -8,6 +8,9 @@ export interface Env {
   
   APP_NAME?: string
   APP_DESCRIPTION?: string
+  APP_VERSION: string
+  R2_BUCKET_NAME: string
+  D1_DATABASE_NAME: string
   CODE_LENGTH: string
   MAX_UPLOAD_BYTES: string
   MAX_TOTAL_STORAGE_BYTES: string
@@ -79,15 +82,6 @@ export interface UploadSession {
 export interface Setting {
   key: string
   value: string
-  updated_at: string
-}
-
-export interface AbuseCounter {
-  key: string
-  action: string
-  ip_hash: string
-  bucket_start: string
-  count: number
   updated_at: string
 }
 

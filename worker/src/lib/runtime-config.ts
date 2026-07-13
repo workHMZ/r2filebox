@@ -33,11 +33,14 @@ export async function getRuntimeConfig(env: Env, db = new DB(env.DB)): Promise<R
 }
 
 export function buildRuntimeConfig(env: Env, settings: Record<string, string> = {}): RuntimeConfig {
+  const maxUploadLimit = getMaxUploadBytes(env)
+  const minUploadBytes = Math.min(1024 * 1024, maxUploadLimit)
+
   return {
     appName: stringValue(settings.APP_NAME, env.APP_NAME, 'R2FileBox'),
     appDescription: stringValue(settings.APP_DESCRIPTION, env.APP_DESCRIPTION, 'Private code-based file sharing on Cloudflare'),
     codeLength: clamp(numberValue(settings.CODE_LENGTH, env.CODE_LENGTH, 12), 6, 64),
-    maxUploadBytes: Math.min(numberValue(settings.MAX_UPLOAD_BYTES, env.MAX_UPLOAD_BYTES, getMaxUploadBytes(env)), getMaxUploadBytes(env)),
+    maxUploadBytes: clamp(numberValue(settings.MAX_UPLOAD_BYTES, env.MAX_UPLOAD_BYTES, maxUploadLimit), minUploadBytes, maxUploadLimit),
     maxTotalStorageBytes: Math.max(numberValue(settings.MAX_TOTAL_STORAGE_BYTES, env.MAX_TOTAL_STORAGE_BYTES, 8 * 1024 * 1024 * 1024), 1),
     defaultExpireHours: clamp(numberValue(settings.DEFAULT_EXPIRE_HOURS, env.DEFAULT_EXPIRE_HOURS, 24), 1, 8760),
     maxExpireHours: clamp(numberValue(settings.MAX_EXPIRE_HOURS, env.MAX_EXPIRE_HOURS, 168), 1, 8760),

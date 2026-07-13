@@ -14,7 +14,6 @@ export interface PublicConfig {
   initialized?: boolean
   enableFileShare?: boolean
   enableTextShare?: boolean
-  enablePublicUpload?: boolean
   requireTurnstile?: boolean
   turnstileSiteKey?: string
 }

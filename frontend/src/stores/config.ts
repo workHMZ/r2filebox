@@ -49,8 +49,6 @@ export const useConfigStore = defineStore('config', () => {
 
   return {
     config,
-    loading,
-    loaded,
     fetchConfig,
     refreshConfig,
     siteName,

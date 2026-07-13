@@ -42,8 +42,6 @@ export interface AdminConfig {
   base: {
     name: string
     description: string
-    port: number
-    production: boolean
   }
   storage: {
     type: string
@@ -56,8 +54,6 @@ export interface AdminConfig {
     upload: {
       openupload: number
       uploadsize: number
-      enablechunk: number
-      chunksize: number
     }
     rate_limit: {
       enable_kv: number
@@ -74,6 +70,15 @@ export interface AdminConfig {
     require_turnstile: number
     turnstile_site_key: string
   }
+}
+
+export interface AdminSystemInfo {
+  runtime: string
+  platform: string
+  storage: string
+  version: string
+  r2_bucket_name: string | null
+  d1_database_name: string | null
 }
 
 export interface TransferLog {
@@ -174,12 +179,7 @@ export const adminApi = {
     params,
   }),
 
-  getSystemInfo: () => request<ApiResponse<{
-    runtime: string
-    platform: string
-    storage: string
-    version: string
-  }>>({
+  getSystemInfo: () => request<ApiResponse<AdminSystemInfo>>({
     url: '/admin/maintenance/system-info',
     method: 'GET',
   }),

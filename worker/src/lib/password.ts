@@ -3,39 +3,6 @@ const HASH_BYTES = 32
 const SALT_BYTES = 16
 
 /**
- * Hash a password using PBKDF2-HMAC-SHA256
- * Format: pbkdf2$iterations$saltBase64$hashBase64
- */
-export async function hashPassword(password: string): Promise<string> {
-  const salt = new Uint8Array(SALT_BYTES)
-  crypto.getRandomValues(salt)
-
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(password),
-    { name: 'PBKDF2' },
-    false,
-    ['deriveBits']
-  )
-
-  const hashBuffer = await crypto.subtle.deriveBits(
-    {
-      name: 'PBKDF2',
-      salt: salt,
-      iterations: ITERATIONS,
-      hash: 'SHA-256'
-    },
-    keyMaterial,
-    HASH_BYTES * 8
-  )
-
-  const saltBase64 = btoa(String.fromCharCode(...salt))
-  const hashBase64 = btoa(String.fromCharCode(...new Uint8Array(hashBuffer)))
-
-  return `pbkdf2$${ITERATIONS}$${saltBase64}$${hashBase64}`
-}
-
-/**
  * Verify a password against a hash
  */
 export async function verifyPassword(password: string, hashString: string): Promise<boolean> {

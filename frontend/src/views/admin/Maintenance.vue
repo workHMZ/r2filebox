@@ -53,7 +53,7 @@
       </el-col>
     </el-row>
 
-    <el-row :gutter="20" :aria-busy="loadingSystemInfo">
+    <el-row :gutter="20" class="maintenance-grid" :aria-busy="loadingSystemInfo">
       <el-col :xs="24" :lg="12">
         <el-card class="tool-card" shadow="never">
           <template #header>
@@ -254,6 +254,17 @@ onMounted(() => {
 
 .tool-card {
   margin-bottom: 20px;
+}
+
+@media (min-width: 1200px) {
+  .maintenance-grid > .el-col {
+    display: flex;
+  }
+
+  .maintenance-grid .tool-card {
+    flex: 1;
+    width: 100%;
+  }
 }
 
 .card-header {
