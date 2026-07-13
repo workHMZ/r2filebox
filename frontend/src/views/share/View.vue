@@ -1,18 +1,27 @@
 <template>
   <div class="share-view-container">
-    <div class="bg-decoration"></div>
+    <div class="bg-decoration" aria-hidden="true"></div>
 
-    <div class="main-wrapper">
+    <main
+      id="main-content"
+      class="main-wrapper"
+      tabindex="-1"
+      :aria-label="t('nav.share')"
+    >
       <div class="page-toolbar">
         <LanguageSwitch inline />
       </div>
       <div class="glass-card">
+        <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
+          {{ shareStatus }}
+        </p>
+
         <div v-if="loading" class="loading-section">
-          <el-icon class="loading-icon" :size="60"><Loading /></el-icon>
+          <el-icon class="loading-icon" :size="60" aria-hidden="true"><Loading /></el-icon>
           <p>{{ t('shareView.loading') }}</p>
         </div>
 
-        <div v-else-if="error" class="error-section">
+        <div v-else-if="error" class="error-section" role="alert">
           <el-result icon="error" :title="t('shareView.invalid')" :sub-title="error">
             <template #extra>
               <el-button type="primary" @click="$router.push('/')">
@@ -100,12 +109,12 @@
           </div>
         </div>
       </div>
-    </div>
+    </main>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { 
@@ -124,6 +133,11 @@ const shareCode = ref('')
 const loading = ref(false)
 const error = ref('')
 const shareData = ref<ResolvedShare | null>(null)
+const shareStatus = computed(() => {
+  if (loading.value) return t('shareView.loading')
+  if (shareData.value) return t('a11y.shareLoaded')
+  return ''
+})
 
 const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 B'

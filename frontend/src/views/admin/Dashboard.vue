@@ -1,6 +1,9 @@
 <template>
   <div class="dashboard-container">
-    <div class="stats-grid">
+    <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
+      {{ loading ? t('common.loading') : '' }}
+    </p>
+    <div class="stats-grid" :aria-busy="loading">
       <div class="stat-card stat-card--teal">
         <div class="stat-icon"><el-icon><Monitor /></el-icon></div>
         <div class="stat-content">
@@ -50,7 +53,7 @@
       </div>
     </div>
 
-    <el-row :gutter="24" class="charts-row">
+    <el-row :gutter="24" class="charts-row" :aria-busy="loading">
       <el-col :xs="24" :lg="14">
         <el-card class="chart-card" shadow="never">
           <template #header>
@@ -60,7 +63,28 @@
             </div>
           </template>
           <div class="chart-container">
-            <Line v-if="trendData.labels.length" :data="trendData" :options="trendOptions" />
+            <template v-if="trendAccessibleData.length">
+              <div class="visual-chart" aria-hidden="true">
+                <Line :data="trendData" :options="trendOptions" />
+              </div>
+              <div class="sr-only">
+                <table>
+                  <caption>{{ t('dashboard.uploadTrend') }}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">{{ t('a11y.period') }}</th>
+                      <th scope="col">{{ t('dashboard.uploads') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="item in trendAccessibleData" :key="item.date">
+                      <td><time :datetime="item.date">{{ formatChartDate(item.date) }}</time></td>
+                      <td>{{ item.uploads }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
             <el-empty v-else :description="t('dashboard.noTrend')" />
           </div>
         </el-card>
@@ -75,14 +99,35 @@
             </div>
           </template>
           <div class="chart-container doughnut-container">
-            <Doughnut v-if="typeData.labels.length" :data="typeData" :options="typeOptions" />
+            <template v-if="typeAccessibleData.length">
+              <div class="visual-chart" aria-hidden="true">
+                <Doughnut :data="typeData" :options="typeOptions" />
+              </div>
+              <div class="sr-only">
+                <table>
+                  <caption>{{ t('dashboard.fileTypes') }}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">{{ t('a11y.category') }}</th>
+                      <th scope="col">{{ t('a11y.count') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="item in typeAccessibleData" :key="item.label">
+                      <td>{{ item.label }}</td>
+                      <td>{{ item.count }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
             <el-empty v-else :description="t('dashboard.noTypes')" />
           </div>
         </el-card>
       </el-col>
     </el-row>
 
-    <el-row :gutter="24" class="recent-row">
+    <el-row :gutter="24" class="recent-row" :aria-busy="loading">
       <el-col :span="24">
         <el-card class="recent-card" shadow="never">
           <template #header>
@@ -101,6 +146,9 @@
             :data="recentFiles" 
             size="small"
             v-loading="loading"
+            :aria-busy="loading"
+            table-layout="auto"
+            :scrollbar-tabindex="0"
             :header-cell-style="{ background: 'transparent', fontWeight: '600' }"
           >
             <el-table-column prop="filename" :label="t('dashboard.fileName')" show-overflow-tooltip />
@@ -124,7 +172,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import { 
   Folder, Coin, TrendCharts, ArrowRight, Document, Monitor, Delete 
 } from '@element-plus/icons-vue'
@@ -185,6 +233,19 @@ interface RecentFile {
 }
 
 const recentFiles = ref<RecentFile[]>([])
+
+interface TrendDataPoint {
+  date: string
+  uploads: number
+}
+
+interface TypeDataPoint {
+  label: string
+  count: number
+}
+
+const trendAccessibleData = ref<TrendDataPoint[]>([])
+const typeAccessibleData = ref<TypeDataPoint[]>([])
 
 // Chart Data
 const trendData = reactive({
@@ -280,6 +341,21 @@ const formatDate = (dateStr: string): string => {
   }
 }
 
+const formatChartDate = (dateStr: string): string => {
+  if (!dateStr) return '-'
+  try {
+    const [year, month, day] = dateStr.split('-').map(Number)
+    if (!year || !month || !day) return dateStr
+    return new Date(year, month - 1, day).toLocaleDateString(getLocaleTag(locale.value), {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    })
+  } catch {
+    return dateStr
+  }
+}
+
 const animateNumber = (key: keyof typeof animatedStats, target: number) => {
   const duration = 1000
   const steps = 60
@@ -329,20 +405,32 @@ const fetchCharts = async () => {
     // Trend
     const trendRes = await adminApi.getUploadTrend(7)
     if (trendRes.code === 200 && trendRes.data) {
-      trendData.labels = trendRes.data.map((item) => item.date.substring(5))
-      trendData.datasets[0]!.data = trendRes.data.map((item) => item.uploads)
+      trendAccessibleData.value = trendRes.data.map((item) => ({
+        date: item.date,
+        uploads: item.uploads
+      }))
+      trendData.labels = trendAccessibleData.value.map((item) => item.date.substring(5))
+      trendData.datasets[0]!.data = trendAccessibleData.value.map((item) => item.uploads)
     }
 
     // Type
     const typeRes = await adminApi.getFileTypeDistribution()
     if (typeRes.code === 200 && typeRes.data) {
-      typeData.labels = typeRes.data.map((item) => item.mime_type)
-      typeData.datasets[0]!.data = typeRes.data.map((item) => item.count)
+      typeAccessibleData.value = typeRes.data.map((item) => ({
+        label: item.mime_type || t('common.unknown'),
+        count: item.count
+      }))
+      typeData.labels = typeAccessibleData.value.map((item) => item.label)
+      typeData.datasets[0]!.data = typeAccessibleData.value.map((item) => item.count)
     }
   } catch (error) {
     console.error('获取图表数据失败:', error)
   }
 }
+
+watch(locale, () => {
+  trendData.datasets[0]!.label = t('dashboard.uploads')
+})
 
 const fetchRecentFiles = async () => {
   try {
@@ -479,6 +567,23 @@ onMounted(async () => {
   position: relative;
   height: 280px;
   width: 100%;
+}
+
+.visual-chart {
+  width: 100%;
+  height: 100%;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .doughnut-container {

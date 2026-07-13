@@ -29,10 +29,12 @@
   --surface-raised: #fbfcfd;
   --border-subtle: #dce4e8;
   --border-strong: #bcc9cf;
+  --control-border: #87979f;
+  --control-border-hover: #647580;
   --text-primary: #182229;
   --text-regular: #34434d;
-  --text-secondary: #647580;
-  --text-muted: #8b9aa3;
+  --text-secondary: #5f7079;
+  --text-muted: #5f7079;
 
   --glass-bg: var(--surface-card);
   --glass-bg-hover: var(--surface-card);
@@ -89,6 +91,40 @@ a {
   text-decoration: none;
 }
 
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.skip-link {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 10000;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--text-primary);
+  color: #ffffff;
+  font-weight: 700;
+  transform: translateY(calc(-100% - 24px));
+  transition: transform 0.18s ease;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+#main-content:focus:not(:focus-visible) {
+  outline: none;
+}
+
 .bg-decoration {
   position: fixed;
   inset: 0;
@@ -123,7 +159,7 @@ a {
 .el-textarea__inner,
 .el-select__wrapper {
   background: #ffffff !important;
-  border: 1px solid var(--border-subtle) !important;
+  border: 1px solid var(--control-border) !important;
   border-radius: var(--radius-md) !important;
   box-shadow: none !important;
   color: var(--text-primary) !important;
@@ -142,7 +178,7 @@ a {
   }
 
   &:hover {
-    border-color: var(--border-strong) !important;
+    border-color: var(--control-border-hover) !important;
   }
 
   &.is-focus,
@@ -152,6 +188,10 @@ a {
     border-color: var(--primary-color) !important;
     box-shadow: 0 0 0 3px var(--primary-soft) !important;
   }
+}
+
+.el-input__inner:focus-visible {
+  outline: none;
 }
 
 .el-textarea__inner {
@@ -220,7 +260,7 @@ a {
 
   &.el-button--default {
     background: #ffffff !important;
-    border: 1px solid var(--border-subtle) !important;
+    border: 1px solid var(--control-border) !important;
     color: var(--text-primary) !important;
 
     &:hover:not(.is-disabled),
@@ -406,14 +446,16 @@ a {
 
 .el-switch {
   --el-switch-on-color: var(--primary-color);
-  --el-switch-off-color: #aebbc2;
+  --el-switch-off-color: var(--text-secondary);
 }
 
 .el-button:focus-visible,
+button:focus-visible,
 a:focus-visible,
-[role='button']:focus-visible {
-  outline: 3px solid rgba(8, 111, 104, 0.2);
-  outline-offset: 2px;
+[role='button']:focus-visible,
+.el-scrollbar__wrap[tabindex='0']:focus-visible {
+  outline: 3px solid var(--primary-color);
+  outline-offset: 3px;
 }
 
 .el-overlay {
@@ -462,7 +504,7 @@ a:focus-visible,
   display: flex !important;
   overflow: hidden;
   background: #ffffff !important;
-  border: 1px solid var(--border-subtle) !important;
+  border: 1px solid var(--control-border) !important;
   border-radius: var(--radius-md) !important;
 
   .el-input__wrapper {
@@ -478,7 +520,7 @@ a:focus-visible,
     margin: 0 !important;
     background: transparent !important;
     border: none !important;
-    border-left: 1px solid var(--border-subtle) !important;
+    border-left: 1px solid var(--control-border) !important;
     border-radius: 0 !important;
     box-shadow: none !important;
 
@@ -588,5 +630,15 @@ a:focus-visible,
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .el-button:focus-visible,
+  button:focus-visible,
+  a:focus-visible,
+  [role='button']:focus-visible,
+  .el-scrollbar__wrap[tabindex='0']:focus-visible {
+    outline-color: Highlight;
   }
 }

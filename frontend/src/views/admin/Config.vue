@@ -1,10 +1,13 @@
 <template>
   <div class="system-config">
-    <el-card v-loading="loading" shadow="never">
+    <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
+      {{ loading || saving ? t('common.loading') : '' }}
+    </p>
+    <el-card v-loading="loading" :aria-busy="loading || saving" shadow="never">
       <template #header>
         <div class="card-header">
           <h3>{{ t('config.title') }}</h3>
-          <el-button type="primary" @click="saveConfig" :loading="saving">
+          <el-button type="primary" @click="saveConfig" :loading="saving" :aria-busy="saving">
             {{ t('config.save') }}
           </el-button>
         </div>
@@ -41,12 +44,15 @@
 
             <el-form-item :label="t('config.uploadSize')">
               <el-input-number
+                v-describedby="'config-upload-size-hint'"
                 v-model="configForm.transfer.upload.uploadsize"
                 :min="1048576"
                 :step="1048576"
                 controls-position="right"
               />
-              <span class="field-hint">{{ t('config.uploadSizeHint') }}</span>
+              <span id="config-upload-size-hint" class="field-hint">
+                {{ t('config.uploadSizeHint') }}
+              </span>
             </el-form-item>
 
             <el-form-item :label="t('config.chunkUpload')">
@@ -62,8 +68,15 @@
             </el-form-item>
 
             <el-form-item :label="t('config.accessLog')">
-              <el-switch v-model="configForm.security.enable_access_log" :active-value="1" :inactive-value="0" />
-              <span class="field-hint">{{ t('config.accessLogHint') }}</span>
+              <el-switch
+                v-describedby="'config-access-log-hint'"
+                v-model="configForm.security.enable_access_log"
+                :active-value="1"
+                :inactive-value="0"
+              />
+              <span id="config-access-log-hint" class="field-hint">
+                {{ t('config.accessLogHint') }}
+              </span>
             </el-form-item>
 
             <el-form-item :label="t('config.kvRateLimit')">
@@ -106,6 +119,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import type { Directive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { adminApi } from '@/api/admin'
 import { useConfigStore } from '@/stores/config'
@@ -116,6 +130,28 @@ const saving = ref(false)
 const activeTab = ref('basic')
 const configStore = useConfigStore()
 const { t } = useI18n()
+
+const connectDescription = (root: HTMLElement, descriptionId: string) => {
+  const control = root.matches('input, textarea, select, [role="switch"], [role="spinbutton"]')
+    ? root
+    : root.querySelector<HTMLElement>('input, textarea, select, [role="switch"], [role="spinbutton"]')
+  if (!control) return
+
+  const descriptionIds = new Set(
+    (control.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean)
+  )
+  descriptionIds.add(descriptionId)
+  control.setAttribute('aria-describedby', Array.from(descriptionIds).join(' '))
+}
+
+const vDescribedby: Directive<HTMLElement, string> = {
+  mounted(root, binding) {
+    connectDescription(root, binding.value)
+  },
+  updated(root, binding) {
+    connectDescription(root, binding.value)
+  }
+}
 
 const configForm = reactive({
   base: {

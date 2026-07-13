@@ -1,7 +1,9 @@
 <template>
-  <div class="text-share-container">
+  <form class="text-share-container" @submit.prevent="handleShare">
     <div class="text-input-area">
+      <label class="sr-only" for="text-share-content">{{ t('a11y.textContent') }}</label>
       <el-input
+        id="text-share-content"
         v-model="textContent"
         type="textarea"
         :rows="8"
@@ -14,20 +16,25 @@
     </div>
 
     <div class="upload-settings-panel">
-      <div class="setting-row">
-        <label class="setting-title">
-          <el-icon class="label-icon"><Clock /></el-icon>
+      <div class="setting-row" role="group" aria-labelledby="text-expire-label">
+        <div id="text-expire-label" class="setting-title">
+          <el-icon class="label-icon" aria-hidden="true"><Clock /></el-icon>
           {{ t('upload.expire') }}
-        </label>
+        </div>
         <div class="expire-inputs">
           <el-input-number 
             v-model="form.expire_value" 
             :min="1"
             :max="999"
+            :aria-label="t('a11y.expireValue')"
             controls-position="right"
             class="number-input"
           />
-          <el-select v-model="form.expire_style" class="expire-select">
+          <el-select
+            v-model="form.expire_style"
+            :aria-label="t('a11y.expireUnit')"
+            class="expire-select"
+          >
             <el-option :label="t('expire.minute')" value="minute" />
             <el-option :label="t('expire.hour')" value="hour" />
             <el-option :label="t('expire.day')" value="day" />
@@ -36,11 +43,11 @@
         </div>
       </div>
 
-      <div class="setting-row">
-        <label class="setting-title">
-          <el-icon class="label-icon"><Lock /></el-icon>
+      <div class="setting-row" role="group" aria-labelledby="text-access-label">
+        <div id="text-access-label" class="setting-title">
+          <el-icon class="label-icon" aria-hidden="true"><Lock /></el-icon>
           {{ t('upload.access') }}
-        </label>
+        </div>
         <el-tag type="info" effect="plain" class="auth-mode-tag">{{ t('upload.codeAccess') }}</el-tag>
       </div>
     </div>
@@ -56,17 +63,19 @@
     <el-button
       type="primary"
       size="large"
+      native-type="submit"
       class="share-btn"
       :loading="sharing"
+      :aria-busy="sharing"
       :disabled="!textContent.trim() || (requiresTurnstile && !turnstileToken)"
-      @click="handleShare"
     >
       <template #icon>
-        <el-icon v-if="!sharing"><Promotion /></el-icon>
+        <el-icon v-if="!sharing" aria-hidden="true"><Promotion /></el-icon>
       </template>
       {{ sharing ? t('text.sharing') : t('text.start') }}
     </el-button>
-  </div>
+    <p v-if="sharing" class="sr-only" role="status" aria-live="polite">{{ t('text.sharing') }}</p>
+  </form>
 </template>
 
 <script setup lang="ts">
@@ -146,6 +155,18 @@ const handleShare = async () => {
 <style scoped>
 .text-share-container {
   padding: 0;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .text-input-area {

@@ -1,6 +1,9 @@
 <template>
   <div class="maintenance-tools">
-    <el-row :gutter="20" class="status-row">
+    <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
+      {{ loadingSystemInfo ? t('common.loading') : '' }}
+    </p>
+    <el-row :gutter="20" class="status-row" :aria-busy="loadingSystemInfo">
       <el-col :xs="12" :md="6">
         <el-card class="status-card" shadow="never">
           <div class="status-item">
@@ -50,7 +53,7 @@
       </el-col>
     </el-row>
 
-    <el-row :gutter="20">
+    <el-row :gutter="20" :aria-busy="loadingSystemInfo">
       <el-col :xs="24" :lg="12">
         <el-card class="tool-card" shadow="never">
           <template #header>
@@ -70,6 +73,7 @@
                 type="danger"
                 @click="cleanExpiredFiles"
                 :loading="cleaningExpired"
+                :aria-busy="cleaningExpired"
               >
                 {{ t('common.execute') }}
               </el-button>
@@ -119,6 +123,7 @@ import { adminApi } from '@/api/admin'
 import { useI18n } from '@/i18n'
 
 const cleaningExpired = ref(false)
+const loadingSystemInfo = ref(false)
 const { t } = useI18n()
 
 const systemInfo = reactive({
@@ -168,6 +173,7 @@ const cleanExpiredFiles = async () => {
 }
 
 const fetchSystemInfo = async () => {
+  loadingSystemInfo.value = true
   try {
     // 获取系统信息
     const infoRes = await adminApi.getSystemInfo()
@@ -186,6 +192,8 @@ const fetchSystemInfo = async () => {
     }
   } catch (error) {
     console.error('Failed to load system info:', error)
+  } finally {
+    loadingSystemInfo.value = false
   }
 }
 

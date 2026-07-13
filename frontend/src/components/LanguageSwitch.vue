@@ -1,7 +1,14 @@
 <template>
   <div :class="['language-switch', { inline }]">
     <el-icon class="language-icon" aria-hidden="true"><Guide /></el-icon>
-    <el-select v-model="selectedLocale" size="small" class="language-select">
+    <label class="sr-only" :for="selectId">{{ t('a11y.language') }}</label>
+    <el-select
+      :id="selectId"
+      v-model="selectedLocale"
+      :aria-label="t('a11y.language')"
+      size="small"
+      class="language-select"
+    >
       <el-option
         v-for="option in languageOptions"
         :key="option.value"
@@ -13,13 +20,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, useId } from 'vue'
 import { Guide } from '@element-plus/icons-vue'
-import { locale, languageOptions, setLocale, type Locale } from '@/i18n'
+import { locale, languageOptions, setLocale, useI18n, type Locale } from '@/i18n'
 
 defineProps<{
   inline?: boolean
 }>()
+
+const { t } = useI18n()
+const selectId = useId()
 
 const selectedLocale = computed({
   get: () => locale.value,
@@ -34,19 +44,31 @@ const selectedLocale = computed({
   align-items: center;
   gap: 4px;
   padding-left: 10px;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-md);
   background: #ffffff;
   color: var(--text-secondary);
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
-.language-switch:hover,
-.language-switch:focus-within {
-  border-color: var(--border-strong);
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.language-switch:hover {
+  border-color: var(--control-border-hover);
 }
 
 .language-switch:focus-within {
+  border-color: var(--primary-color);
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
 

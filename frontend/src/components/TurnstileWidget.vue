@@ -1,7 +1,8 @@
 <template>
-  <div class="turnstile-field">
+  <div class="turnstile-field" role="group" :aria-label="t('a11y.turnstileChallenge')">
     <div ref="containerRef" class="turnstile-container"></div>
     <p v-if="loadError || !siteKey" class="turnstile-error" role="alert">{{ t('turnstile.loadFailed') }}</p>
+    <p class="sr-only" role="status" aria-live="polite" aria-atomic="true">{{ statusMessage }}</p>
   </div>
 </template>
 
@@ -35,10 +36,16 @@ const { t } = useI18n()
 const containerRef = ref<HTMLElement | null>(null)
 const widgetId = ref<string | null>(null)
 const loadError = ref(false)
+const statusMessage = ref('')
 
 const renderWidget = async () => {
-  if (!props.siteKey || !containerRef.value) return
+  if (!props.siteKey) {
+    statusMessage.value = ''
+    return
+  }
+  if (!containerRef.value) return
   loadError.value = false
+  statusMessage.value = t('a11y.turnstileLoading')
 
   try {
     await loadTurnstile()
@@ -51,19 +58,31 @@ const renderWidget = async () => {
       action: props.action,
       language: locale.value === 'zh' ? 'zh-CN' : locale.value === 'ja' ? 'ja' : 'en',
       theme: 'light',
-      callback: (token: string) => emit('verify', token),
-      'expired-callback': () => emit('verify', ''),
-      'error-callback': () => emit('verify', ''),
+      callback: (token: string) => {
+        statusMessage.value = t('a11y.turnstileVerified')
+        emit('verify', token)
+      },
+      'expired-callback': () => {
+        statusMessage.value = t('a11y.turnstileExpired')
+        emit('verify', '')
+      },
+      'error-callback': () => {
+        statusMessage.value = t('a11y.turnstileVerificationFailed')
+        emit('verify', '')
+      },
     })
+    statusMessage.value = ''
   } catch (error) {
     console.error('Turnstile widget failed to load:', error)
     loadError.value = true
+    statusMessage.value = ''
     emit('verify', '')
   }
 }
 
 const reset = () => {
   emit('verify', '')
+  statusMessage.value = ''
   if (widgetId.value && window.turnstile) {
     window.turnstile.reset(widgetId.value)
   }
@@ -114,6 +133,18 @@ function loadTurnstile(): Promise<void> {
   margin: 0 0 20px;
   align-items: center;
   justify-content: center;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .turnstile-container {

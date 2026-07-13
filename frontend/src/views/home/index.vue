@@ -1,6 +1,6 @@
 <template>
   <div class="home-container">
-    <div class="bg-decoration"></div>
+    <div class="bg-decoration" aria-hidden="true"></div>
 
     <div class="main-wrapper">
       <header class="top-nav">
@@ -14,9 +14,14 @@
         <LanguageSwitch inline />
       </header>
 
-      <main class="content-area glass-card">
+      <main
+        id="main-content"
+        class="content-area glass-card"
+        tabindex="-1"
+        aria-labelledby="home-main-title"
+      >
         <div class="intro-section">
-          <h2>{{ t('home.title') }}</h2>
+          <h2 id="home-main-title">{{ t('home.title') }}</h2>
           <p>{{ t('home.subtitle') }}</p>
         </div>
 
@@ -64,6 +69,7 @@
           href="https://github.com/workHMZ/r2filebox"
           target="_blank"
           rel="noopener noreferrer"
+          :aria-label="t('a11y.githubNewWindow')"
         >
           <el-icon><Link /></el-icon>
           {{ t('common.github') }}
@@ -76,6 +82,7 @@
       :title="t('share.success.title')"
       width="560px"
       :close-on-click-modal="false"
+      @closed="focusActiveShareTab"
     >
       <div class="share-result">
         <el-result icon="success" :title="t('share.success.title')" :sub-title="t('share.success.subtitle')">
@@ -95,12 +102,17 @@
             </div>
 
             <div v-if="qrCodeDataUrl" class="qrcode-section">
-              <img :src="qrCodeDataUrl" :alt="t('share.qr.tip')" class="qrcode-image" />
+              <img :src="qrCodeDataUrl" alt="" aria-hidden="true" class="qrcode-image" />
               <p class="qrcode-tip">{{ t('share.qr.tip') }}</p>
             </div>
 
             <div class="share-link-box">
-              <el-input v-model="shareUrl" readonly size="large">
+              <el-input
+                v-model="shareUrl"
+                readonly
+                size="large"
+                :aria-label="t('a11y.shareLink')"
+              >
                 <template #append>
                   <el-button type="primary" @click="copyShareUrl">
                     <el-icon><CopyDocument /></el-icon>
@@ -203,6 +215,12 @@ const copyShareCode = async () => {
   } catch {
     ElMessage.error(t('shareView.copyFailed'))
   }
+}
+
+const focusActiveShareTab = () => {
+  document
+    .querySelector<HTMLElement>('.function-tabs .el-tabs__item[aria-selected="true"]')
+    ?.focus()
 }
 
 onMounted(async () => {

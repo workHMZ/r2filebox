@@ -1,53 +1,51 @@
 <template>
   <div class="admin-layout">
-    <div class="bg-decoration"></div>
+    <div class="bg-decoration" aria-hidden="true"></div>
 
     <el-container class="admin-container">
-      <el-aside width="224px" :class="['admin-aside', { 'is-open': sidebarOpen }]">
+      <el-aside
+        id="admin-sidebar"
+        ref="sidebarRef"
+        width="224px"
+        :class="['admin-aside', { 'is-open': sidebarOpen }]"
+        role="navigation"
+        :aria-label="t('a11y.adminNavigation')"
+        :aria-hidden="sidebarInactive ? 'true' : undefined"
+        :inert="sidebarInactive || undefined"
+        @keydown="handleSidebarKeydown"
+      >
         <div class="admin-logo">
           <AppLogo size="small" />
           <div class="logo-text">
             <h2>R2FileBox</h2>
             <p>{{ t('admin.subtitle') }}</p>
           </div>
+          <el-button
+            class="sidebar-close"
+            text
+            :aria-label="t('a11y.closeNavigation')"
+            :title="t('a11y.closeNavigation')"
+            @click="closeSidebar()"
+          >
+            <el-icon aria-hidden="true"><Close /></el-icon>
+          </el-button>
         </div>
         
-        <el-menu
-          :default-active="$route.path"
-          class="admin-menu"
-          router
-          @select="closeSidebar"
-        >
-          <el-menu-item index="/admin/dashboard">
-            <el-icon><Monitor /></el-icon>
-            <span>{{ t('admin.dashboard') }}</span>
-          </el-menu-item>
-          
-          <el-menu-item index="/admin/files">
-            <el-icon><Folder /></el-icon>
-            <span>{{ t('admin.files') }}</span>
-          </el-menu-item>
-          
-          <el-menu-item index="/admin/storage">
-            <el-icon><Box /></el-icon>
-            <span>{{ t('admin.storage') }}</span>
-          </el-menu-item>
-
-          <el-menu-item index="/admin/logs">
-            <el-icon><Document /></el-icon>
-            <span>{{ t('admin.logs') }}</span>
-          </el-menu-item>
-
-          <el-menu-item index="/admin/config">
-            <el-icon><Setting /></el-icon>
-            <span>{{ t('admin.config') }}</span>
-          </el-menu-item>
-
-          <el-menu-item index="/admin/maintenance">
-            <el-icon><Tools /></el-icon>
-            <span>{{ t('admin.maintenance') }}</span>
-          </el-menu-item>
-        </el-menu>
+        <ul class="admin-menu">
+          <li v-for="item in adminMenuItems" :key="item.path" class="admin-menu-item">
+            <RouterLink
+              :to="item.path"
+              class="admin-menu-link"
+              :class="{ 'is-active': isMenuItemActive(item.path) }"
+              :aria-current="isMenuItemActive(item.path) ? 'page' : undefined"
+              exact-active-class="is-active"
+              @click="handleMenuSelect"
+            >
+              <el-icon aria-hidden="true"><component :is="item.icon" /></el-icon>
+              <span>{{ item.label }}</span>
+            </RouterLink>
+          </li>
+        </ul>
 
         <div class="sidebar-footer">
           <el-button @click="goToUser" class="user-page-btn">
@@ -60,29 +58,42 @@
         v-if="sidebarOpen"
         class="aside-overlay"
         type="button"
-        :aria-label="t('common.close')"
-        @click="closeSidebar"
+        tabindex="-1"
+        :aria-label="t('a11y.closeNavigation')"
+        @click="closeSidebar()"
       ></button>
       
-      <el-container class="main-container">
+      <el-container
+        class="main-container"
+        :aria-hidden="backgroundInactive ? 'true' : undefined"
+        :inert="backgroundInactive || undefined"
+      >
         <el-header class="admin-header">
           <div class="header-left">
             <el-button
+              ref="menuToggleRef"
               class="menu-toggle"
               text
-              :aria-label="t('admin.title')"
-              :title="t('admin.title')"
-              @click="sidebarOpen = true"
+              :aria-label="t('a11y.openNavigation')"
+              :aria-expanded="sidebarOpen"
+              aria-controls="admin-sidebar"
+              :title="t('a11y.openNavigation')"
+              @click="openSidebar"
             >
               <el-icon><Expand /></el-icon>
             </el-button>
-            <h3>{{ pageTitle }}</h3>
+            <h3 id="admin-page-title">{{ pageTitle }}</h3>
           </div>
           
           <div class="header-right">
             <LanguageSwitch inline />
             <el-dropdown @command="handleCommand" trigger="click">
-              <div class="user-info">
+              <button
+                class="user-info"
+                type="button"
+                aria-haspopup="menu"
+                :aria-label="t('a11y.accountMenu', { name: t('common.admin') })"
+              >
                 <el-avatar :size="32" class="user-avatar">
                   {{ t('common.admin').slice(0, 1) }}
                 </el-avatar>
@@ -91,7 +102,7 @@
                   <span class="user-role">{{ t('admin.role') }}</span>
                 </div>
                 <el-icon class="arrow-icon"><ArrowDown /></el-icon>
-              </div>
+              </button>
               <template #dropdown>
                 <el-dropdown-menu class="admin-dropdown-menu">
                   <el-dropdown-item command="logout" divided>
@@ -104,7 +115,12 @@
           </div>
         </el-header>
         
-        <el-main class="admin-main">
+        <el-main
+          id="main-content"
+          class="admin-main"
+          tabindex="-1"
+          aria-labelledby="admin-page-title"
+        >
           <div class="admin-content">
             <router-view />
           </div>
@@ -115,12 +131,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import type { ComponentPublicInstance } from 'vue'
+import { RouterLink, useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { 
   Monitor, Folder, Setting, ArrowDown, 
-  Box, Document, Tools, Promotion, SwitchButton, Expand
+  Box, Document, Tools, Promotion, SwitchButton, Expand, Close
 } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { useI18n } from '@/i18n'
@@ -132,6 +149,25 @@ const route = useRoute()
 const userStore = useUserStore()
 const { t } = useI18n()
 const sidebarOpen = ref(false)
+const isMobile = ref(false)
+const sidebarRef = ref<HTMLElement | ComponentPublicInstance | null>(null)
+const menuToggleRef = ref<HTMLElement | ComponentPublicInstance | null>(null)
+let mobileMediaQuery: MediaQueryList | null = null
+
+const sidebarInactive = computed(() => isMobile.value && !sidebarOpen.value)
+const backgroundInactive = computed(() => isMobile.value && sidebarOpen.value)
+const adminMenuItems = computed(() => [
+  { path: '/admin/dashboard', label: t('admin.dashboard'), icon: Monitor },
+  { path: '/admin/files', label: t('admin.files'), icon: Folder },
+  { path: '/admin/storage', label: t('admin.storage'), icon: Box },
+  { path: '/admin/logs', label: t('admin.logs'), icon: Document },
+  { path: '/admin/config', label: t('admin.config'), icon: Setting },
+  { path: '/admin/maintenance', label: t('admin.maintenance'), icon: Tools },
+])
+
+const isMenuItemActive = (path: string) => (
+  route.path === path || (path === '/admin/dashboard' && route.path === '/admin')
+)
 
 const pageTitle = computed(() => {
   const titles: Record<string, string> = {
@@ -150,11 +186,90 @@ const goToUser = () => {
   window.open('/', '_blank', 'noopener,noreferrer')
 }
 
-const closeSidebar = () => {
-  sidebarOpen.value = false
+const resolveElement = (target: HTMLElement | ComponentPublicInstance | null): HTMLElement | null => {
+  if (target instanceof HTMLElement) return target
+  return target?.$el instanceof HTMLElement ? target.$el : null
 }
 
-watch(() => route.path, closeSidebar)
+const focusMenuToggle = () => {
+  resolveElement(menuToggleRef.value)?.focus()
+}
+
+const openSidebar = async () => {
+  if (!isMobile.value) return
+  sidebarOpen.value = true
+  await nextTick()
+  const sidebar = resolveElement(sidebarRef.value)
+  const activeMenuItem = sidebar?.querySelector<HTMLElement>('.admin-menu-link.is-active')
+  const firstMenuItem = sidebar?.querySelector<HTMLElement>('.admin-menu-link')
+  const firstControl = sidebar?.querySelector<HTMLElement>('button:not([disabled]), a[href]')
+  const focusTarget = activeMenuItem || firstMenuItem || firstControl
+  focusTarget?.focus()
+}
+
+const closeSidebar = async (restoreFocus = true) => {
+  const wasOpen = sidebarOpen.value
+  sidebarOpen.value = false
+  if (wasOpen && restoreFocus) {
+    await nextTick()
+    focusMenuToggle()
+  }
+}
+
+const handleMenuSelect = () => {
+  void closeSidebar()
+}
+
+const handleSidebarKeydown = (event: KeyboardEvent) => {
+  if (!isMobile.value || !sidebarOpen.value) return
+
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    void closeSidebar()
+    return
+  }
+
+  if (event.key !== 'Tab') return
+  const sidebar = resolveElement(sidebarRef.value)
+  if (!sidebar) return
+
+  const focusable = Array.from(sidebar.querySelectorAll<HTMLElement>(
+    'a[href], button:not([disabled]):not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])'
+  )).filter((element) => !element.hasAttribute('inert') && element.getAttribute('aria-hidden') !== 'true')
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (!first || !last) return
+
+  const activeElement = document.activeElement
+  if (event.shiftKey && (activeElement === first || !sidebar.contains(activeElement))) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && (activeElement === last || !sidebar.contains(activeElement))) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
+const syncMobileState = (event: MediaQueryList | MediaQueryListEvent) => {
+  isMobile.value = event.matches
+  if (!event.matches) {
+    void closeSidebar(false)
+  }
+}
+
+watch(() => route.path, () => {
+  void closeSidebar(false)
+})
+
+onMounted(() => {
+  mobileMediaQuery = window.matchMedia('(max-width: 900px)')
+  syncMobileState(mobileMediaQuery)
+  mobileMediaQuery.addEventListener('change', syncMobileState)
+})
+
+onUnmounted(() => {
+  mobileMediaQuery?.removeEventListener('change', syncMobileState)
+})
 
 const handleCommand = async (command: string) => {
   switch (command) {
@@ -238,13 +353,22 @@ const handleCommand = async (command: string) => {
 }
 
 .admin-menu {
+  margin: 0;
   border: none;
   background: transparent;
   flex: 1;
   padding: 14px 0;
+  list-style: none;
 }
 
-.admin-menu :deep(.el-menu-item) {
+.admin-menu-item {
+  list-style: none;
+}
+
+.admin-menu-link {
+  display: flex;
+  padding: 0 20px;
+  align-items: center;
   color: var(--text-secondary);
   height: 42px;
   line-height: 42px;
@@ -255,12 +379,12 @@ const handleCommand = async (command: string) => {
   transition: color 0.18s ease, background 0.18s ease;
 }
 
-.admin-menu :deep(.el-menu-item:hover) {
+.admin-menu-link:hover {
   background: var(--surface-page) !important;
   color: var(--text-primary);
 }
 
-.admin-menu :deep(.el-menu-item.is-active) {
+.admin-menu-link.is-active {
   background: var(--primary-soft) !important;
   color: var(--primary-color) !important;
   box-shadow: none;
@@ -342,7 +466,18 @@ const handleCommand = async (command: string) => {
   font-size: 20px;
 }
 
+.sidebar-close {
+  display: none;
+  width: 34px;
+  height: 34px;
+  margin-left: auto;
+  padding: 0 !important;
+  flex: 0 0 34px;
+  font-size: 18px;
+}
+
 .user-info {
+  appearance: none;
   display: flex;
   align-items: center;
   min-height: 38px;
@@ -352,6 +487,8 @@ const handleCommand = async (command: string) => {
   background: transparent;
   border: 1px solid transparent;
   cursor: pointer;
+  color: inherit;
+  font: inherit;
   transition: background 0.18s ease, border-color 0.18s ease;
 }
 
@@ -428,6 +565,10 @@ const handleCommand = async (command: string) => {
   }
 
   .menu-toggle {
+    display: inline-flex;
+  }
+
+  .sidebar-close {
     display: inline-flex;
   }
 

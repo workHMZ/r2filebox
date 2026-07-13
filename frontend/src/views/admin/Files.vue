@@ -1,6 +1,9 @@
 <template>
   <div class="files-container">
-    <el-card shadow="never" class="files-card">
+    <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
+      {{ loading ? t('common.loading') : '' }}
+    </p>
+    <el-card shadow="never" class="files-card" :aria-busy="loading">
       <div class="card-header">
         <div class="header-title">
           <h2>{{ t('files.title') }}</h2>
@@ -17,6 +20,9 @@
       <el-table 
         :data="filesList" 
         v-loading="loading"
+        :aria-busy="loading"
+        table-layout="auto"
+        :scrollbar-tabindex="0"
         class="files-table"
       >
         <el-table-column :label="t('files.fileInfo')" min-width="250">
@@ -73,10 +79,18 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="expired_at" :label="t('files.expiredAt')" width="180">
+        <el-table-column prop="expired_at" :label="t('files.expiredAt')" width="220">
           <template #default="{ row }">
             <div :class="['expire-time', { expired: isExpired(row.expired_at) }]">
-              {{ formatDate(row.expired_at) }}
+              <span>{{ formatDate(row.expired_at) }}</span>
+              <el-tag
+                v-if="isExpired(row.expired_at)"
+                type="danger"
+                effect="plain"
+                size="small"
+              >
+                {{ t('a11y.expired') }}
+              </el-tag>
             </div>
           </template>
         </el-table-column>
@@ -355,7 +369,11 @@ onMounted(() => {
 }
 
 .expire-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: var(--text-regular);
+  white-space: nowrap;
 }
 
 .expire-time.expired {

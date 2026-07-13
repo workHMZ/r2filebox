@@ -1,6 +1,9 @@
 <template>
   <div class="transfer-logs">
-    <el-card v-loading="loading" shadow="never">
+    <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
+      {{ loading ? t('common.loading') : '' }}
+    </p>
+    <el-card v-loading="loading" :aria-busy="loading" shadow="never">
       <template #header>
         <div class="card-header">
           <h3>{{ t('logs.title') }}</h3>
@@ -39,7 +42,12 @@
       </el-row>
 
       <!-- 日志列表 -->
-      <el-table :data="logsList" stripe>
+      <el-table
+        :data="logsList"
+        table-layout="auto"
+        :scrollbar-tabindex="0"
+        stripe
+      >
         <el-table-column prop="id" label="ID" width="80" />
 
         <el-table-column prop="operation" :label="t('logs.operation')" width="100">
@@ -230,7 +238,7 @@ onMounted(() => {
 
 .stat-label {
   font-size: 14px;
-  opacity: 0.8;
+  color: var(--text-secondary);
 }
 
 .pagination-container {

@@ -1,6 +1,9 @@
 <template>
   <div class="storage-management">
-    <el-card v-loading="loading" shadow="never">
+    <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
+      {{ loading ? t('common.loading') : '' }}
+    </p>
+    <el-card v-loading="loading" :aria-busy="loading" shadow="never">
       <template #header>
         <h3>{{ t('storage.title') }}</h3>
       </template>
@@ -31,10 +34,12 @@
           type="info"
           :closable="false"
         >
-          <p>• {{ t('storage.tipR2') }}</p>
-          <p>• {{ t('storage.tipD1') }}</p>
-          <p>• {{ t('storage.tipWorker') }}</p>
-          <p>• {{ t('storage.version') }}：{{ storageInfo.version }}</p>
+          <ul>
+            <li>{{ t('storage.tipR2') }}</li>
+            <li>{{ t('storage.tipD1') }}</li>
+            <li>{{ t('storage.tipWorker') }}</li>
+            <li>{{ t('storage.version') }}：{{ storageInfo.version }}</li>
+          </ul>
         </el-alert>
       </div>
     </el-card>
@@ -100,7 +105,12 @@ onMounted(() => {
   margin-top: 20px;
 }
 
-.storage-tips p {
+.storage-tips ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.storage-tips li {
   margin: 5px 0;
   line-height: 1.8;
 }

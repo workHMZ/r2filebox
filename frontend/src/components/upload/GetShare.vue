@@ -1,37 +1,46 @@
 <template>
-  <div class="get-share-container">
+  <form class="get-share-container" @submit.prevent="handleGetShare">
     <div class="input-section">
       <div class="lookup-row">
+        <label class="sr-only" for="share-code-input">{{ t('a11y.shareCode') }}</label>
         <el-input
+          id="share-code-input"
           v-model="shareCode"
+          name="share-code"
           size="large"
           :placeholder="t('get.placeholder')"
+          :aria-invalid="lookupError"
+          :aria-describedby="lookupError ? 'share-code-error' : undefined"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
           class="code-input"
           clearable
-          @keyup.enter="handleGetShare"
+          @input="lookupError = false"
         >
           <template #prefix>
-            <el-icon class="input-key-icon"><Key /></el-icon>
+            <el-icon class="input-key-icon" aria-hidden="true"><Key /></el-icon>
           </template>
         </el-input>
         <el-button
           type="primary"
           size="large"
+          native-type="submit"
           class="get-btn"
-          @click="handleGetShare"
         >
           <template #icon>
-            <el-icon><Download /></el-icon>
+            <el-icon aria-hidden="true"><Download /></el-icon>
           </template>
           {{ t('get.button') }}
         </el-button>
       </div>
+      <p v-if="lookupError" id="share-code-error" class="sr-only">{{ t('get.empty') }}</p>
     </div>
 
     <div class="tips-section">
       <div class="tips-card">
         <p class="tips-title">
-          <el-icon class="tip-spark"><HelpFilled /></el-icon>
+          <el-icon class="tip-spark" aria-hidden="true"><HelpFilled /></el-icon>
           {{ t('get.tips.title') }}
         </p>
         <ul class="tips-list">
@@ -41,7 +50,7 @@
         </ul>
       </div>
     </div>
-  </div>
+  </form>
 </template>
 
 <script setup lang="ts">
@@ -60,6 +69,7 @@ const router = useRouter()
 const { t } = useI18n()
 
 const shareCode = ref('')
+const lookupError = ref(false)
 
 // 监听 initialCode 变化
 watch(() => props.initialCode, (newCode) => {
@@ -71,6 +81,7 @@ watch(() => props.initialCode, (newCode) => {
 
 const handleGetShare = () => {
   if (!shareCode.value.trim()) {
+    lookupError.value = true
     ElMessage.warning(t('get.empty'))
     return
   }
@@ -83,6 +94,18 @@ const handleGetShare = () => {
 <style scoped>
 .get-share-container {
   padding: 8px 0 0;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .input-section {

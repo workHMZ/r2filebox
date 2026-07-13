@@ -1,5 +1,5 @@
 <template>
-  <div class="file-upload-container">
+  <form class="file-upload-container" @submit.prevent="handleUpload">
     <el-upload
       ref="uploadRef"
       :auto-upload="false"
@@ -10,14 +10,14 @@
     >
       <div class="upload-content">
         <div class="upload-icon-wrapper">
-          <el-icon size="30"><UploadFilled /></el-icon>
+          <el-icon size="30" aria-hidden="true"><UploadFilled /></el-icon>
         </div>
         <div class="upload-text">
           <h3>{{ t('upload.drop.title') }}</h3>
           <p>{{ t('upload.drop.browse') }}</p>
         </div>
         <div class="upload-hint">
-          <el-icon><InfoFilled /></el-icon>
+          <el-icon aria-hidden="true"><InfoFilled /></el-icon>
           {{ t('upload.hint') }}
         </div>
       </div>
@@ -27,7 +27,7 @@
       <div v-if="selectedFile" class="selected-file">
         <div class="file-preview-card">
           <div class="file-icon-box">
-            <el-icon size="32"><Document /></el-icon>
+            <el-icon size="32" aria-hidden="true"><Document /></el-icon>
           </div>
           <div class="file-info-details">
             <div class="file-name">{{ selectedFile.name }}</div>
@@ -41,31 +41,36 @@
             circle 
             size="small"
             class="clear-file-btn"
-            :aria-label="t('common.delete')"
-            :title="t('common.delete')"
+            :aria-label="t('a11y.clearSelectedFile')"
+            :title="t('a11y.clearSelectedFile')"
             @click.stop="clearFile"
           >
-            <el-icon><Close /></el-icon>
+            <el-icon aria-hidden="true"><Close /></el-icon>
           </el-button>
         </div>
       </div>
     </transition>
 
     <div class="upload-settings-panel">
-      <div class="setting-row">
-        <label class="setting-title">
-          <el-icon class="label-icon"><Clock /></el-icon>
+      <div class="setting-row" role="group" aria-labelledby="file-expire-label">
+        <div id="file-expire-label" class="setting-title">
+          <el-icon class="label-icon" aria-hidden="true"><Clock /></el-icon>
           {{ t('upload.expire') }}
-        </label>
+        </div>
         <div class="expire-inputs">
           <el-input-number 
             v-model="form.expire_value" 
             :min="1"
             :max="999"
+            :aria-label="t('a11y.expireValue')"
             controls-position="right"
             class="number-input"
           />
-          <el-select v-model="form.expire_style" class="expire-select">
+          <el-select
+            v-model="form.expire_style"
+            :aria-label="t('a11y.expireUnit')"
+            class="expire-select"
+          >
             <el-option :label="t('expire.minute')" value="minute" />
             <el-option :label="t('expire.hour')" value="hour" />
             <el-option :label="t('expire.day')" value="day" />
@@ -74,11 +79,11 @@
         </div>
       </div>
 
-      <div class="setting-row">
-        <label class="setting-title">
-          <el-icon class="label-icon"><Lock /></el-icon>
+      <div class="setting-row" role="group" aria-labelledby="file-access-label">
+        <div id="file-access-label" class="setting-title">
+          <el-icon class="label-icon" aria-hidden="true"><Lock /></el-icon>
           {{ t('upload.access') }}
-        </label>
+        </div>
         <el-tag type="info" effect="plain" class="auth-mode-tag">{{ t('upload.codeAccess') }}</el-tag>
       </div>
     </div>
@@ -94,13 +99,14 @@
     <el-button
       type="primary"
       size="large"
+      native-type="submit"
       class="upload-btn"
       :loading="uploading"
+      :aria-busy="uploading"
       :disabled="!selectedFile || (requiresTurnstile && !hasResumableUpload && !turnstileToken)"
-      @click="handleUpload"
     >
       <template #icon>
-        <el-icon v-if="!uploading"><Upload /></el-icon>
+        <el-icon v-if="!uploading" aria-hidden="true"><Upload /></el-icon>
       </template>
       {{ uploading ? t('upload.uploading') : t('upload.start') }}
     </el-button>
@@ -111,11 +117,21 @@
           :percentage="uploadProgress" 
           :stroke-width="6"
           :show-text="true"
+          :aria-label="t('a11y.uploadProgress')"
         />
-        <p class="progress-status-text">{{ uploadStatusText }}</p>
+        <p class="progress-status-text" role="status" aria-live="polite" aria-atomic="true">
+          {{ uploadStatusText }}
+        </p>
       </div>
     </transition>
-  </div>
+
+    <p class="sr-only" role="status" aria-live="polite" aria-atomic="true">
+      {{ uploadAnnouncement }}
+    </p>
+    <p v-if="uploadErrorAnnouncement" class="sr-only">
+      {{ uploadErrorAnnouncement }}
+    </p>
+  </form>
 </template>
 
 <script setup lang="ts">
@@ -163,6 +179,8 @@ const selectedFile = ref<File | null>(null)
 const uploading = ref(false)
 const uploadProgress = ref(0)
 const uploadStatusText = ref('')
+const uploadAnnouncement = ref('')
+const uploadErrorAnnouncement = ref('')
 const turnstileToken = ref('')
 const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
 
@@ -179,13 +197,25 @@ const form = ref({
 
 const handleFileChange = (file: UploadFile) => {
   selectedFile.value = file.raw || null
-  if (selectedFile.value && loadUploadState(selectedFile.value)) {
-    uploadStatusText.value = t('upload.resumeDetected')
+  uploadErrorAnnouncement.value = ''
+  if (selectedFile.value) {
+    const fileAnnouncement = t('a11y.fileSelected', {
+      name: selectedFile.value.name,
+      size: formatFileSize(selectedFile.value.size),
+    })
+    if (loadUploadState(selectedFile.value)) {
+      uploadStatusText.value = t('upload.resumeDetected')
+      uploadAnnouncement.value = `${fileAnnouncement} ${t('upload.resumeDetected')}`
+    } else {
+      uploadAnnouncement.value = fileAnnouncement
+    }
   }
 }
 
 const clearFile = () => {
   selectedFile.value = null
+  uploadAnnouncement.value = t('a11y.fileCleared')
+  uploadErrorAnnouncement.value = ''
 }
 
 const formatFileSize = (bytes: number) => {
@@ -231,6 +261,7 @@ const handleUpload = async () => {
   }
 
   uploading.value = true
+  uploadErrorAnnouncement.value = ''
   uploadProgress.value = 0
   uploadStatusText.value = t('upload.prepare')
 
@@ -314,7 +345,9 @@ const handleUpload = async () => {
     }, 2000)
   } catch (error: unknown) {
     turnstileRef.value?.reset()
-    ElMessage.error(error instanceof Error ? error.message : t('upload.failed'))
+    const errorMessage = error instanceof Error ? error.message : t('upload.failed')
+    uploadErrorAnnouncement.value = errorMessage
+    ElMessage.error(errorMessage)
     uploading.value = false
   }
 }
@@ -379,12 +412,24 @@ const removeUploadState = (file: File) => {
   padding: 0;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .upload-dragger {
   margin-bottom: 22px;
 }
 
 .upload-dragger :deep(.el-upload-dragger) {
-  border: 1px dashed var(--border-strong) !important;
+  border: 1px dashed var(--control-border) !important;
   border-radius: var(--radius-lg) !important;
   background: var(--surface-raised) !important;
   transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease !important;
