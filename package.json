@@ -24,17 +24,20 @@
   },
   "cloudflare": {
     "bindings": {
+      "ADMIN_USERNAME": {
+        "description": "Optional admin login name. Defaults to `admin`; Unicode names and email-style usernames are supported."
+      },
       "ADMIN_PASSWORD": {
-        "description": "Required for one-click deploy. Use at least 16 characters. Advanced users can instead set `ADMIN_PASSWORD_HASH` manually after deployment."
+        "description": "Required for Deploy to Cloudflare unless you later configure `ADMIN_PASSWORD_HASH`. Choose and save a 16-4096 character login password; the Deploy Button does not generate a recoverable password for you."
       },
       "CODE_HASH_PEPPER": {
-        "description": "Required. Random secret used to hash share extraction codes. Generate with `openssl rand -hex 32`."
+        "description": "Required stable random secret for extraction-code hashing. Generate once with `openssl rand -hex 32`. Do not rotate it: existing extraction codes would stop validating."
       },
       "SESSION_SECRET": {
-        "description": "Required. Random secret used to sign admin sessions and short-lived download tokens. Generate with `openssl rand -hex 32`."
+        "description": "Required stable random signing secret. Generate once with `openssl rand -hex 32`. Rotation invalidates admin sessions and short-lived download tokens."
       },
       "TURNSTILE_SECRET_KEY": {
-        "description": "Optional. Only required if you enable Turnstile in the admin settings."
+        "description": "Optional. Only required when Turnstile is enabled; copy the Secret Key from the same Turnstile widget whose Site Key is configured in the admin UI."
       }
     }
   }

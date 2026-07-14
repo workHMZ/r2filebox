@@ -1,16 +1,20 @@
 # Copy to .dev.vars for local development.
 # Do not commit .dev.vars.
 
-# For one-click/local setup, a strong admin password secret is enough.
-# Advanced: you can leave ADMIN_PASSWORD unset and use ADMIN_PASSWORD_HASH instead.
+# ADMIN_USERNAME defaults to admin. Unicode names and email-style usernames are supported.
 ADMIN_USERNAME=admin
+
+# Choose one login method. ADMIN_PASSWORD must contain 16-4096 characters.
+# Advanced: leave ADMIN_PASSWORD unset and use an interactive `npm run hash-password`
+# result as ADMIN_PASSWORD_HASH. The hash takes precedence when both are set.
 ADMIN_PASSWORD=
 # ADMIN_PASSWORD_HASH=
 
-# Generate with:
-# openssl rand -hex 32
+# Generate each value once with `openssl rand -hex 32` and keep it stable.
+# Rotating CODE_HASH_PEPPER breaks validation of existing extraction codes.
 CODE_HASH_PEPPER=
+# Rotating SESSION_SECRET invalidates admin sessions and short-lived download tokens.
 SESSION_SECRET=
 
-# Optional. Required only when Turnstile is enabled.
+# Optional. Required only when Turnstile is enabled; use the Secret Key, not Site Key.
 # TURNSTILE_SECRET_KEY=replace-with-turnstile-secret

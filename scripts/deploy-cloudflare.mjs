@@ -79,8 +79,12 @@ async function main() {
   if (!adminUsername || adminUsername.length > 256 || /[\x00-\x1f\x7f]/.test(adminUsername)) {
     throw new Error('Admin username format is invalid')
   }
-  const adminPassword = await askSecret('Admin password to hash and set as ADMIN_PASSWORD_HASH: ')
+  const suppliedAdminPassword = await askSecret('Admin password (leave blank to generate a random initial password): ')
+  const adminPassword = suppliedAdminPassword || randomBytes(24).toString('base64url')
   if (adminPassword.length < 16 || adminPassword.length > 4096) throw new Error('Admin password must be 16-4096 characters')
+  if (!suppliedAdminPassword) {
+    console.log(`Generated admin password (save it now; it will only be shown once): ${adminPassword}`)
+  }
 
   const adminHash = await hashPassword(adminPassword)
   putSecret('ADMIN_USERNAME', adminUsername)

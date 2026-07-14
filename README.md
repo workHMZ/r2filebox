@@ -26,6 +26,7 @@ R2FileBox 是一个简单的匿名文本/文件分享工具：访客上传文字
 - 下载使用短期 token，R2 key 和对象地址不会暴露给用户。
 - 定时任务自动清理过期分享和过期上传会话。
 - Workers Static Assets 直接提供带内容哈希的前端资源；动态 API 全部禁止缓存。
+- 无障碍支持覆盖表单标签、屏幕阅读器语义、键盘导航、可见焦点和状态播报；不会采集键盘输入或辅助功能使用数据。
 
 ### 架构
 
@@ -49,15 +50,18 @@ Cloudflare 资源：
 
 点击顶部 **Deploy to Cloudflare** 按钮即可从 GitHub 部署。
 
-本仓库的 `wrangler.toml` 放在仓库根目录，Cloudflare Deploy Button 能直接读取 D1/R2/KV 绑定并在部署流程中创建或绑定资源。部署时请配置这些 secret：
+本仓库的 `wrangler.toml` 放在仓库根目录，Cloudflare Deploy Button 能直接读取 D1/R2/KV 绑定并在部署流程中创建或绑定资源。Secret 会加密存储在 Cloudflare，不应写入 `wrangler.toml`、Git 或普通环境变量。
 
-- `ADMIN_PASSWORD`：管理员登录密码，必须至少 16 位，推荐使用随机字符串。
-- `CODE_HASH_PEPPER`：提取码哈希 pepper。
-- `SESSION_SECRET`：后台会话和下载 token 签名密钥。
-- `TURNSTILE_SECRET_KEY`：可选，仅启用 Turnstile 时需要。
+| Secret | 是否必需 | 应该填写什么 | 修改后的影响 |
+| --- | --- | --- | --- |
+| `ADMIN_USERNAME` | 否 | 管理员用户名；留空时为 `admin`，支持中文、日文和邮箱形式 | 下次登录需使用新用户名 |
+| `ADMIN_PASSWORD` | 是，除非使用哈希 | 自己记得住的 16–4096 字符管理员密码 | 立即改变管理员登录密码 |
+| `ADMIN_PASSWORD_HASH` | 高级替代项 | 由 `npm run hash-password` 交互式生成的 PBKDF2 哈希；设置后优先于 `ADMIN_PASSWORD` | 立即改变管理员登录密码 |
+| `CODE_HASH_PEPPER` | 是 | 运行 `openssl rand -hex 32`，只生成并保存一次 | **不要轮换**；更改后已有提取码将无法验证 |
+| `SESSION_SECRET` | 是 | 运行 `openssl rand -hex 32`，只生成并保存一次 | 更改后管理员会话和短期下载 token 会失效 |
+| `TURNSTILE_SECRET_KEY` | 否 | Cloudflare Turnstile 控制台提供的 Secret Key；仅启用 Turnstile 时填写 | 必须和后台配置的 Site Key 属于同一组件 |
 
-高级用法：如果你不想保存明文后台密码 secret，可以改用 `ADMIN_PASSWORD_HASH`。它会优先于 `ADMIN_PASSWORD` 生效。
-管理员用户名默认为 `admin`，可通过 `ADMIN_USERNAME` secret 修改。
+Deploy Button 当前会显示 Secret 输入项，但不会自动生成可供你保存的随机管理员密码。首次部署最简单的方式是填写 `ADMIN_PASSWORD`、`CODE_HASH_PEPPER` 和 `SESSION_SECRET`。如果希望 Worker 只接收密码哈希，可在部署后删除 `ADMIN_PASSWORD`，改用 `ADMIN_PASSWORD_HASH`。
 
 如果一键部署页面没有自动填入配置，说明 GitHub 端还不是最新代码，先确认仓库根目录存在 `wrangler.toml` 和 `package.json` 的 `build`/`deploy` 脚本。
 
@@ -75,10 +79,13 @@ npm run deploy:cf
 - 检查 Wrangler 登录状态。
 - 创建或复用 R2 bucket、D1 database、KV namespace。
 - 将真实 D1/KV ID 写入本地 `wrangler.toml`。
-- 生成并上传 Cloudflare Secrets。
+- 管理员密码留空时自动生成一个随机初始密码，并只显示一次。
+- 只上传管理员密码哈希，并自动生成 `CODE_HASH_PEPPER` 和 `SESSION_SECRET`。
 - 构建前端。
 - 执行 D1 migration。
 - 部署 Worker。
+
+请立即保存脚本显示的随机管理员密码。`deploy:cf` 面向首次部署；已有实例更新时不要重复运行它，否则重新生成 pepper/session secret 会使旧提取码和现有会话失效。
 
 如果你有多个 Cloudflare 账号，脚本会要求选择；也可以提前指定：
 
@@ -131,7 +138,7 @@ npm run deploy
 cp .dev.vars.example .dev.vars
 ```
 
-把 `ADMIN_USERNAME`、`ADMIN_PASSWORD`、`CODE_HASH_PEPPER` 和 `SESSION_SECRET` 写入 `.dev.vars`，然后运行：
+把 `ADMIN_USERNAME`、`ADMIN_PASSWORD`（或 `ADMIN_PASSWORD_HASH`）、`CODE_HASH_PEPPER` 和 `SESSION_SECRET` 写入 `.dev.vars`，然后运行：
 
 ```bash
 npm install
@@ -162,6 +169,7 @@ npm run deploy:dry-run
 - 文件上传会话和文本分享通过 D1 原子写入共同受总存储上限约束，避免并发请求绕过软限制。
 - 静态页面和 API 都设置了 CSP、禁止嵌入、MIME 嗅探防护和严格缓存策略。
 - 启用 Turnstile 前，需要在后台填写 Site Key，并配置 `TURNSTILE_SECRET_KEY` secret。
+- `CODE_HASH_PEPPER` 和 `SESSION_SECRET` 必须在同一实例中保持稳定；不要在普通版本更新时重新生成。
 - 不要提交 `.dev.vars`、真实 secret、私钥或 Cloudflare API token。
 - `wrangler.toml` 中的 D1/KV ID 对公开仓库不是密码，但模板仓库应保留占位值，真实 ID 只留在你自己的部署副本里。
 
@@ -196,20 +204,24 @@ This project references the FileCodeBox family of projects, but is an independen
 - Short-lived download tokens; R2 keys are never exposed to users.
 - Scheduled cleanup for expired shares and stale upload sessions.
 - Workers Static Assets serves fingerprinted frontend assets directly; dynamic API responses are not cached.
+- Accessibility support includes form labels, screen-reader semantics, keyboard navigation, visible focus, and status announcements without collecting keystrokes or assistive-technology usage data.
 
 ### Deploy From GitHub
 
 Click the **Deploy to Cloudflare** button at the top of this README.
 
-The repository root contains the Worker `wrangler.toml`, so Cloudflare can read the D1, R2, and KV bindings during the Deploy Button flow. Configure these secrets when prompted:
+The repository root contains the Worker `wrangler.toml`, so Cloudflare can provision or bind D1, R2, and KV resources during the Deploy Button flow. Secrets are encrypted by Cloudflare and must never be committed to Git or placed in `wrangler.toml`.
 
-- `ADMIN_PASSWORD` (minimum 16 characters)
-- `CODE_HASH_PEPPER`
-- `SESSION_SECRET`
-- `TURNSTILE_SECRET_KEY` if Turnstile is enabled
+| Secret | Required | Value and lifecycle |
+| --- | --- | --- |
+| `ADMIN_USERNAME` | No | Defaults to `admin`; Unicode names and email-style usernames are supported. |
+| `ADMIN_PASSWORD` | Yes, unless using a hash | Choose and save a 16–4096 character login password. |
+| `ADMIN_PASSWORD_HASH` | Advanced alternative | Run `npm run hash-password` interactively. This PBKDF2 hash takes precedence over `ADMIN_PASSWORD`. |
+| `CODE_HASH_PEPPER` | Yes | Generate once with `openssl rand -hex 32`. Do not rotate it: existing extraction codes would stop validating. |
+| `SESSION_SECRET` | Yes | Generate once with `openssl rand -hex 32`. Rotation invalidates admin sessions and short-lived download tokens. |
+| `TURNSTILE_SECRET_KEY` | Only with Turnstile | Copy the Secret Key from the same Turnstile widget whose Site Key is configured in the admin UI. |
 
-Advanced users can use `ADMIN_PASSWORD_HASH` instead of `ADMIN_PASSWORD`; the hash takes precedence when both are set.
-The admin username defaults to `admin` and can be changed with the `ADMIN_USERNAME` secret.
+The Deploy Button presents secret input fields but does not generate a recoverable random admin password for you. For the button flow, provide `ADMIN_PASSWORD`, `CODE_HASH_PEPPER`, and `SESSION_SECRET`. Advanced users can replace `ADMIN_PASSWORD` with `ADMIN_PASSWORD_HASH` after deployment.
 
 ### Deploy From Local CLI
 
@@ -217,7 +229,9 @@ The admin username defaults to `admin` and can be changed with the `ADMIN_USERNA
 npm run deploy:cf
 ```
 
-The helper installs dependencies, checks Wrangler login, provisions R2/D1/KV, patches local binding IDs, creates secrets, builds assets, applies D1 migrations, and deploys the Worker.
+The helper installs dependencies, checks Wrangler login, provisions R2/D1/KV, patches local binding IDs, creates secrets, builds assets, applies D1 migrations, and deploys the Worker. If the admin-password prompt is left blank, it generates a random initial password, displays it once, and uploads only its hash. `CODE_HASH_PEPPER` and `SESSION_SECRET` are generated automatically.
+
+Save the generated password immediately. This helper is intended for first deployment; do not rerun it to update an existing instance because rotating the pepper and session secret invalidates existing extraction codes and sessions.
 
 For manual deployment:
 
@@ -255,6 +269,7 @@ npm run deploy:dry-run
 - Static pages and APIs include CSP, frame, MIME-sniffing, referrer, and cache protections.
 - KV counters are intentionally low-cost and eventually consistent. For a public instance, combine them with Cloudflare WAF rate limiting and Turnstile.
 - Enabling Turnstile requires both a Site Key in the admin settings and a `TURNSTILE_SECRET_KEY` secret.
+- Keep `CODE_HASH_PEPPER` and `SESSION_SECRET` stable for the lifetime of an instance; do not regenerate them during routine updates.
 
 ### Acknowledgements and License
 
