@@ -35,9 +35,6 @@
       },
       "SESSION_SECRET": {
         "description": "Required stable random signing secret. Generate once with `openssl rand -hex 32`. Rotation invalidates admin sessions and short-lived download tokens."
-      },
-      "TURNSTILE_SECRET_KEY": {
-        "description": "Optional. Only required when Turnstile is enabled; copy the Secret Key from the same Turnstile widget whose Site Key is configured in the admin UI."
       }
     }
   }

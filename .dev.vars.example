@@ -15,6 +15,3 @@ ADMIN_PASSWORD=
 CODE_HASH_PEPPER=
 # Rotating SESSION_SECRET invalidates admin sessions and short-lived download tokens.
 SESSION_SECRET=
-
-# Optional. Required only when Turnstile is enabled; use the Secret Key, not Site Key.
-# TURNSTILE_SECRET_KEY=replace-with-turnstile-secret

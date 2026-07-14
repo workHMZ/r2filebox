@@ -59,9 +59,10 @@ Cloudflare 资源：
 | `ADMIN_PASSWORD_HASH` | 高级替代项 | 由 `npm run hash-password` 交互式生成的 PBKDF2 哈希；设置后优先于 `ADMIN_PASSWORD` | 立即改变管理员登录密码 |
 | `CODE_HASH_PEPPER` | 是 | 运行 `openssl rand -hex 32`，只生成并保存一次 | **不要轮换**；更改后已有提取码将无法验证 |
 | `SESSION_SECRET` | 是 | 运行 `openssl rand -hex 32`，只生成并保存一次 | 更改后管理员会话和短期下载 token 会失效 |
-| `TURNSTILE_SECRET_KEY` | 否 | Cloudflare Turnstile 控制台提供的 Secret Key；仅启用 Turnstile 时填写 | 必须和后台配置的 Site Key 属于同一组件 |
 
 Deploy Button 当前会显示 Secret 输入项，但不会自动生成可供你保存的随机管理员密码。首次部署最简单的方式是填写 `ADMIN_PASSWORD`、`CODE_HASH_PEPPER` 和 `SESSION_SECRET`。如果希望 Worker 只接收密码哈希，可在部署后删除 `ADMIN_PASSWORD`，改用 `ADMIN_PASSWORD_HASH`。
+
+Turnstile 默认关闭，`TURNSTILE_SECRET_KEY` 不参与首次部署。需要启用时，先在 Cloudflare Worker 的 **Settings → Variables & Secrets** 中手动添加该 Secret，再到管理后台填写同一 Turnstile 组件的 Site Key 并启用功能。
 
 如果一键部署页面没有自动填入配置，说明 GitHub 端还不是最新代码，先确认仓库根目录存在 `wrangler.toml` 和 `package.json` 的 `build`/`deploy` 脚本。
 
@@ -219,9 +220,10 @@ The repository root contains the Worker `wrangler.toml`, so Cloudflare can provi
 | `ADMIN_PASSWORD_HASH` | Advanced alternative | Run `npm run hash-password` interactively. This PBKDF2 hash takes precedence over `ADMIN_PASSWORD`. |
 | `CODE_HASH_PEPPER` | Yes | Generate once with `openssl rand -hex 32`. Do not rotate it: existing extraction codes would stop validating. |
 | `SESSION_SECRET` | Yes | Generate once with `openssl rand -hex 32`. Rotation invalidates admin sessions and short-lived download tokens. |
-| `TURNSTILE_SECRET_KEY` | Only with Turnstile | Copy the Secret Key from the same Turnstile widget whose Site Key is configured in the admin UI. |
 
 The Deploy Button presents secret input fields but does not generate a recoverable random admin password for you. For the button flow, provide `ADMIN_PASSWORD`, `CODE_HASH_PEPPER`, and `SESSION_SECRET`. Advanced users can replace `ADMIN_PASSWORD` with `ADMIN_PASSWORD_HASH` after deployment.
+
+Turnstile is disabled by default, so `TURNSTILE_SECRET_KEY` is not requested during the initial deployment. To enable it later, add the secret under the Worker's **Settings → Variables & Secrets**, then configure the matching Site Key and enable Turnstile in the admin UI.
 
 ### Deploy From Local CLI
 
