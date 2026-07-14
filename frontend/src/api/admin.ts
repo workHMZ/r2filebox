@@ -22,7 +22,7 @@ export interface AdminUser {
 
 export interface AdminShare {
   id: string
-  code: string
+  share_id: string
   type: 'text' | 'file'
   text: boolean
   uuid_file_name: string | null
@@ -81,15 +81,13 @@ export interface AdminSystemInfo {
   d1_database_name: string | null
 }
 
-export interface TransferLog {
+export interface AuditLog {
   id: string
-  operation: string
   action: string
-  file_code: string
-  file_name: string
-  file_size: number
-  username: string
-  ip: string
+  share_id: string | null
+  subject_name: string | null
+  size_bytes: number | null
+  ip_hash_prefix: string | null
   status: string
   created_at: string
 }
@@ -102,14 +100,15 @@ interface AdminFilesData {
   page_size: number
 }
 
-interface TransferLogsData {
-  items: TransferLog[]
-  logs: TransferLog[]
-  total: number
-  page: number
-  page_size: number
+interface AuditLogsData {
+  items: AuditLog[]
   pagination: { page: number; page_size: number; total: number }
-  stats: { total: number; uploads: number; downloads: number; activeUsers: number }
+  stats: {
+    total: number
+    completedShares: number
+    completedRetrievals: number
+    activeSources: number
+  }
 }
 
 export const adminApi = {
@@ -173,8 +172,8 @@ export const adminApi = {
     data: { config },
   }),
 
-  getTransferLogs: (params: { page?: number; page_size?: number }) => request<ApiResponse<TransferLogsData>>({
-    url: '/admin/logs/transfer',
+  getAuditLogs: (params: { page?: number; page_size?: number }) => request<ApiResponse<AuditLogsData>>({
+    url: '/admin/logs/audit',
     method: 'GET',
     params,
   }),
@@ -191,6 +190,7 @@ export const adminApi = {
     purged_counters: number
     purged_audit_logs: number
     purged_shares: number
+    failures: number
   }>>({
     url: '/admin/maintenance/clean-expired',
     method: 'POST',

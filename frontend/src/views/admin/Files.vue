@@ -35,11 +35,12 @@
               </div>
               <div class="file-details">
                 <div class="file-name">
-                  {{ row.uuid_file_name || row.code }}
+                  {{ row.uuid_file_name || row.share_id }}
                 </div>
-                <div class="file-code">
+                <div class="share-id">
+                  <span class="share-id-label">{{ t('files.shareId') }}</span>
                   <el-tag size="small" type="info">
-                    {{ row.code }}
+                    {{ row.share_id }}
                   </el-tag>
                 </div>
               </div>
@@ -232,7 +233,7 @@ const fetchFiles = async () => {
 const deleteFile = async (file: AdminShare) => {
   try {
     await ElMessageBox.confirm(
-      t('files.deleteConfirm', { name: file.uuid_file_name || file.code }),
+      t('files.deleteConfirm', { name: file.uuid_file_name || file.share_id }),
       t('files.deleteTitle'),
       { 
         type: 'warning',
@@ -345,6 +346,7 @@ onMounted(() => {
 
 .file-details {
   flex: 1;
+  min-width: 0;
 }
 
 .file-name {
@@ -354,9 +356,27 @@ onMounted(() => {
   font-size: 15px;
 }
 
-.file-code {
+.share-id {
   display: flex;
+  align-items: center;
+  min-width: 0;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.share-id :deep(.el-tag) {
+  max-width: 100%;
+  height: auto;
+}
+
+.share-id :deep(.el-tag__content) {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.share-id-label {
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
 .download-count {

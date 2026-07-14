@@ -1,5 +1,5 @@
 <template>
-  <div class="transfer-logs">
+  <div class="audit-logs">
     <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
       {{ loading ? t('common.loading') : '' }}
     </p>
@@ -17,26 +17,26 @@
       <el-row :gutter="20" class="stats-row">
         <el-col :xs="12" :md="6">
           <div class="stat-item">
-            <div class="stat-value">{{ stats.totalOperations }}</div>
-            <div class="stat-label">{{ t('logs.totalOperations') }}</div>
+            <div class="stat-value">{{ stats.totalEvents }}</div>
+            <div class="stat-label">{{ t('logs.totalEvents') }}</div>
           </div>
         </el-col>
         <el-col :xs="12" :md="6">
           <div class="stat-item upload">
-            <div class="stat-value">{{ stats.uploads }}</div>
-            <div class="stat-label">{{ t('logs.uploads') }}</div>
+            <div class="stat-value">{{ stats.completedShares }}</div>
+            <div class="stat-label">{{ t('logs.completedShares') }}</div>
           </div>
         </el-col>
         <el-col :xs="12" :md="6">
           <div class="stat-item download">
-            <div class="stat-value">{{ stats.downloads }}</div>
-            <div class="stat-label">{{ t('logs.downloads') }}</div>
+            <div class="stat-value">{{ stats.completedRetrievals }}</div>
+            <div class="stat-label">{{ t('logs.completedRetrievals') }}</div>
           </div>
         </el-col>
         <el-col :xs="12" :md="6">
           <div class="stat-item">
-            <div class="stat-value">{{ stats.activeUsers }}</div>
-            <div class="stat-label">{{ t('logs.activeClients') }}</div>
+            <div class="stat-value">{{ stats.activeSources }}</div>
+            <div class="stat-label">{{ t('logs.activeSources') }}</div>
           </div>
         </el-col>
       </el-row>
@@ -44,31 +44,69 @@
       <!-- 日志列表 -->
       <el-table
         :data="logsList"
+        :aria-busy="loading"
         table-layout="auto"
         :scrollbar-tabindex="0"
         stripe
       >
-        <el-table-column prop="id" label="ID" width="80" />
-
-        <el-table-column prop="operation" :label="t('logs.operation')" width="100">
+        <el-table-column
+          prop="id"
+          :label="t('logs.eventId')"
+          min-width="290"
+        >
           <template #default="{ row }">
-            <el-tag :type="getOperationType(row.operation)" size="small">
-              {{ getOperationLabel(row.operation) }}
+            <code class="identifier-cell">{{ row.id }}</code>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="action" :label="t('logs.operation')" min-width="170">
+          <template #default="{ row }">
+            <el-tag :type="getActionType(row.action)" size="small">
+              {{ getActionLabel(row.action) }}
             </el-tag>
           </template>
         </el-table-column>
 
-        <el-table-column prop="file_code" :label="t('logs.fileCode')" width="120" />
-
-        <el-table-column prop="file_name" :label="t('logs.fileName')" show-overflow-tooltip />
-
-        <el-table-column prop="file_size" :label="t('logs.fileSize')" width="120">
+        <el-table-column
+          prop="share_id"
+          :label="t('logs.shareId')"
+          min-width="290"
+        >
           <template #default="{ row }">
-            {{ formatFileSize(row.file_size) }}
+            <code v-if="row.share_id" class="identifier-cell">{{ row.share_id }}</code>
+            <span v-else>-</span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="ip" :label="t('logs.ip')" width="140" />
+        <el-table-column
+          prop="subject_name"
+          :label="t('logs.contentName')"
+          min-width="160"
+        >
+          <template #default="{ row }">
+            <span class="content-name">{{ row.subject_name || '-' }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="size_bytes" :label="t('logs.contentSize')" width="120">
+          <template #default="{ row }">
+            {{ formatFileSize(row.size_bytes) }}
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="ip_hash_prefix" :label="t('logs.ipHash')" width="150">
+          <template #default="{ row }">
+            {{ formatHashPrefix(row.ip_hash_prefix) }}
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="status" :label="t('common.status')" width="110">
+          <template #default="{ row }">
+            <el-tag :type="getStatusType(row.status)" effect="plain" size="small">
+              {{ getStatusLabel(row.status) }}
+            </el-tag>
+          </template>
+        </el-table-column>
 
         <el-table-column prop="created_at" :label="t('logs.operationTime')" width="180">
           <template #default="{ row }">
@@ -98,11 +136,11 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { adminApi } from '@/api/admin'
-import type { TransferLog } from '@/api/admin'
+import type { AuditLog } from '@/api/admin'
 import { getLocaleTag, useI18n } from '@/i18n'
 
 const loading = ref(false)
-const logsList = ref<TransferLog[]>([])
+const logsList = ref<AuditLog[]>([])
 const { t, locale } = useI18n()
 
 const pagination = reactive({
@@ -112,14 +150,15 @@ const pagination = reactive({
 })
 
 const stats = reactive({
-  totalOperations: 0,
-  uploads: 0,
-  downloads: 0,
-  activeUsers: 0
+  totalEvents: 0,
+  completedShares: 0,
+  completedRetrievals: 0,
+  activeSources: 0
 })
 
-const formatFileSize = (bytes: number): string => {
-  if (!bytes || bytes === 0) return '0 B'
+const formatFileSize = (bytes: number | null): string => {
+  if (bytes === null || !Number.isFinite(bytes) || bytes < 0) return '-'
+  if (bytes === 0) return '0 B'
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
@@ -135,44 +174,78 @@ const formatDate = (dateStr: string): string => {
   }
 }
 
-const getOperationLabel = (operation: string): string => {
-  const labels: Record<string, string> = {
-    upload: t('logs.upload'),
-    download: t('logs.download'),
-    delete: t('logs.delete'),
-    view: t('logs.view')
+const getActionLabel = (action: string): string => {
+  const keys: Record<string, string> = {
+    admin_login: 'logs.action.adminLogin',
+    admin_logout: 'logs.action.adminLogout',
+    admin_update_config: 'logs.action.configUpdated',
+    admin_delete_share: 'logs.action.adminDeleteShare',
+    admin_cleanup_expired: 'logs.action.cleanupExpired',
+    share_text_create: 'logs.action.textCreated',
+    multipart_file_init: 'logs.action.fileUploadStarted',
+    multipart_file_complete: 'logs.action.fileUploadCompleted',
+    multipart_file_size_mismatch: 'logs.action.fileSizeMismatch',
+    share_resolve_text: 'logs.action.textRetrieved',
+    share_resolve_file: 'logs.action.fileAccessVerified',
+    share_download_file: 'logs.action.fileDownloaded'
   }
-  return labels[operation] || operation
+  return keys[action] ? t(keys[action]) : action
 }
 
-const getOperationType = (operation: string): string => {
-  const types: Record<string, string> = {
-    upload: 'success',
-    download: 'primary',
-    delete: 'danger',
-    view: 'info'
+type TagType = 'primary' | 'success' | 'warning' | 'danger' | 'info'
+
+const getActionType = (action: string): TagType => {
+  const types: Record<string, TagType> = {
+    admin_login: 'warning',
+    admin_logout: 'info',
+    admin_update_config: 'warning',
+    admin_delete_share: 'danger',
+    admin_cleanup_expired: 'warning',
+    share_text_create: 'success',
+    multipart_file_init: 'info',
+    multipart_file_complete: 'success',
+    multipart_file_size_mismatch: 'danger',
+    share_resolve_text: 'primary',
+    share_resolve_file: 'info',
+    share_download_file: 'primary'
   }
-  return types[operation] || ''
+  return types[action] || 'info'
 }
+
+const getStatusLabel = (status: string): string => {
+  if (status === 'success') return t('logs.status.success')
+  if (status === 'failed') return t('logs.status.failed')
+  if (status === 'partial') return t('logs.status.partial')
+  return status
+}
+
+const getStatusType = (status: string): TagType => {
+  if (status === 'success') return 'success'
+  if (status === 'failed') return 'danger'
+  if (status === 'partial') return 'warning'
+  return 'info'
+}
+
+const formatHashPrefix = (prefix: string | null): string => prefix ? `${prefix}…` : '-'
 
 const fetchLogs = async () => {
   loading.value = true
   try {
-    const res = await adminApi.getTransferLogs({
+    const res = await adminApi.getAuditLogs({
       page: pagination.page,
       page_size: pagination.pageSize
     })
 
     if (res.code === 200) {
-      logsList.value = res.data.logs
+      logsList.value = res.data.items
       pagination.total = res.data.pagination.total
-      stats.totalOperations = res.data.stats.total
-      stats.uploads = res.data.stats.uploads
-      stats.downloads = res.data.stats.downloads
-      stats.activeUsers = res.data.stats.activeUsers
+      stats.totalEvents = res.data.stats.total
+      stats.completedShares = res.data.stats.completedShares
+      stats.completedRetrievals = res.data.stats.completedRetrievals
+      stats.activeSources = res.data.stats.activeSources
     }
   } catch (error) {
-    console.error('Failed to load transfer logs:', error)
+    console.error('Failed to load audit logs:', error)
     ElMessage.error(t('logs.fetchFailed'))
   } finally {
     loading.value = false
@@ -194,7 +267,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.transfer-logs {
+.audit-logs {
   padding: 0;
 }
 
@@ -239,6 +312,17 @@ onMounted(() => {
 .stat-label {
   font-size: 14px;
   color: var(--text-secondary);
+}
+
+.identifier-cell,
+.content-name {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.identifier-cell {
+  color: inherit;
+  font-size: 12px;
 }
 
 .pagination-container {

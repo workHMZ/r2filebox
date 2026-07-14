@@ -12,6 +12,7 @@ export async function cleanupExpiredShares(
   purgedCounters: number
   purgedAuditLogs: number
   purgedShares: number
+  failures: number
 }> {
   const dbClient = new DB(db)
   const r2Client = new R2Storage(bucket)
@@ -23,6 +24,7 @@ export async function cleanupExpiredShares(
   let processed = 0
   let deletedR2 = 0
   let abortedUploads = 0
+  let failures = 0
   
   for (const share of expiredShares) {
     try {
@@ -34,6 +36,7 @@ export async function cleanupExpiredShares(
       processed++
       
     } catch (e) {
+      failures++
       console.error(`Failed to cleanup share ${share.id}:`, e)
       // Continue with others even if one fails
     }
@@ -45,11 +48,13 @@ export async function cleanupExpiredShares(
       await multipart.abort()
       abortedUploads++
     } catch (e) {
+      failures++
       console.error(`Failed to cleanup upload session ${session.id}:`, e)
     }
     try {
       await dbClient.deleteUploadSession(session.id)
     } catch (e) {
+      failures++
       console.error(`Failed to delete upload session ${session.id}:`, e)
     }
   }
@@ -60,5 +65,5 @@ export async function cleanupExpiredShares(
     dbClient.purgeDeletedShares(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()),
   ])
   
-  return { processed, deletedR2, abortedUploads, purgedCounters, purgedAuditLogs, purgedShares }
+  return { processed, deletedR2, abortedUploads, purgedCounters, purgedAuditLogs, purgedShares, failures }
 }

@@ -8,7 +8,7 @@ import { DB } from '../lib/db'
 import { R2Storage } from '../lib/r2'
 import { getRequiredSecret } from '../lib/env'
 import { getClientIp } from '../lib/security'
-import { hashIp, sha256Hex } from '../lib/code'
+import { hashIp } from '../lib/code'
 import { cleanupExpiredShares } from '../lib/cleanup'
 import { getRuntimeConfig, type RuntimeConfig } from '../lib/runtime-config'
 import { checkRateLimit } from '../lib/rate-limit'
@@ -100,7 +100,14 @@ app.post('/admin/login', async (c) => {
   }
 })
 
-app.post('/admin/logout', (c) => {
+app.post('/admin/logout', async (c) => {
+  try {
+    const db = new DB(c.env.DB)
+    const pepper = getRequiredSecret(c.env, 'CODE_HASH_PEPPER')
+    await audit(db, c, 'admin_logout', null, 'success', await hashIp(getClientIp(c), pepper))
+  } catch (error) {
+    console.error('Failed to write admin logout audit log:', error)
+  }
   c.header('Set-Cookie', 'admin_session=; HttpOnly; Secure; SameSite=Strict; Path=/admin; Max-Age=0')
   return c.json(success(null, '退出成功'))
 })
@@ -117,8 +124,8 @@ app.get('/admin/stats', async (c) => {
 
 app.get('/admin/files', async (c) => {
   try {
-    const page = Math.max(Number.parseInt(c.req.query('page') || '1', 10), 1)
-    const pageSize = Math.min(Math.max(Number.parseInt(c.req.query('page_size') || '10', 10), 1), 100)
+    const pageSize = parseBoundedInteger(c.req.query('page_size'), 10, 1, 100)
+    const page = parseBoundedInteger(c.req.query('page'), 1, 1, Math.floor(Number.MAX_SAFE_INTEGER / pageSize))
     const offset = (page - 1) * pageSize
     const db = new DB(c.env.DB)
     const result = await db.getSharesList(pageSize, offset)
@@ -190,11 +197,22 @@ app.put('/admin/config', async (c) => {
     ) {
       return c.json(error('启用 Turnstile 前必须配置 Site Key 和 TURNSTILE_SECRET_KEY', 400), 400)
     }
-    const settings = settingsFromAdminConfig(configRecord)
     const db = new DB(c.env.DB)
+    const previousConfig = await getRuntimeConfig(c.env, db)
+    const settings = settingsFromAdminConfig(configRecord)
+    const pepper = getRequiredSecret(c.env, 'CODE_HASH_PEPPER')
+    const ipHash = await hashIp(getClientIp(c), pepper)
     await db.upsertSettings(settings)
-    await audit(db, c, 'admin_update_config', null, 'success', null)
     const config = await getRuntimeConfig(c.env, db)
+    await audit(
+      db,
+      c,
+      'admin_update_config',
+      null,
+      'success',
+      ipHash,
+      previousConfig.enableAuditLog || config.enableAuditLog,
+    )
     return c.json(success(adminConfigDto(config), '配置已保存'))
   } catch (e: unknown) {
     return adminRouteFailure(c, 'save admin config', e, '保存配置失败')
@@ -203,7 +221,7 @@ app.put('/admin/config', async (c) => {
 
 app.get('/admin/stats/trend', async (c) => {
   try {
-    const days = parseInt(c.req.query('days') || '7', 10)
+    const days = parseBoundedInteger(c.req.query('days'), 7, 1, 30)
     const db = new DB(c.env.DB)
     const trend = await db.getUploadTrend(days)
     return c.json(success(trend))
@@ -222,10 +240,10 @@ app.get('/admin/stats/file-types', async (c) => {
   }
 })
 
-app.get('/admin/logs/transfer', async (c) => {
+app.get('/admin/logs/audit', async (c) => {
   try {
-    const page = Math.max(Number.parseInt(c.req.query('page') || '1', 10), 1)
-    const pageSize = Math.min(Math.max(Number.parseInt(c.req.query('page_size') || '20', 10), 1), 100)
+    const pageSize = parseBoundedInteger(c.req.query('page_size'), 20, 1, 100)
+    const page = parseBoundedInteger(c.req.query('page'), 1, 1, Math.floor(Number.MAX_SAFE_INTEGER / pageSize))
     const offset = (page - 1) * pageSize
     const db = new DB(c.env.DB)
     const [logs, stats] = await Promise.all([
@@ -234,27 +252,21 @@ app.get('/admin/logs/transfer', async (c) => {
     ])
     const items = logs.items.map((log) => ({
       id: log.id,
-      operation: operationFromAction(log.action),
       action: log.action,
-      file_code: log.share_id || '-',
-      file_name: '-',
-      file_size: 0,
-      username: '',
-      ip: log.ip_hash ? `${log.ip_hash.slice(0, 10)}...` : '-',
+      share_id: log.share_id,
+      subject_name: log.subject_name,
+      size_bytes: log.size_bytes,
+      ip_hash_prefix: log.ip_hash?.slice(0, 12) || null,
       status: log.status,
       created_at: log.created_at,
     }))
     return c.json(success({
       items,
-      logs: items,
-      total: logs.total,
-      page,
-      page_size: pageSize,
       pagination: { page, page_size: pageSize, total: logs.total },
       stats,
     }))
   } catch (e: unknown) {
-    return adminRouteFailure(c, 'get transfer logs', e, '获取日志失败')
+    return adminRouteFailure(c, 'get audit logs', e, '获取日志失败')
   }
 })
 
@@ -273,7 +285,10 @@ app.post('/admin/maintenance/clean-expired', async (c) => {
   try {
     const db = new DB(c.env.DB)
     const config = await getRuntimeConfig(c.env, db)
+    const pepper = getRequiredSecret(c.env, 'CODE_HASH_PEPPER')
+    const ipHash = await hashIp(getClientIp(c), pepper)
     const result = await cleanupExpiredShares(c.env.DB, c.env.BUCKET, config.cleanupBatchSize)
+    await audit(db, c, 'admin_cleanup_expired', null, result.failures ? 'partial' : 'success', ipHash)
     return c.json(success({
       deleted_count: result.processed,
       deleted_r2_objects: result.deletedR2,
@@ -281,6 +296,7 @@ app.post('/admin/maintenance/clean-expired', async (c) => {
       purged_counters: result.purgedCounters,
       purged_audit_logs: result.purgedAuditLogs,
       purged_shares: result.purgedShares,
+      failures: result.failures,
     }, '清理成功'))
   } catch (e: unknown) {
     return adminRouteFailure(c, 'cleanup expired shares', e, '清理失败')
@@ -349,7 +365,7 @@ function isSameOrigin(c: Context): boolean {
 function adminShareDto(share: Share) {
   return {
     id: share.id,
-    code: share.id,
+    share_id: share.id,
     type: share.type,
     text: share.type === 'text',
     uuid_file_name: share.display_name,
@@ -462,13 +478,6 @@ function setBoolean(settings: Record<string, string>, key: string, value: unknow
   settings[key] = value === true || value === 1 || value === '1' || value === 'true' ? 'true' : 'false'
 }
 
-function operationFromAction(action: string): string {
-  if (action.includes('download') || action.includes('resolve')) return 'download'
-  if (action.includes('upload') || action.includes('create')) return 'upload'
-  if (action.includes('delete')) return 'delete'
-  return 'view'
-}
-
 function adminRouteFailure(c: Context, operation: string, cause: unknown, message: string) {
   if (cause instanceof BodyTooLargeError) {
     return c.json(error('请求内容过大', 413), 413)
@@ -487,23 +496,33 @@ async function audit(
   shareId: string | null,
   status: string,
   ipHash: string | null,
+  force = false,
 ): Promise<void> {
   try {
     const config = await getRuntimeConfig(c.env as Env, db)
-    if (!config.enableAuditLog) return
-    const userAgent = c.req.header('User-Agent')
+    if (!config.enableAuditLog && !force) return
     await db.createAuditLog({
       id: crypto.randomUUID(),
       action,
       share_id: shareId,
       ip_hash: ipHash,
-      user_agent_hash: userAgent ? await sha256Hex(userAgent) : null,
+      user_agent_hash: null,
       status,
       created_at: new Date().toISOString(),
     })
   } catch (error) {
     console.error('Failed to write admin audit log:', error)
   }
+}
+
+function parseBoundedInteger(
+  value: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const parsed = Number.parseInt(value || '', 10)
+  return Number.isFinite(parsed) ? Math.min(Math.max(parsed, min), max) : fallback
 }
 
 export default app

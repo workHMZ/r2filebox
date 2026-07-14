@@ -15,42 +15,11 @@
       />
     </div>
 
-    <div class="upload-settings-panel">
-      <div class="setting-row" role="group" aria-labelledby="text-expire-label">
-        <div id="text-expire-label" class="setting-title">
-          <el-icon class="label-icon" aria-hidden="true"><Clock /></el-icon>
-          {{ t('upload.expire') }}
-        </div>
-        <div class="expire-inputs">
-          <el-input-number 
-            v-model="form.expire_value" 
-            :min="1"
-            :max="999"
-            :aria-label="t('a11y.expireValue')"
-            controls-position="right"
-            class="number-input"
-          />
-          <el-select
-            v-model="form.expire_style"
-            :aria-label="t('a11y.expireUnit')"
-            class="expire-select"
-          >
-            <el-option :label="t('expire.minute')" value="minute" />
-            <el-option :label="t('expire.hour')" value="hour" />
-            <el-option :label="t('expire.day')" value="day" />
-            <el-option :label="t('expire.week')" value="week" />
-          </el-select>
-        </div>
-      </div>
-
-      <div class="setting-row" role="group" aria-labelledby="text-access-label">
-        <div id="text-access-label" class="setting-title">
-          <el-icon class="label-icon" aria-hidden="true"><Lock /></el-icon>
-          {{ t('upload.access') }}
-        </div>
-        <el-tag type="info" effect="plain" class="auth-mode-tag">{{ t('upload.codeAccess') }}</el-tag>
-      </div>
-    </div>
+    <ShareSettings
+      id-prefix="text-share"
+      v-model:expire-value="form.expire_value"
+      v-model:expire-style="form.expire_style"
+    />
 
     <TurnstileWidget
       v-if="requiresTurnstile"
@@ -64,7 +33,7 @@
       type="primary"
       size="large"
       native-type="submit"
-      class="share-btn"
+      class="text-share-submit"
       :loading="sharing"
       :aria-busy="sharing"
       :disabled="!textContent.trim() || (requiresTurnstile && !turnstileToken)"
@@ -82,10 +51,11 @@
 import { computed, ref } from 'vue'
 import { shareApi } from '@/api/share'
 import { ElMessage } from 'element-plus'
-import { Clock, Lock, Promotion } from '@element-plus/icons-vue'
+import { Promotion } from '@element-plus/icons-vue'
 import { useI18n } from '@/i18n'
 import { useConfigStore } from '@/stores/config'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
+import ShareSettings from '@/components/upload/ShareSettings.vue'
 
 const emit = defineEmits<{
   success: [result: { code: string; share_url: string; full_share_url: string; qr_code_data: string }]
@@ -180,57 +150,7 @@ const handleShare = async () => {
   line-height: 1.7 !important;
 }
 
-.upload-settings-panel {
-  display: grid;
-  margin-bottom: 22px;
-  padding: 20px 0 0;
-  grid-template-columns: minmax(0, 1.45fr) minmax(180px, 0.55fr);
-  gap: 24px;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.setting-row {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  text-align: left;
-}
-
-.setting-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--glass-text-regular);
-  font-size: 13px;
-  letter-spacing: 0;
-}
-
-.label-icon {
-  color: var(--primary-color);
-}
-
-.expire-inputs {
-  display: flex;
-  gap: 12px;
-}
-
-.number-input {
-  width: 140px;
-}
-
-.expire-select {
-  width: 120px;
-}
-
-.auth-mode-tag {
-  width: fit-content;
-  border-color: var(--primary-border);
-  color: var(--primary-active);
-  background: var(--primary-soft);
-}
-
-.share-btn {
+.text-share-submit {
   width: 100%;
   height: 52px;
   font-size: 16px;
@@ -238,20 +158,4 @@ const handleShare = async () => {
   border-radius: var(--radius-md);
 }
 
-@media (max-width: 640px) {
-  .upload-settings-panel {
-    grid-template-columns: 1fr;
-    gap: 16px;
-  }
-
-  .expire-inputs {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 112px;
-  }
-
-  .number-input,
-  .expire-select {
-    width: 100%;
-  }
-}
 </style>

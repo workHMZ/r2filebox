@@ -438,7 +438,7 @@ const fetchRecentFiles = async () => {
     if (res.code === 200) {
       if (res.data && Array.isArray(res.data.list)) {
         recentFiles.value = res.data.list.slice(0, 5).map((file) => ({
-          filename: file.uuid_file_name || file.file_name || file.code,
+          filename: file.uuid_file_name || file.file_name || file.share_id,
           file_size: file.size || 0,
           created_at: file.CreatedAt || file.created_at || ''
         }))

@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import type { Context } from 'hono'
 import type { Env, Share, UploadSession } from '../types'
 import { success, error } from '../lib/response'
-import { generateCode, hashCode, hashIp, sha256Hex } from '../lib/code'
+import { generateCode, hashCode, hashIp } from '../lib/code'
 import { contentDispositionAttachment, sanitizeFilename, sanitizeMimeType, calculateExpireAt } from '../lib/validators'
 import { DB } from '../lib/db'
 import { R2Storage, generateR2Key } from '../lib/r2'
@@ -849,13 +849,12 @@ async function audit(
     const config = await getRuntimeConfig(c.env, db)
     if (!config.enableAuditLog) return
     if (accessLog && !config.enableAccessLog) return
-    const userAgent = c.req.header('User-Agent')
     await db.createAuditLog({
       id: crypto.randomUUID(),
       action,
       share_id: shareId,
       ip_hash: ipHash,
-      user_agent_hash: userAgent ? await sha256Hex(userAgent) : null,
+      user_agent_hash: null,
       status,
       created_at: new Date().toISOString(),
     })

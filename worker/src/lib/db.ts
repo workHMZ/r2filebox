@@ -22,6 +22,24 @@ export interface FileTypeCount {
   count: number
 }
 
+export interface AuditLogDetails {
+  id: string
+  action: string
+  share_id: string | null
+  ip_hash: string | null
+  status: string
+  created_at: string
+  subject_name: string | null
+  size_bytes: number | null
+}
+
+export interface AuditStats {
+  total: number
+  completedShares: number
+  completedRetrievals: number
+  activeSources: number
+}
+
 export class DB {
   constructor(private db: D1Database) {}
 
@@ -288,33 +306,65 @@ export class DB {
     ).run()
   }
 
-  async getAuditLogs(limit: number, offset: number): Promise<{ items: AuditLog[], total: number }> {
+  async getAuditLogs(limit: number, offset: number): Promise<{ items: AuditLogDetails[], total: number }> {
     const safeLimit = Math.min(Math.max(limit, 1), 100)
     const safeOffset = Math.max(offset, 0)
     const total = await this.db.prepare('SELECT count(*) as c FROM audit_logs').first<{ c: number }>()
-    const { results } = await this.db.prepare('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT ? OFFSET ?')
+    const { results } = await this.db.prepare(`
+      SELECT
+        audit.id,
+        audit.action,
+        audit.share_id,
+        audit.ip_hash,
+        audit.status,
+        audit.created_at,
+        COALESCE(shares.display_name, uploads.display_name) AS subject_name,
+        COALESCE(shares.size_bytes, uploads.size_bytes) AS size_bytes
+      FROM audit_logs AS audit
+      LEFT JOIN shares ON shares.id = audit.share_id
+      LEFT JOIN upload_sessions AS uploads ON uploads.share_id = audit.share_id
+      ORDER BY audit.created_at DESC, audit.id DESC
+      LIMIT ? OFFSET ?
+    `)
       .bind(safeLimit, safeOffset)
-      .all<AuditLog>()
+      .all<AuditLogDetails>()
     return { items: results, total: total?.c || 0 }
   }
 
-  async getAuditStats(): Promise<{ total: number, uploads: number, downloads: number, activeUsers: number }> {
-    const uploadStmt = this.db.prepare('SELECT count(*) as c FROM audit_logs WHERE action LIKE "%upload%"')
-    const downloadStmt = this.db.prepare('SELECT count(*) as c FROM audit_logs WHERE action LIKE "%download%" OR action LIKE "%resolve%"')
-    const totalStmt = this.db.prepare('SELECT count(*) as c FROM audit_logs')
-    const activeUsersStmt = this.db.prepare('SELECT count(DISTINCT user_agent_hash) as c FROM audit_logs WHERE created_at >= ?')
+  async getAuditStats(): Promise<AuditStats> {
+    const stats = await this.db.prepare(`
+      SELECT
+        count(*) AS total,
+        sum(CASE
+          WHEN status = 'success'
+            AND action IN ('share_text_create', 'multipart_file_complete')
+          THEN 1 ELSE 0
+        END) AS completed_shares,
+        sum(CASE
+          WHEN status = 'success'
+            AND action IN ('share_resolve_text', 'share_download_file')
+          THEN 1 ELSE 0
+        END) AS completed_retrievals,
+        count(DISTINCT CASE
+          WHEN created_at >= ?
+            AND ip_hash IS NOT NULL
+            AND action NOT LIKE 'admin_%'
+          THEN ip_hash
+        END) AS active_sources
+      FROM audit_logs
+    `)
       .bind(new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-    const [total, uploads, downloads, activeUsers] = await this.db.batch<{ c: number | null }>([
-      totalStmt,
-      uploadStmt,
-      downloadStmt,
-      activeUsersStmt,
-    ])
+      .first<{
+        total: number | null
+        completed_shares: number | null
+        completed_retrievals: number | null
+        active_sources: number | null
+      }>()
     return {
-      total: countResult(total),
-      uploads: countResult(uploads),
-      downloads: countResult(downloads),
-      activeUsers: countResult(activeUsers),
+      total: Number(stats?.total || 0),
+      completedShares: Number(stats?.completed_shares || 0),
+      completedRetrievals: Number(stats?.completed_retrievals || 0),
+      activeSources: Number(stats?.active_sources || 0),
     }
   }
 
