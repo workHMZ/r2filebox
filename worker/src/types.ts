@@ -23,7 +23,7 @@ export interface Env {
   ENABLE_AUDIT_LOG: string
   ENABLE_ACCESS_LOG: string
   ENABLE_KV_RATE_LIMIT: string
-  REQUIRE_TURNSTILE: string
+  REQUIRE_TURNSTILE?: string
   TURNSTILE_SITE_KEY?: string
   CLEANUP_BATCH_SIZE: string
   RATE_LIMIT_UPLOAD_PER_MINUTE: string
