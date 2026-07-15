@@ -129,7 +129,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import QRCode from 'qrcode'
 import {
@@ -223,9 +223,6 @@ const focusActiveShareTab = () => {
     ?.focus()
 }
 
-onMounted(async () => {
-  await configStore.fetchConfig()
-})
 </script>
 
 <style scoped>

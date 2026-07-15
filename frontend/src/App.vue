@@ -14,23 +14,28 @@ import en from 'element-plus/es/locale/lang/en'
 import ja from 'element-plus/es/locale/lang/ja'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import { locale, t } from '@/i18n'
+import { useConfigStore } from '@/stores/config'
 
 const route = useRoute()
+const configStore = useConfigStore()
 const elementPlusLocale = computed(() => {
   if (locale.value === 'zh') return zhCn
   if (locale.value === 'ja') return ja
   return en
 })
+const siteName = computed(() => configStore.siteName())
+
+void configStore.fetchConfig()
 
 const focusMainContent = () => {
   document.getElementById('main-content')?.focus({ preventScroll: false })
 }
 
 watch(
-  [() => route.meta.titleKey, locale],
+  [() => route.meta.titleKey, locale, siteName],
   () => {
     const titleKey = route.meta.titleKey as string | undefined
-    document.title = titleKey ? `${t(titleKey)} - R2FileBox` : 'R2FileBox'
+    document.title = titleKey ? `${t(titleKey)} - ${siteName.value}` : siteName.value
   },
   { immediate: true },
 )

@@ -47,7 +47,7 @@ head_sampling_rate = 0.1
 [vars]
 APP_NAME = "R2FileBox"
 APP_DESCRIPTION = "Private code-based file sharing on Cloudflare R2"
-APP_VERSION = "1.30"
+APP_VERSION = "1.31"
 
 R2_BUCKET_NAME = "r2filebox-files"
 D1_DATABASE_NAME = "r2filebox-db"

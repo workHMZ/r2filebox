@@ -14,7 +14,7 @@
     <div class="login-card glass-card">
       <div class="login-header">
         <AppLogo size="large" />
-        <h1 id="admin-login-title">R2FileBox</h1>
+        <h1 id="admin-login-title">{{ configStore.siteName() }}</h1>
         <p>{{ t('admin.login.subtitle') }}</p>
       </div>
 
@@ -123,12 +123,14 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance, FormItemInstance, InputInstance } from 'element-plus'
 import { User, Lock, Promotion, Back, View, Hide } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
+import { useConfigStore } from '@/stores/config'
 import { useI18n } from '@/i18n'
 import AppLogo from '@/components/AppLogo.vue'
 import LanguageSwitch from '@/components/LanguageSwitch.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
+const configStore = useConfigStore()
 const { locale, t } = useI18n()
 const loginFormRef = ref<FormInstance>()
 const usernameFormItemRef = ref<FormItemInstance>()
@@ -238,11 +240,13 @@ const handleLogin = async () => {
 }
 
 .login-header h1 {
+  max-width: 100%;
   margin: 0;
   font-size: 26px;
   font-weight: 760;
   color: var(--text-primary);
   letter-spacing: 0;
+  overflow-wrap: anywhere;
 }
 
 .login-header p {

@@ -18,7 +18,7 @@
         </div>
         <div class="upload-hint">
           <el-icon aria-hidden="true"><InfoFilled /></el-icon>
-          {{ t('upload.hint') }}
+          {{ uploadLimitText }}
         </div>
       </div>
     </el-upload>
@@ -109,7 +109,7 @@ import { shareApi } from '@/api/share'
 import { ElMessage } from 'element-plus'
 import { UploadFilled, Document, InfoFilled, Close, Upload } from '@element-plus/icons-vue'
 import type { UploadFile } from 'element-plus'
-import { useI18n } from '@/i18n'
+import { getLocaleTag, useI18n } from '@/i18n'
 import { useConfigStore } from '@/stores/config'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import ShareSettings from '@/components/upload/ShareSettings.vue'
@@ -118,8 +118,9 @@ const emit = defineEmits<{
   success: [result: { code: string; share_url: string; full_share_url: string; qr_code_data: string }]
 }>()
 
-const { t } = useI18n()
+const { locale, t } = useI18n()
 const configStore = useConfigStore()
+const BYTES_PER_MB = 1024 * 1024
 
 type UploadedPart = {
   partNumber: number
@@ -152,6 +153,23 @@ const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
 
 const requiresTurnstile = computed(() => configStore.config?.requireTurnstile === true)
 const turnstileSiteKey = computed(() => configStore.config?.turnstileSiteKey || '')
+const maxUploadBytes = computed(() => {
+  const config = configStore.config
+  if (!config) return null
+  if (typeof config.maxUploadBytes === 'number' && config.maxUploadBytes > 0) {
+    return config.maxUploadBytes
+  }
+  return config.uploadSize > 0 ? config.uploadSize * BYTES_PER_MB : null
+})
+const uploadLimitText = computed(() => {
+  if (maxUploadBytes.value === null) {
+    return t(configStore.loadFailed ? 'upload.hintUnavailable' : 'upload.hintLoading')
+  }
+  const size = new Intl.NumberFormat(getLocaleTag(locale.value), {
+    maximumFractionDigits: 2,
+  }).format(maxUploadBytes.value / BYTES_PER_MB)
+  return t('upload.hint', { size: `${size} MB` })
+})
 const hasResumableUpload = computed(() =>
   selectedFile.value ? Boolean(loadUploadState(selectedFile.value)) : false,
 )

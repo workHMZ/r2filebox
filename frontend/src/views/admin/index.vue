@@ -17,7 +17,7 @@
         <div class="admin-logo">
           <AppLogo size="small" />
           <div class="logo-text">
-            <h2>R2FileBox</h2>
+            <h2>{{ configStore.siteName() }}</h2>
             <p>{{ t('admin.subtitle') }}</p>
           </div>
           <el-button
@@ -140,6 +140,7 @@ import {
   Box, Document, Tools, Promotion, SwitchButton, Expand, Close
 } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
+import { useConfigStore } from '@/stores/config'
 import { useI18n } from '@/i18n'
 import LanguageSwitch from '@/components/LanguageSwitch.vue'
 import AppLogo from '@/components/AppLogo.vue'
@@ -147,6 +148,7 @@ import AppLogo from '@/components/AppLogo.vue'
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
+const configStore = useConfigStore()
 const { t } = useI18n()
 const sidebarOpen = ref(false)
 const isMobile = ref(false)
@@ -336,20 +338,31 @@ const handleCommand = async (command: string) => {
   border-bottom: 1px solid var(--border-subtle);
 }
 
+.logo-text {
+  min-width: 0;
+  flex: 1;
+}
+
 .logo-text h2 {
+  overflow: hidden;
   margin: 0;
   font-size: 15px;
   font-weight: 760;
   color: var(--text-primary);
   letter-spacing: 0;
   text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .logo-text p {
+  overflow: hidden;
   margin: 1px 0 0;
   font-size: 10px;
   color: var(--glass-text-secondary);
   text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .admin-menu {
