@@ -18,17 +18,12 @@ export const sanitizeMimeType = (mimeType: string): string => {
 export const calculateExpireAt = (
   expireValue?: number,
   expireStyle?: string,
-  expireHours?: number,
   defaultHours: number = 24,
   maxHours: number = 168
 ): string => {
-  let hoursToAdd = 0
+  let hoursToAdd = defaultHours
 
-  if (expireHours !== undefined) {
-    // New API format
-    hoursToAdd = expireHours
-  } else if (expireValue !== undefined && expireStyle !== undefined) {
-    // Old frontend format compatibility
+  if (expireValue !== undefined && expireStyle !== undefined) {
     switch (expireStyle) {
       case 'minute':
         hoursToAdd = expireValue / 60
@@ -42,20 +37,9 @@ export const calculateExpireAt = (
       case 'week':
         hoursToAdd = expireValue * 24 * 7
         break
-      case 'month':
-        hoursToAdd = expireValue * 24 * 30
-        break
-      case 'year':
-        hoursToAdd = expireValue * 24 * 365
-        break
-      case 'forever':
-        hoursToAdd = maxHours
-        break
       default:
         hoursToAdd = defaultHours
     }
-  } else {
-    hoursToAdd = defaultHours
   }
 
   if (!Number.isFinite(hoursToAdd) || hoursToAdd <= 0) hoursToAdd = defaultHours

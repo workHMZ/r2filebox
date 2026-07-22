@@ -172,7 +172,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onBeforeUnmount, onMounted, watch } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { 
   Folder, Coin, TrendCharts, ArrowRight, Document, Monitor, Delete 
 } from '@element-plus/icons-vue'
@@ -191,6 +192,7 @@ import {
 } from 'chart.js'
 import { Line, Doughnut } from 'vue-chartjs'
 import { getLocaleTag, useI18n } from '@/i18n'
+import { formatDateTime, formatFileSize } from '@/utils/format'
 
 ChartJS.register(
   CategoryScale,
@@ -206,6 +208,8 @@ ChartJS.register(
 
 const loading = ref(false)
 const { t, locale } = useI18n()
+const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
+let animationFrame: number | null = null
 
 const stats = reactive({
   activeShares: 0,
@@ -324,21 +328,8 @@ const typeOptions = {
   cutout: '65%'
 }
 
-const formatFileSize = (bytes: number): string => {
-  if (!bytes || bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
 const formatDate = (dateStr: string): string => {
-  if (!dateStr) return '-'
-  try {
-    return new Date(dateStr).toLocaleString(getLocaleTag(locale.value))
-  } catch {
-    return '-'
-  }
+  return formatDateTime(dateStr, getLocaleTag(locale.value))
 }
 
 const formatChartDate = (dateStr: string): string => {
@@ -356,24 +347,22 @@ const formatChartDate = (dateStr: string): string => {
   }
 }
 
-const animateNumber = (key: keyof typeof animatedStats, target: number) => {
-  const duration = 1000
-  const steps = 60
-  const increment = target / steps
-  let current = 0
-  if (target === 0) {
-    animatedStats[key] = 0
+const animateStats = () => {
+  if (animationFrame !== null) cancelAnimationFrame(animationFrame)
+  const keys = Object.keys(animatedStats) as Array<keyof typeof animatedStats>
+  if (prefersReducedMotion.value) {
+    for (const key of keys) animatedStats[key] = stats[key]
     return
   }
-  const timer = setInterval(() => {
-    current += increment
-    if (current >= target) {
-      animatedStats[key] = target
-      clearInterval(timer)
-    } else {
-      animatedStats[key] = Math.floor(current)
-    }
-  }, duration / steps)
+  const duration = 1000
+  const startedAt = performance.now()
+  const update = (now: number) => {
+    const progress = Math.min(1, (now - startedAt) / duration)
+    for (const key of keys) animatedStats[key] = Math.floor(stats[key] * progress)
+    if (progress < 1) animationFrame = requestAnimationFrame(update)
+    else animationFrame = null
+  }
+  animationFrame = requestAnimationFrame(update)
 }
 
 const fetchDashboardStats = async () => {
@@ -383,17 +372,12 @@ const fetchDashboardStats = async () => {
       stats.activeShares = res.data.active_shares || 0
       stats.fileCount = res.data.total_files || 0
       stats.textShares = res.data.text_shares || 0
-      stats.totalStorage = res.data.total_size || res.data.total_storage_bytes || 0
+      stats.totalStorage = res.data.total_size || 0
       stats.todayUploads = res.data.today_uploads || 0
       stats.totalDownloads = res.data.total_downloads || 0
       stats.expiredShares = res.data.expired_shares || 0
 
-      animateNumber('activeShares', stats.activeShares)
-      animateNumber('fileCount', stats.fileCount)
-      animateNumber('textShares', stats.textShares)
-      animateNumber('todayUploads', stats.todayUploads)
-      animateNumber('totalDownloads', stats.totalDownloads)
-      animateNumber('expiredShares', stats.expiredShares)
+      animateStats()
     }
   } catch (error) {
     console.error('获取统计信息失败:', error)
@@ -402,8 +386,10 @@ const fetchDashboardStats = async () => {
 
 const fetchCharts = async () => {
   try {
-    // Trend
-    const trendRes = await adminApi.getUploadTrend(7)
+    const [trendRes, typeRes] = await Promise.all([
+      adminApi.getUploadTrend(7),
+      adminApi.getFileTypeDistribution(),
+    ])
     if (trendRes.code === 200 && trendRes.data) {
       trendAccessibleData.value = trendRes.data.map((item) => ({
         date: item.date,
@@ -413,8 +399,6 @@ const fetchCharts = async () => {
       trendData.datasets[0]!.data = trendAccessibleData.value.map((item) => item.uploads)
     }
 
-    // Type
-    const typeRes = await adminApi.getFileTypeDistribution()
     if (typeRes.code === 200 && typeRes.data) {
       typeAccessibleData.value = typeRes.data.map((item) => ({
         label: item.mime_type || t('common.unknown'),
@@ -436,11 +420,11 @@ const fetchRecentFiles = async () => {
   try {
     const res = await adminApi.getRecentFiles()
     if (res.code === 200) {
-      if (res.data && Array.isArray(res.data.list)) {
-        recentFiles.value = res.data.list.slice(0, 5).map((file) => ({
-          filename: file.uuid_file_name || file.file_name || file.share_id,
-          file_size: file.size || 0,
-          created_at: file.CreatedAt || file.created_at || ''
+      if (res.data && Array.isArray(res.data.items)) {
+        recentFiles.value = res.data.items.slice(0, 5).map((file) => ({
+          filename: file.display_name || file.id,
+          file_size: file.size_bytes,
+          created_at: file.created_at,
         }))
       } else {
         recentFiles.value = []
@@ -463,6 +447,10 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+})
+
+onBeforeUnmount(() => {
+  if (animationFrame !== null) cancelAnimationFrame(animationFrame)
 })
 </script>
 

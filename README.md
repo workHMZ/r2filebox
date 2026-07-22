@@ -1,10 +1,10 @@
 # R2FileBox
 
-[中文](#中文说明) | [English](#english)
+[中文](#中文说明) | [English](#english) | [Latest Release](https://github.com/workHMZ/r2filebox/releases/latest)
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/workHMZ/r2filebox)
 
-R2FileBox is a minimal Cloudflare-native file/text sharing app inspired by the FileCodeBox family of projects. It keeps the extraction-code workflow, but replaces the original server stack with Cloudflare Workers, Workers Static Assets, D1, KV, and R2.
+R2FileBox is a minimal Cloudflare-native file/text sharing app inspired by the FileCodeBox family of projects. It keeps the extraction-code workflow, but replaces the original server stack with Cloudflare Workers, Workers Static Assets, D1, R2, and Workers Rate Limiting bindings.
 
 ## 中文说明
 
@@ -18,9 +18,9 @@ R2FileBox 是一个简单的匿名文本/文件分享工具：访客上传文字
 
 - 匿名文本分享和匿名文件分享。
 - 提取码访问，D1 只保存提取码哈希，不保存明文提取码。
-- 文件和大文本存储在 R2，R2 bucket 不需要公开访问。
+- 文件和文本内容存储在 R2，R2 bucket 不需要公开访问。
 - 文件使用 R2 multipart upload，前端按分片上传，支持断点续传。
-- KV 固定窗口限流覆盖公开接口，后台登录使用 D1 强一致限流。
+- 公开接口使用 Workers Rate Limiting 快速粗防护，并由 D1 单语句原子计数精确执行后台可配置限额；后台登录只使用 D1 精确限流。
 - 单管理员后台，无用户注册和平台用户系统。
 - 管理后台可调整上传限制、访问日志、Turnstile、限流等运行配置。
 - 下载使用短期 token，R2 key 和对象地址不会暴露给用户。
@@ -42,15 +42,22 @@ Cloudflare 资源：
 
 - Workers：API、静态资源托管、定时清理。
 - Workers Static Assets：前端产物。
-- D1：分享元数据、上传会话、运行配置、审计/限流记录。
-- R2：文件内容和大文本内容。
-- KV：低成本限流计数。
+- D1：分享元数据、上传会话、运行配置、审计记录和精确限流计数。
+- R2：文件和文本内容。
+- Workers Rate Limiting：公开接口的低延迟粗粒度保护。
+
+### 环境要求
+
+- Node.js `>=24.11.0 <25`；仓库的 `.nvmrc` 固定了经过验证的 Node 24 版本。
+- 启用了 Workers、D1 和 R2 的 Cloudflare 账户。
 
 ### GitHub 一键部署
 
 点击顶部 **Deploy to Cloudflare** 按钮即可从 GitHub 部署。
 
-本仓库的 `wrangler.toml` 放在仓库根目录，Cloudflare Deploy Button 能直接读取 D1/R2/KV 绑定并在部署流程中创建或绑定资源。Secret 会加密存储在 Cloudflare，不应写入 `wrangler.toml`、Git 或普通环境变量。
+本仓库的 `wrangler.toml` 放在仓库根目录，Cloudflare Deploy Button 能直接读取 D1/R2 和 Workers Rate Limiting 绑定，并在部署流程中创建或绑定所需资源。Secret 会加密存储在 Cloudflare，不应写入 `wrangler.toml`、Git 或普通环境变量。
+
+部署确认页中的 **Build command** 应为 `npm run build`，**Deploy command** 应为 `npm run deploy`。后者会先对绑定名 `DB` 执行远程 D1 migration，再部署 Worker；如果页面仍显示 `npx wrangler deploy`，请手动改为 `npm run deploy`，否则新数据库表或版本升级 migration 不会自动执行。
 
 | Secret | 是否必需 | 应该填写什么 | 修改后的影响 |
 | --- | --- | --- | --- |
@@ -78,15 +85,14 @@ npm run deploy:cf
 
 - 安装根目录和前端依赖。
 - 检查 Wrangler 登录状态。
-- 创建或复用 R2 bucket、D1 database、KV namespace。
-- 将真实 D1/KV ID 写入本地 `wrangler.toml`。
+- 创建或明确复用 R2 bucket 和 D1 database。
+- 将真实 D1 ID 写入本地 `wrangler.toml`；Workers Rate Limiting 绑定不需要单独创建 KV namespace。
 - 管理员密码留空时自动生成一个随机初始密码，并只显示一次。
 - 只上传管理员密码哈希，并自动生成 `CODE_HASH_PEPPER` 和 `SESSION_SECRET`。
-- 构建前端。
-- 执行 D1 migration。
+- 构建前端并执行 D1 migration；任一步骤失败都会在写入 Secret 前停止。
 - 部署 Worker。
 
-请立即保存脚本显示的随机管理员密码。`deploy:cf` 面向首次部署；已有实例更新时不要重复运行它，否则重新生成 pepper/session secret 会使旧提取码和现有会话失效。
+请立即保存脚本显示的随机管理员密码。检测到已有 D1 绑定或复用任一现有 R2/D1 资源时，脚本默认停止；明确确认后只会构建、迁移和部署，不会创建资源或读取、生成、轮换任何 Secret，因此可安全用于已有实例更新。只有在确认复用的是空资源、确实要初始化新实例时，才可显式运行 `npm run deploy:cf -- --force-reinitialize` 并输入完整确认词 `REINITIALIZE`。
 
 如果你有多个 Cloudflare 账号，脚本会要求选择；也可以提前指定：
 
@@ -98,17 +104,16 @@ npm run deploy:cf
 ### 手动部署
 
 ```bash
-npm install
-npm --prefix frontend ci
+npm ci
 npm run build
 
 npx wrangler login
 npx wrangler r2 bucket create r2filebox-files
 npx wrangler d1 create r2filebox-db
-npx wrangler kv namespace create r2filebox-rate-limit
 ```
 
-把 `wrangler d1 create` 输出的 `database_id` 写入根目录 `wrangler.toml`，把 `wrangler kv namespace create` 输出的 `id` 写入 `RATE_LIMIT`。
+把 `wrangler d1 create` 输出的 `database_id` 写入根目录 `wrangler.toml`。四个 `[[ratelimits]]` 绑定由 Wrangler 随 Worker 配置部署，不需要创建 KV namespace。
+如果要在同一个 Cloudflare 账户中部署多个独立的 R2FileBox 实例，请同时为每个实例修改四个 `namespace_id`，确保这些正整数不与同账户中的其他 Rate Limiting 绑定重复。
 
 设置 secret：
 
@@ -131,6 +136,8 @@ npx wrangler secret put ADMIN_PASSWORD_HASH
 npm run deploy
 ```
 
+已有实例升级到 1.40 时也必须使用 `npm run deploy`（或先单独执行 `npm run db:migrate:remote`，再执行 `npx wrangler deploy`），确保 `0002_reliability.sql` 在新 Worker 代码生效前完成。正常升级不要轮换任何 Secret。
+
 ### 本地开发
 
 创建 `.dev.vars`：
@@ -142,8 +149,7 @@ cp .dev.vars.example .dev.vars
 把 `ADMIN_USERNAME`、`ADMIN_PASSWORD`（或 `ADMIN_PASSWORD_HASH`）、`CODE_HASH_PEPPER` 和 `SESSION_SECRET` 写入 `.dev.vars`，然后运行：
 
 ```bash
-npm install
-npm --prefix frontend ci
+npm ci
 npm run build
 npm run db:migrate:local
 npm run dev
@@ -154,25 +160,26 @@ npm run dev
 ### 验证
 
 ```bash
-npm run typecheck
+npm run verify
 npm run deploy:dry-run
 ```
 
-`deploy:dry-run` 会构建前端并执行 `wrangler deploy --dry-run`，用于检查 Worker 配置和静态资源绑定是否可部署。
+`verify` 会检查生成的 Cloudflare 绑定类型、TypeScript、配置一致性以及真实 Workers 运行时测试。`deploy:dry-run` 会构建前端并执行 `wrangler deploy --dry-run`，用于检查 Worker 配置和静态资源绑定是否可部署。
 
 ### 安全和免费层注意
 
-- 默认单文件 50MB，硬限制不建议超过 Cloudflare Workers/R2 免费层适合的范围。
+- 默认单文件限制为 50 MiB（52,428,800 字节，界面显示为 50 MB），代码硬上限为 95 MiB；免费额度场景建议保持默认值。
 - R2 bucket 不要开启 public access，也不要绑定公开自定义域名。
 - 默认关闭详细访问日志，减少 D1 写入。
-- KV 限流是低成本固定窗口限流，不是强一致计数；公开服务建议叠加 Cloudflare WAF 速率限制和 Turnstile。
-- 文本请求体限制为 1MiB；文件分片在流式写入 R2 时按会话声明大小逐字节校验。
+- 原生 Rate Limiting 绑定用于快速粗防护，后台可配置限额始终由 D1 原子计数精确执行；高流量公开服务仍建议叠加 Cloudflare WAF 速率限制和 Turnstile。
+- 文本内容限制为 1 MiB；结构化请求体另预留少量 JSON 开销。文件分片在流式写入 R2 时按会话声明大小逐字节校验。
 - 文件上传会话和文本分享通过 D1 原子写入共同受总存储上限约束，避免并发请求绕过软限制。
 - 静态页面和 API 都设置了 CSP、禁止嵌入、MIME 嗅探防护和严格缓存策略。
 - 启用 Turnstile 前，需要在后台填写 Site Key，并配置 `TURNSTILE_SECRET_KEY` secret。
 - `CODE_HASH_PEPPER` 和 `SESSION_SECRET` 必须在同一实例中保持稳定；不要在普通版本更新时重新生成。
 - 不要提交 `.dev.vars`、真实 secret、私钥或 Cloudflare API token。
-- `wrangler.toml` 中的 D1/KV ID 对公开仓库不是密码，但模板仓库应保留占位值，真实 ID 只留在你自己的部署副本里。
+- `ENABLE_NATIVE_RATE_LIMIT` 控制原生粗粒度保护层；D1 精确限流始终启用。
+- `wrangler.toml` 中的 D1 ID 对公开仓库不是密码，但模板仓库仍应保留占位值，真实 ID 只留在你自己的部署副本里。
 
 ### 致谢与许可证
 
@@ -197,9 +204,9 @@ This project references the FileCodeBox family of projects, but is an independen
 
 - Anonymous text and file sharing.
 - Extraction-code access; D1 stores code hashes, not raw codes.
-- Files and large text payloads are stored in R2.
+- Files and text payloads are stored in R2.
 - Resumable multipart upload backed by R2.
-- KV fixed-window rate limiting for public endpoints and D1-backed strict throttling for admin login.
+- Workers Rate Limiting provides fast coarse protection for public endpoints, while one-statement atomic D1 counters enforce the exact configurable limits; administrator login uses only the exact D1 limiter.
 - Single-admin backend; no public user registration.
 - Runtime settings for upload limits, access logs, Turnstile, and rate limits.
 - Short-lived download tokens; R2 keys are never exposed to users.
@@ -207,11 +214,18 @@ This project references the FileCodeBox family of projects, but is an independen
 - Workers Static Assets serves fingerprinted frontend assets directly; dynamic API responses are not cached.
 - Accessibility support includes form labels, screen-reader semantics, keyboard navigation, visible focus, and status announcements without collecting keystrokes or assistive-technology usage data.
 
+### Requirements
+
+- Node.js `>=24.11.0 <25`; `.nvmrc` pins the tested Node 24 release.
+- A Cloudflare account with Workers, D1, and R2 enabled.
+
 ### Deploy From GitHub
 
 Click the **Deploy to Cloudflare** button at the top of this README.
 
-The repository root contains the Worker `wrangler.toml`, so Cloudflare can provision or bind D1, R2, and KV resources during the Deploy Button flow. Secrets are encrypted by Cloudflare and must never be committed to Git or placed in `wrangler.toml`.
+The repository root contains the Worker `wrangler.toml`, so Cloudflare can provision or bind D1, R2, and Workers Rate Limiting resources during the Deploy Button flow. Secrets are encrypted by Cloudflare and must never be committed to Git or placed in `wrangler.toml`.
+
+On the deployment confirmation page, use `npm run build` as the **Build command** and `npm run deploy` as the **Deploy command**. The deploy script applies remote D1 migrations through the `DB` binding before deploying the Worker. If the page still shows `npx wrangler deploy`, replace it with `npm run deploy`; otherwise new-schema and upgrade migrations will not run automatically.
 
 | Secret | Required | Value and lifecycle |
 | --- | --- | --- |
@@ -231,25 +245,25 @@ Turnstile is disabled by default, so `TURNSTILE_SECRET_KEY` is not requested dur
 npm run deploy:cf
 ```
 
-The helper installs dependencies, checks Wrangler login, provisions R2/D1/KV, patches local binding IDs, creates secrets, builds assets, applies D1 migrations, and deploys the Worker. If the admin-password prompt is left blank, it generates a random initial password, displays it once, and uploads only its hash. `CODE_HASH_PEPPER` and `SESSION_SECRET` are generated automatically.
+For a first deployment, the helper installs dependencies, checks Wrangler login, provisions or explicitly reuses R2/D1, patches the local D1 binding, builds assets, applies D1 migrations, and only then creates secrets and deploys the Worker. If the admin-password prompt is left blank, it generates a random initial password, displays it once, and uploads only its hash. `CODE_HASH_PEPPER` and `SESSION_SECRET` are generated automatically.
 
-Save the generated password immediately. This helper is intended for first deployment; do not rerun it to update an existing instance because rotating the pepper and session secret invalidates existing extraction codes and sessions.
+Save the generated password immediately. When an existing D1 binding or any existing R2/D1 resource is reused, the helper stops by default. If you explicitly continue, it only builds, migrates, and deploys; it does not create resources or read, generate, or rotate secrets. Only for intentionally empty resources, run `npm run deploy:cf -- --force-reinitialize` and type the full confirmation word `REINITIALIZE` to initialize a new instance.
 
 For manual deployment:
 
 ```bash
-npm install
-npm --prefix frontend ci
+npm ci
 npm run build
 npm run deploy
 ```
+
+Existing installations upgrading to 1.40 must also use `npm run deploy`, or run `npm run db:migrate:remote` before `npx wrangler deploy`, so `0002_reliability.sql` is applied before the new Worker becomes active. Do not rotate any secrets during a routine upgrade.
 
 ### Local Development
 
 ```bash
 cp .dev.vars.example .dev.vars
-npm install
-npm --prefix frontend ci
+npm ci
 npm run build
 npm run db:migrate:local
 npm run dev
@@ -260,16 +274,18 @@ Open `http://localhost:8787`.
 ### Validation
 
 ```bash
-npm run typecheck
+npm run verify
 npm run deploy:dry-run
 ```
 
 ### Security Notes
 
-- Text request bodies are capped at 1 MiB. File parts are byte-counted while streaming to R2.
+- Text content is capped at 1 MiB, with a small additional allowance for the JSON envelope. File parts are byte-counted while streaming to R2.
 - File upload reservations and text shares use atomic D1 writes to enforce the shared storage cap under concurrency.
 - Static pages and APIs include CSP, frame, MIME-sniffing, referrer, and cache protections.
-- KV counters are intentionally low-cost and eventually consistent. For a public instance, combine them with Cloudflare WAF rate limiting and Turnstile.
+- Native Rate Limiting bindings provide fast coarse protection, while atomic D1 counters always enforce the exact configurable limits. High-traffic public instances should still combine these with Cloudflare WAF rate limiting and Turnstile.
+- When deploying multiple independent R2FileBox instances in one Cloudflare account, assign a distinct positive `namespace_id` to each Rate Limiting binding so coarse counters are not shared between instances.
+- `ENABLE_NATIVE_RATE_LIMIT` toggles the native coarse protection layer; exact D1 enforcement always remains active.
 - Enabling Turnstile requires both a Site Key in the admin settings and a `TURNSTILE_SECRET_KEY` secret.
 - Keep `CODE_HASH_PEPPER` and `SESSION_SECRET` stable for the lifetime of an instance; do not regenerate them during routine updates.
 

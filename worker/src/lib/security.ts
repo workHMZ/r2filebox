@@ -27,14 +27,9 @@ export async function securityHeaders(c: Context, next: Next) {
   const dynamicRoute =
     path.startsWith('/api/') ||
     path === '/api' ||
-    path.startsWith('/share/') ||
-    path === '/share' ||
     path.startsWith('/admin/') ||
     path === '/admin' ||
-    path === '/health' ||
-    path === '/ready' ||
-    path === '/live' ||
-    path === '/ping'
+    path === '/health'
 
   if (dynamicRoute) {
     c.header('Cache-Control', 'no-store')

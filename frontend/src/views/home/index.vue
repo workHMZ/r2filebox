@@ -25,8 +25,8 @@
           <p>{{ t('home.subtitle') }}</p>
         </div>
 
-        <el-tabs v-model="activeTab" class="function-tabs">
-          <el-tab-pane name="file">
+        <el-tabs v-model="activeTab" class="function-tabs" @tab-click="tabChosenByUser = true">
+          <el-tab-pane v-if="fileShareEnabled" name="file" lazy>
             <template #label>
               <span class="tab-label">
                 <el-icon><Upload /></el-icon>
@@ -36,7 +36,7 @@
             <FileUpload @success="handleShareSuccess" />
           </el-tab-pane>
 
-          <el-tab-pane name="text">
+          <el-tab-pane v-if="textShareEnabled" name="text" lazy>
             <template #label>
               <span class="tab-label">
                 <el-icon><Document /></el-icon>
@@ -46,7 +46,7 @@
             <TextShare @success="handleShareSuccess" />
           </el-tab-pane>
 
-          <el-tab-pane name="get">
+          <el-tab-pane name="get" lazy>
             <template #label>
               <span class="tab-label">
                 <el-icon><Download /></el-icon>
@@ -129,9 +129,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import QRCode from 'qrcode'
 import {
   CopyDocument,
   Document,
@@ -152,11 +151,32 @@ import { useI18n } from '@/i18n'
 const configStore = useConfigStore()
 const { t } = useI18n()
 
-const activeTab = ref('file')
+const fileShareEnabled = computed(() => {
+  const config = configStore.config
+  return Boolean(config && config.openUpload && config.enableFileShare !== false)
+})
+const textShareEnabled = computed(() => {
+  const config = configStore.config
+  return Boolean(config && config.openUpload && config.enableTextShare !== false)
+})
+const activeTab = ref('get')
+const tabChosenByUser = ref(false)
 const showShareDialog = ref(false)
 const shareUrl = ref('')
 const shareCode = ref('')
 const qrCodeDataUrl = ref('')
+let qrGenerationVersion = 0
+
+watch(
+  [fileShareEnabled, textShareEnabled],
+  ([fileEnabled, textEnabled]) => {
+    const enabledTabs = [fileEnabled && 'file', textEnabled && 'text', 'get'].filter(Boolean)
+    if (!enabledTabs.includes(activeTab.value)) activeTab.value = enabledTabs[0] as string
+    if (!tabChosenByUser.value && activeTab.value === 'get' && fileEnabled) activeTab.value = 'file'
+    else if (!tabChosenByUser.value && activeTab.value === 'get' && textEnabled) activeTab.value = 'text'
+  },
+  { immediate: true },
+)
 
 interface ShareResult {
   code: string
@@ -166,6 +186,7 @@ interface ShareResult {
 }
 
 const handleShareSuccess = async (result: ShareResult) => {
+  const version = ++qrGenerationVersion
   let url = result.full_share_url || result.share_url
 
   if (!url.includes('#')) {
@@ -181,11 +202,13 @@ const handleShareSuccess = async (result: ShareResult) => {
 
   shareUrl.value = url
   shareCode.value = result.code
+  qrCodeDataUrl.value = ''
   showShareDialog.value = true
 
   try {
+    const { default: QRCode } = await import('qrcode')
     const qrData = result.qr_code_data || url
-    qrCodeDataUrl.value = await QRCode.toDataURL(qrData, {
+    const generatedQrCode = await QRCode.toDataURL(qrData, {
       width: 180,
       margin: 2,
       color: {
@@ -193,9 +216,10 @@ const handleShareSuccess = async (result: ShareResult) => {
         light: '#ffffff',
       },
     })
+    if (version === qrGenerationVersion) qrCodeDataUrl.value = generatedQrCode
   } catch (error) {
     console.error('生成二维码失败:', error)
-    qrCodeDataUrl.value = ''
+    if (version === qrGenerationVersion) qrCodeDataUrl.value = ''
   }
 }
 

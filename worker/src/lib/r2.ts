@@ -15,11 +15,20 @@ export class R2Storage {
     return await this.bucket.get(key)
   }
 
+  async headObject(key: string): Promise<R2Object | null> {
+    return await this.bucket.head(key)
+  }
+
   /**
    * Delete an object from R2
    */
   async deleteObject(key: string): Promise<void> {
     await this.bucket.delete(key)
+  }
+
+  async deleteObjects(keys: string[]): Promise<void> {
+    if (!keys.length) return
+    await this.bucket.delete(keys)
   }
 
   async createMultipartUpload(key: string, options?: R2MultipartOptions): Promise<R2MultipartUpload> {

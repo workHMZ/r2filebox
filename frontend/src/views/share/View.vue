@@ -73,10 +73,10 @@
                 </div>
               </div>
               <div class="file-info">
-                <h3 class="file-name">{{ shareData.file_name || shareData.filename }}</h3>
+                <h3 class="file-name">{{ shareData.file_name }}</h3>
                 <div class="file-meta">
                   <el-tag type="info" size="large" class="meta-tag">
-                    {{ formatFileSize(shareData.size ?? shareData.file_size) }}
+                    {{ formatFileSize(shareData.size_bytes, getLocaleTag(locale)) }}
                   </el-tag>
                 </div>
               </div>
@@ -101,9 +101,9 @@
                   </span>
                 </span>
               </div>
-              <div class="info-row" v-if="shareData.expire_time">
+              <div class="info-row" v-if="shareData.expire_at">
                 <span class="info-key">{{ t('shareView.expire') }}</span>
-                <span class="info-val expire-time">{{ formatTime(shareData.expire_time) }}</span>
+                <span class="info-val expire-time">{{ formatDateTime(shareData.expire_at, getLocaleTag(locale)) }}</span>
               </div>
             </div>
           </div>
@@ -114,7 +114,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { 
@@ -122,47 +122,33 @@ import {
 } from '@element-plus/icons-vue'
 import { shareApi } from '@/api/share'
 import type { ResolvedShare } from '@/api/share'
-import { useI18n } from '@/i18n'
+import { getLocaleTag, useI18n } from '@/i18n'
 import AppLogo from '@/components/AppLogo.vue'
 import LanguageSwitch from '@/components/LanguageSwitch.vue'
+import { formatDateTime, formatFileSize } from '@/utils/format'
 
 const route = useRoute()
-const { t } = useI18n()
+const { locale, t } = useI18n()
 
 const shareCode = ref('')
 const loading = ref(false)
 const error = ref('')
 const shareData = ref<ResolvedShare | null>(null)
+let requestVersion = 0
 const shareStatus = computed(() => {
   if (loading.value) return t('shareView.loading')
   if (shareData.value) return t('a11y.shareLoaded')
   return ''
 })
 
-const formatFileSize = (bytes: number): string => {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
-const formatTime = (timeStr: string) => {
-  if (!timeStr) return t('common.unknown')
-  try {
-    const d = new Date(timeStr)
-    return d.toLocaleString()
-  } catch {
-    return timeStr
-  }
-}
-
-const fetchShare = async () => {
+const fetchShare = async (code: string, version: number) => {
   loading.value = true
   error.value = ''
+  shareData.value = null
 
   try {
-    const res = await shareApi.getShare(shareCode.value)
+    const res = await shareApi.getShare(code)
+    if (version !== requestVersion) return
 
     if (res.code === 200) {
       shareData.value = res.data
@@ -170,9 +156,10 @@ const fetchShare = async () => {
       error.value = res.message || t('shareView.notFound')
     }
   } catch (err: unknown) {
+    if (version !== requestVersion) return
     error.value = err instanceof Error ? err.message : t('shareView.networkFailed')
   } finally {
-    loading.value = false
+    if (version === requestVersion) loading.value = false
   }
 }
 
@@ -198,15 +185,19 @@ const downloadFile = () => {
   window.open(url, '_blank', 'noopener,noreferrer')
 }
 
-onMounted(() => {
-  const code = route.params.code as string
+watch(() => route.params.code, (value) => {
+  const version = ++requestVersion
+  const code = typeof value === 'string' ? value.trim() : ''
   if (code) {
     shareCode.value = code
-    fetchShare()
+    void fetchShare(code, version)
   } else {
+    shareCode.value = ''
+    loading.value = false
+    shareData.value = null
     error.value = t('shareView.invalidCode')
   }
-})
+}, { immediate: true })
 </script>
 
 <style scoped>

@@ -9,8 +9,9 @@
         <el-input-number
           v-model="expireValue"
           :min="1"
-          :max="999"
+          :max="currentMax"
           :aria-label="t('a11y.expireValue')"
+          :aria-describedby="`${idPrefix}-expire-limit`"
           controls-position="right"
           class="number-input"
         />
@@ -19,11 +20,16 @@
           :aria-label="t('a11y.expireUnit')"
           class="expire-select"
         >
-          <el-option :label="t('expire.minute')" value="minute" />
-          <el-option :label="t('expire.hour')" value="hour" />
-          <el-option :label="t('expire.day')" value="day" />
-          <el-option :label="t('expire.week')" value="week" />
+          <el-option
+            v-for="style in availableStyles"
+            :key="style"
+            :label="t(`expire.${style}`)"
+            :value="style"
+          />
         </el-select>
+        <p :id="`${idPrefix}-expire-limit`" class="sr-only">
+          {{ t('upload.expireLimit', { value: maxExpireHours }) }}
+        </p>
       </div>
     </div>
 
@@ -40,16 +46,37 @@
 </template>
 
 <script setup lang="ts">
+import { computed, watch } from 'vue'
 import { Clock, Lock } from '@element-plus/icons-vue'
 import { useI18n } from '@/i18n'
+import { maxExpireValue, type ExpireStyle } from '@/utils/expiration'
 
-defineProps<{
+const props = defineProps<{
   idPrefix: string
+  maxExpireHours: number
+  expireStyles?: string[]
 }>()
 
 const expireValue = defineModel<number>('expireValue', { required: true })
-const expireStyle = defineModel<string>('expireStyle', { required: true })
+const expireStyle = defineModel<ExpireStyle>('expireStyle', { required: true })
 const { t } = useI18n()
+
+const supportedStyles: ExpireStyle[] = ['minute', 'hour', 'day', 'week']
+const availableStyles = computed(() => {
+  const configured = props.expireStyles?.length ? props.expireStyles : supportedStyles
+  return supportedStyles.filter(
+    (style) => configured.includes(style) && maxExpireValue(props.maxExpireHours, style) >= 1,
+  )
+})
+const currentMax = computed(() => Math.max(1, maxExpireValue(props.maxExpireHours, expireStyle.value)))
+
+watch([availableStyles, currentMax], ([styles, maximum]) => {
+  if (!styles.includes(expireStyle.value)) {
+    expireStyle.value = styles[styles.length - 1] ?? 'minute'
+    return
+  }
+  if (expireValue.value > maximum) expireValue.value = maximum
+}, { immediate: true })
 </script>
 
 <style scoped>
@@ -126,6 +153,18 @@ const { t } = useI18n()
   line-height: 22px;
   text-align: center;
   white-space: normal;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 @media (max-width: 640px) {

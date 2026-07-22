@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
+import { useUserStore } from '@/stores/user'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -79,28 +80,16 @@ const router = createRouter({
   routes,
 })
 
-// 路由守卫
-router.beforeEach((to, _from, next) => {
-  // 检查是否需要登录
-  if (to.meta.requiresAuth) {
-    const token = localStorage.getItem('token')
-    if (!token) {
-      // 如果是管理后台，跳转到管理员登录页面
-      next('/admin/login')
-      return
-    }
+router.beforeEach(async (to) => {
+  if (!to.meta.requiresAuth) return true
 
-    // 检查是否需要管理员权限
-    if (to.meta.requiresAdmin) {
-      const userRole = localStorage.getItem('userRole')
-      if (userRole !== 'admin') {
-        next('/admin/login')
-        return
-      }
-    }
+  const userStore = useUserStore()
+  if (await userStore.checkSession()) return true
+
+  return {
+    path: '/admin/login',
+    query: { redirect: to.fullPath },
   }
-
-  next()
 })
 
 export default router

@@ -24,7 +24,6 @@ app.get('*', async (c) => {
   // If it's an API route that somehow wasn't matched, return 404 JSON
   if (
     c.req.path.startsWith('/api') ||
-    c.req.path.startsWith('/share') ||
     c.req.path.startsWith('/admin') ||
     c.req.path.startsWith('/health')
   ) {

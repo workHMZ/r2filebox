@@ -10,7 +10,11 @@ import { getRequiredSecret } from '../lib/env'
 import { getClientIp } from '../lib/security'
 import { hashIp } from '../lib/code'
 import { cleanupExpiredShares } from '../lib/cleanup'
-import { getRuntimeConfig, type RuntimeConfig } from '../lib/runtime-config'
+import {
+  getRuntimeConfig,
+  RuntimeConfigUnavailableError,
+  type RuntimeConfig,
+} from '../lib/runtime-config'
 import { checkRateLimit } from '../lib/rate-limit'
 import { BodyTooLargeError, InvalidBodyError, readStructuredBody } from '../lib/body'
 
@@ -21,6 +25,11 @@ type AdminSession = JsonRecord & {
   username: string
   role: 'admin'
 }
+type AuditSubject = {
+  type: string
+  name: string | null
+  sizeBytes: number | null
+}
 
 const app = new Hono<{ Bindings: Bindings, Variables: { user: AdminSession } }>()
 const MAX_LOGIN_BODY_BYTES = 8 * 1024
@@ -30,6 +39,10 @@ app.use('/admin/*', adminAuth)
 
 app.post('/admin/login', async (c) => {
   try {
+    const origin = c.req.header('Origin')
+    if (origin && !isSameOrigin(c)) {
+      return c.json(error('请求来源无效', 403), 403)
+    }
     const body = await readStructuredBody(c.req.raw, MAX_LOGIN_BODY_BYTES)
     const password = String(body.password || '')
     const username = String(body.username || 'admin')
@@ -83,32 +96,37 @@ app.post('/admin/login', async (c) => {
       exp: Math.floor(Date.now() / 1000) + (12 * 60 * 60),
     }, sessionSecret)
 
-    await audit(db, c, 'admin_login', null, 'success', ipHash)
-    c.header('Set-Cookie', `admin_session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/admin; Max-Age=43200`)
+    await audit(db, c, 'admin_login', null, 'success', ipHash, {
+      config,
+      subject: { type: 'admin', name: adminUser, sizeBytes: null },
+    })
+    c.header('Set-Cookie', adminSessionCookie(token, c.req.url, 12 * 60 * 60))
 
     return c.json(success({
-      token,
-      user: {
-        id: 'admin',
-        username: adminUser,
-        nickname: '管理员',
-        role: 'admin',
-      },
+      user: adminUserDto(adminUser),
     }, '登录成功'))
   } catch (e: unknown) {
     return adminRouteFailure(c, 'admin login', e, '登录失败')
   }
 })
 
+app.get('/admin/session', (c) => {
+  return c.json(success({
+    user: adminUserDto(c.get('user').username),
+  }))
+})
+
 app.post('/admin/logout', async (c) => {
   try {
     const db = new DB(c.env.DB)
     const pepper = getRequiredSecret(c.env, 'CODE_HASH_PEPPER')
-    await audit(db, c, 'admin_logout', null, 'success', await hashIp(getClientIp(c), pepper))
+    await audit(db, c, 'admin_logout', null, 'success', await hashIp(getClientIp(c), pepper), {
+      subject: { type: 'admin', name: c.get('user').username, sizeBytes: null },
+    })
   } catch (error) {
     console.error('Failed to write admin logout audit log:', error)
   }
-  c.header('Set-Cookie', 'admin_session=; HttpOnly; Secure; SameSite=Strict; Path=/admin; Max-Age=0')
+  c.header('Set-Cookie', adminSessionCookie('', c.req.url, 0))
   return c.json(success(null, '退出成功'))
 })
 
@@ -132,7 +150,6 @@ app.get('/admin/files', async (c) => {
 
     return c.json(success({
       items: result.items.map(adminShareDto),
-      list: result.items.map(adminShareDto),
       total: result.total,
       page,
       page_size: pageSize,
@@ -156,7 +173,9 @@ app.delete('/admin/files/:id', async (c) => {
     await db.deleteShareById(id)
 
     const pepper = getRequiredSecret(c.env, 'CODE_HASH_PEPPER')
-    await audit(db, c, 'admin_delete_share', id, 'success', await hashIp(getClientIp(c), pepper))
+    await audit(db, c, 'admin_delete_share', id, 'success', await hashIp(getClientIp(c), pepper), {
+      subject: shareAuditSubject(share),
+    })
     return c.json(success(null, '删除成功'))
   } catch (e: unknown) {
     return adminRouteFailure(c, 'delete admin share', e, '删除失败')
@@ -211,7 +230,11 @@ app.put('/admin/config', async (c) => {
       null,
       'success',
       ipHash,
-      previousConfig.enableAuditLog || config.enableAuditLog,
+      {
+        force: previousConfig.enableAuditLog || config.enableAuditLog,
+        config,
+        subject: { type: 'system', name: 'global-config', sizeBytes: null },
+      },
     )
     return c.json(success(adminConfigDto(config), '配置已保存'))
   } catch (e: unknown) {
@@ -254,6 +277,7 @@ app.get('/admin/logs/audit', async (c) => {
       id: log.id,
       action: log.action,
       share_id: log.share_id,
+      subject_type: log.subject_type,
       subject_name: log.subject_name,
       size_bytes: log.size_bytes,
       ip_hash_prefix: log.ip_hash?.slice(0, 12) || null,
@@ -274,7 +298,7 @@ app.get('/admin/maintenance/system-info', (c) => {
   return c.json(success({
     runtime: 'Cloudflare Workers',
     platform: 'V8 isolate',
-    storage: 'D1 + R2 + KV',
+    storage: 'D1 + R2 + Workers Rate Limiting',
     version: c.env.APP_VERSION,
     r2_bucket_name: c.env.R2_BUCKET_NAME || null,
     d1_database_name: c.env.D1_DATABASE_NAME || null,
@@ -288,7 +312,10 @@ app.post('/admin/maintenance/clean-expired', async (c) => {
     const pepper = getRequiredSecret(c.env, 'CODE_HASH_PEPPER')
     const ipHash = await hashIp(getClientIp(c), pepper)
     const result = await cleanupExpiredShares(c.env.DB, c.env.BUCKET, config.cleanupBatchSize)
-    await audit(db, c, 'admin_cleanup_expired', null, result.failures ? 'partial' : 'success', ipHash)
+    await audit(db, c, 'admin_cleanup_expired', null, result.failures ? 'partial' : 'success', ipHash, {
+      config,
+      subject: { type: 'system', name: 'expired-content', sizeBytes: null },
+    })
     return c.json(success({
       deleted_count: result.processed,
       deleted_r2_objects: result.deletedR2,
@@ -308,17 +335,15 @@ async function adminAuth(c: Context<{ Bindings: Bindings, Variables: { user: Adm
     return next()
   }
 
-  const bearerToken = getBearerToken(c)
   const cookieToken = getCookie(c.req.header('Cookie') || '', 'admin_session')
-  if (!bearerToken && cookieToken && !isSafeMethod(c.req.method) && !isSameOrigin(c)) {
+  if (cookieToken && !isSafeMethod(c.req.method) && !isSameOrigin(c)) {
     return c.json(error('请求来源无效', 403), 403)
   }
-  const token = bearerToken || cookieToken
-  if (!token) {
+  if (!cookieToken) {
     return c.json(error('未授权', 401), 401)
   }
 
-  const payload = await verifyJWT(token, getRequiredSecret(c.env, 'SESSION_SECRET'))
+  const payload = await verifyJWT(cookieToken, getRequiredSecret(c.env, 'SESSION_SECRET'))
   if (
     !payload ||
     payload.sub !== 'admin' ||
@@ -332,12 +357,6 @@ async function adminAuth(c: Context<{ Bindings: Bindings, Variables: { user: Adm
   await next()
 }
 
-function getBearerToken(c: Context): string | null {
-  const authHeader = c.req.header('Authorization')
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null
-  return authHeader.substring(7)
-}
-
 function getCookie(cookieHeader: string, name: string): string | null {
   const match = cookieHeader.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))
   if (!match) return null
@@ -345,6 +364,20 @@ function getCookie(cookieHeader: string, name: string): string | null {
     return decodeURIComponent(match.slice(name.length + 1))
   } catch {
     return null
+  }
+}
+
+function adminSessionCookie(token: string, requestUrl: string, maxAge: number): string {
+  const secure = new URL(requestUrl).protocol === 'https:' ? '; Secure' : ''
+  return `admin_session=${encodeURIComponent(token)}; HttpOnly${secure}; SameSite=Strict; Path=/admin; Max-Age=${maxAge}`
+}
+
+function adminUserDto(username: string) {
+  return {
+    id: 'admin',
+    username,
+    nickname: '管理员',
+    role: 'admin' as const,
   }
 }
 
@@ -365,20 +398,21 @@ function isSameOrigin(c: Context): boolean {
 function adminShareDto(share: Share) {
   return {
     id: share.id,
-    share_id: share.id,
     type: share.type,
-    text: share.type === 'text',
-    uuid_file_name: share.display_name,
     display_name: share.display_name,
-    file_name: share.display_name,
-    size: share.size_bytes,
-    used_count: share.download_count,
+    size_bytes: share.size_bytes,
     download_count: share.download_count,
     max_downloads: share.max_downloads,
-    CreatedAt: share.created_at,
     created_at: share.created_at,
-    expired_at: share.expire_at,
-    expire_time: share.expire_at,
+    expire_at: share.expire_at,
+  }
+}
+
+function shareAuditSubject(share: Share): AuditSubject {
+  return {
+    type: share.type,
+    name: share.display_name,
+    sizeBytes: share.size_bytes,
   }
 }
 
@@ -401,7 +435,7 @@ function adminConfigDto(config: RuntimeConfig) {
         uploadsize: config.maxUploadBytes,
       },
       rate_limit: {
-        enable_kv: config.enableKvRateLimit ? 1 : 0,
+        enabled: config.enableNativeRateLimit ? 1 : 0,
         upload_per_minute: config.rateLimitUploadPerMinute,
         upload_part_per_minute: config.rateLimitUploadPartPerMinute,
         resolve_per_minute: config.rateLimitResolvePerMinute,
@@ -440,7 +474,7 @@ function settingsFromAdminConfig(config: JsonRecord): Record<string, string> {
     }
     const rateLimit = asRecord(transfer.rate_limit)
     if (rateLimit) {
-      setBoolean(settings, 'ENABLE_KV_RATE_LIMIT', rateLimit.enable_kv)
+      setBoolean(settings, 'ENABLE_NATIVE_RATE_LIMIT', rateLimit.enabled)
       setNumber(settings, 'RATE_LIMIT_UPLOAD_PER_MINUTE', rateLimit.upload_per_minute)
       setNumber(settings, 'RATE_LIMIT_UPLOAD_PART_PER_MINUTE', rateLimit.upload_part_per_minute)
       setNumber(settings, 'RATE_LIMIT_RESOLVE_PER_MINUTE', rateLimit.resolve_per_minute)
@@ -485,6 +519,10 @@ function adminRouteFailure(c: Context, operation: string, cause: unknown, messag
   if (cause instanceof InvalidBodyError) {
     return c.json(error('请求格式无效', 400), 400)
   }
+  if (cause instanceof RuntimeConfigUnavailableError) {
+    console.error(`${operation} failed:`, cause)
+    return c.json(error('服务配置暂时不可用，请稍后重试', 503), 503)
+  }
   console.error(`${operation} failed:`, cause)
   return c.json(error(message, 500), 500)
 }
@@ -496,15 +534,22 @@ async function audit(
   shareId: string | null,
   status: string,
   ipHash: string | null,
-  force = false,
+  options: {
+    force?: boolean
+    config?: RuntimeConfig
+    subject?: AuditSubject
+  } = {},
 ): Promise<void> {
   try {
-    const config = await getRuntimeConfig(c.env as Env, db)
-    if (!config.enableAuditLog && !force) return
+    const config = options.config || await getRuntimeConfig(c.env as Env, db)
+    if (!config.enableAuditLog && !options.force) return
     await db.createAuditLog({
       id: crypto.randomUUID(),
       action,
       share_id: shareId,
+      subject_type: options.subject?.type || null,
+      subject_name: options.subject?.name || null,
+      size_bytes: options.subject?.sizeBytes ?? null,
       ip_hash: ipHash,
       user_agent_hash: null,
       status,

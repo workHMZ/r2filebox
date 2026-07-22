@@ -1,5 +1,5 @@
-// A lightweight JWT implementation for Cloudflare Workers using Web Crypto API
-// We avoid node dependencies to keep it fully Edge-compatible.
+// A lightweight JWT implementation using the Web Crypto API, without Node
+// crypto dependencies or compatibility polyfills.
 
 function base64UrlEncode(buffer: ArrayBuffer | Uint8Array): string {
   const bytes = new Uint8Array(buffer)

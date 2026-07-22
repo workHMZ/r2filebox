@@ -7,7 +7,6 @@ export interface SystemStats {
   active_shares: number
   expired_shares: number
   total_size: number
-  total_storage_bytes: number
   today_uploads: number
   total_downloads: number
 }
@@ -26,6 +25,7 @@ export interface AuditLogDetails {
   id: string
   action: string
   share_id: string | null
+  subject_type: string | null
   ip_hash: string | null
   status: string
   created_at: string
@@ -43,20 +43,25 @@ export interface AuditStats {
 export class DB {
   constructor(private db: D1Database) {}
 
-  async createShare(share: Share, maxStorageBytes?: number): Promise<boolean> {
-    const storageLimit = maxStorageBytes ?? null
-    const stmt = this.db.prepare(`
+  async createShare(share: Share, maxStorageBytes: number): Promise<boolean> {
+    const created = await this.prepareCreateShare(share, maxStorageBytes).first<{ id: string }>()
+    return created?.id === share.id
+  }
+
+  async completeUploadSession(share: Share, session: UploadSession): Promise<void> {
+    const insertShare = this.db.prepare(`
       INSERT INTO shares (
         id, code_hash, type, r2_key, display_name, mime_type, size_bytes, title,
         created_at, expire_at, deleted_at, max_downloads, download_count,
         created_ip_hash, last_access_at, object_etag, object_uploaded_at
       )
       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-      WHERE ? IS NULL OR (
-        COALESCE((SELECT SUM(size_bytes) FROM shares WHERE deleted_at IS NULL), 0) +
-        COALESCE((SELECT SUM(size_bytes) FROM upload_sessions), 0) +
-        ? <= ?
+      WHERE EXISTS (
+        SELECT 1
+        FROM upload_sessions
+        WHERE id = ? AND share_id = ? AND upload_id = ? AND r2_key = ?
       )
+      RETURNING id
     `).bind(
       share.id,
       share.code_hash,
@@ -75,12 +80,55 @@ export class DB {
       share.last_access_at,
       share.object_etag,
       share.object_uploaded_at,
-      storageLimit,
-      share.size_bytes,
-      storageLimit,
+      session.id,
+      session.share_id,
+      session.upload_id,
+      session.r2_key,
     )
-    const result = await stmt.run()
-    return (result.meta.changes || 0) === 1
+    const deleteSession = this.db.prepare(`
+      DELETE FROM upload_sessions
+      WHERE id = ? AND share_id = ? AND upload_id = ? AND r2_key = ?
+      RETURNING id
+    `).bind(session.id, session.share_id, session.upload_id, session.r2_key)
+    const [created, removed] = await this.db.batch([insertShare, deleteSession])
+    const createdIds = created.results as Array<{ id?: string }>
+    const removedIds = removed.results as Array<{ id?: string }>
+    if (createdIds[0]?.id !== share.id || removedIds[0]?.id !== session.id) {
+      throw new Error('Upload session changed before completion')
+    }
+  }
+
+  private prepareCreateShare(share: Share, maxStorageBytes: number): D1PreparedStatement {
+    return this.db.prepare(`
+      INSERT INTO shares (
+        id, code_hash, type, r2_key, display_name, mime_type, size_bytes, title,
+        created_at, expire_at, deleted_at, max_downloads, download_count,
+        created_ip_hash, last_access_at, object_etag, object_uploaded_at
+      )
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      WHERE COALESCE((SELECT active_bytes FROM storage_usage WHERE id = 1), 0) + ? <= ?
+      RETURNING id
+    `).bind(
+      share.id,
+      share.code_hash,
+      share.type,
+      share.r2_key,
+      share.display_name,
+      share.mime_type,
+      share.size_bytes,
+      share.title,
+      share.created_at,
+      share.expire_at,
+      share.deleted_at,
+      share.max_downloads,
+      share.download_count,
+      share.created_ip_hash,
+      share.last_access_at,
+      share.object_etag,
+      share.object_uploaded_at,
+      share.size_bytes,
+      maxStorageBytes,
+    )
   }
 
   async getShareByCodeHash(codeHash: string): Promise<Share | null> {
@@ -137,52 +185,58 @@ export class DB {
 
   async getSystemStats(): Promise<SystemStats> {
     const now = new Date().toISOString()
-    const totalFilesStmt = this.db.prepare('SELECT count(*) as c FROM shares WHERE type = "file" AND deleted_at IS NULL')
-    const totalSharesStmt = this.db.prepare('SELECT count(*) as c FROM shares WHERE deleted_at IS NULL')
-    const activeSharesStmt = this.db.prepare('SELECT count(*) as c FROM shares WHERE deleted_at IS NULL AND expire_at > ?').bind(now)
-    const textSharesStmt = this.db.prepare('SELECT count(*) as c FROM shares WHERE type = "text" AND deleted_at IS NULL')
-    const expiredSharesStmt = this.db.prepare('SELECT count(*) as c FROM shares WHERE deleted_at IS NULL AND expire_at <= ?').bind(now)
-    const totalSizeStmt = this.db.prepare('SELECT sum(size_bytes) as c FROM shares WHERE deleted_at IS NULL')
-    const totalDownloadsStmt = this.db.prepare('SELECT sum(download_count) as c FROM shares WHERE deleted_at IS NULL')
-    
-    const today = new Date().toISOString().split('T')[0]
-    const todayUploadsStmt = this.db.prepare('SELECT count(*) as c FROM shares WHERE created_at LIKE ? AND deleted_at IS NULL').bind(`${today}%`)
-
-    const [files, total, active, text, expired, size, uploads, downloads] = await this.db.batch<{ c: number | null }>([
-      totalFilesStmt,
-      totalSharesStmt,
-      activeSharesStmt,
-      textSharesStmt,
-      expiredSharesStmt,
-      totalSizeStmt,
-      todayUploadsStmt,
-      totalDownloadsStmt,
-    ])
+    const todayStart = `${now.slice(0, 10)}T00:00:00.000Z`
+    const tomorrowStart = new Date(Date.parse(todayStart) + 24 * 60 * 60 * 1000).toISOString()
+    const stats = await this.db.prepare(`
+      SELECT
+        SUM(CASE WHEN type = 'file' THEN 1 ELSE 0 END) AS total_files,
+        SUM(CASE WHEN type = 'text' THEN 1 ELSE 0 END) AS text_shares,
+        COUNT(*) AS total_shares,
+        SUM(CASE WHEN expire_at > ? THEN 1 ELSE 0 END) AS active_shares,
+        SUM(CASE WHEN expire_at <= ? THEN 1 ELSE 0 END) AS expired_shares,
+        COALESCE(SUM(size_bytes), 0) AS total_size,
+        SUM(CASE WHEN created_at >= ? AND created_at < ? THEN 1 ELSE 0 END) AS today_uploads,
+        COALESCE(SUM(download_count), 0) AS total_downloads
+      FROM shares
+      WHERE deleted_at IS NULL
+    `).bind(now, now, todayStart, tomorrowStart).first<{
+      total_files: number | null
+      text_shares: number | null
+      total_shares: number | null
+      active_shares: number | null
+      expired_shares: number | null
+      total_size: number | null
+      today_uploads: number | null
+      total_downloads: number | null
+    }>()
 
     return {
-      total_files: countResult(files),
-      text_shares: countResult(text),
-      total_shares: countResult(total),
-      active_shares: countResult(active),
-      expired_shares: countResult(expired),
-      total_size: countResult(size),
-      total_storage_bytes: countResult(size),
-      today_uploads: countResult(uploads),
-      total_downloads: countResult(downloads),
+      total_files: Number(stats?.total_files || 0),
+      text_shares: Number(stats?.text_shares || 0),
+      total_shares: Number(stats?.total_shares || 0),
+      active_shares: Number(stats?.active_shares || 0),
+      expired_shares: Number(stats?.expired_shares || 0),
+      total_size: Number(stats?.total_size || 0),
+      today_uploads: Number(stats?.today_uploads || 0),
+      total_downloads: Number(stats?.total_downloads || 0),
     }
   }
 
   async getUploadTrend(days: number): Promise<UploadTrendPoint[]> {
     const limit = Math.min(Math.max(days, 1), 30)
+    const start = new Date()
+    start.setUTCHours(0, 0, 0, 0)
+    start.setUTCDate(start.getUTCDate() - (limit - 1))
     const result = await this.db.prepare(`
       SELECT 
         date(created_at) as date,
         count(*) as uploads
       FROM shares
-      WHERE created_at >= date('now', '-' || ? || ' days')
+      WHERE created_at >= ?
+        AND deleted_at IS NULL
       GROUP BY date(created_at)
       ORDER BY date(created_at) ASC
-    `).bind(limit).all<UploadTrendPoint>()
+    `).bind(start.toISOString()).all<UploadTrendPoint>()
     return result.results || []
   }
 
@@ -196,7 +250,7 @@ export class DB {
         count(*) as count
       FROM shares
       WHERE deleted_at IS NULL
-      GROUP BY mime_type
+      GROUP BY 1
       ORDER BY count DESC
       LIMIT 10
     `).all<FileTypeCount>()
@@ -204,17 +258,16 @@ export class DB {
   }
 
   async createUploadSession(session: UploadSession, maxStorageBytes: number): Promise<boolean> {
-    const result = await this.db.prepare(`
+    const created = await this.db.prepare(`
       INSERT INTO upload_sessions (
         id, share_id, upload_id, code_hash, r2_key, display_name, mime_type,
         size_bytes, title, expire_at, max_downloads, created_ip_hash, created_at, updated_at
       )
       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
       WHERE (
-        COALESCE((SELECT SUM(size_bytes) FROM shares WHERE deleted_at IS NULL), 0) +
-        COALESCE((SELECT SUM(size_bytes) FROM upload_sessions), 0) +
-        ? <= ?
+        COALESCE((SELECT active_bytes FROM storage_usage WHERE id = 1), 0) + ? <= ?
       )
+      RETURNING id
     `).bind(
       session.id,
       session.share_id,
@@ -232,8 +285,8 @@ export class DB {
       session.updated_at,
       session.size_bytes,
       maxStorageBytes,
-    ).run()
-    return (result.meta.changes || 0) === 1
+    ).first<{ id: string }>()
+    return created?.id === session.id
   }
 
   async getUploadSession(id: string): Promise<UploadSession | null> {
@@ -242,6 +295,27 @@ export class DB {
 
   async deleteUploadSession(id: string): Promise<void> {
     await this.db.prepare('DELETE FROM upload_sessions WHERE id = ?').bind(id).run()
+  }
+
+  async deleteUploadSessionsByIds(ids: string[]): Promise<number> {
+    if (!ids.length) return 0
+    const { results } = await this.db.prepare(`
+      DELETE FROM upload_sessions
+      WHERE id IN (SELECT value FROM json_each(?))
+      RETURNING id
+    `).bind(JSON.stringify(ids)).all<{ id: string }>()
+    return results.length
+  }
+
+  async getActiveShareKeys(ids: string[]): Promise<Array<{ id: string; r2_key: string }>> {
+    if (!ids.length) return []
+    const { results } = await this.db.prepare(`
+      SELECT id, r2_key
+      FROM shares
+      WHERE deleted_at IS NULL
+        AND id IN (SELECT value FROM json_each(?))
+    `).bind(JSON.stringify(ids)).all<{ id: string; r2_key: string }>()
+    return results
   }
 
   async getExpiredUploadSessions(limit: number, staleBefore: string): Promise<UploadSession[]> {
@@ -266,6 +340,7 @@ export class DB {
       SELECT * FROM shares 
       WHERE deleted_at IS NULL 
         AND expire_at < ? 
+      ORDER BY expire_at ASC
       LIMIT ?
     `).bind(now, safeLimit)
     
@@ -273,32 +348,66 @@ export class DB {
     return results
   }
 
-  async incrementAbuseCounter(action: string, ipHash: string, bucketStart: string): Promise<number> {
+  async markSharesDeletedByIds(ids: string[], deletedAt: string): Promise<number> {
+    if (!ids.length) return 0
+    const { results } = await this.db.prepare(`
+      UPDATE shares
+      SET deleted_at = ?
+      WHERE deleted_at IS NULL
+        AND id IN (SELECT value FROM json_each(?))
+      RETURNING id
+    `).bind(deletedAt, JSON.stringify(ids)).all<{ id: string }>()
+    return results.length
+  }
+
+  async incrementAbuseCounter(
+    action: string,
+    ipHash: string,
+    bucketStart: string,
+    maxCount: number,
+  ): Promise<number> {
     const key = `${action}:${ipHash}:${bucketStart}`
     const now = new Date().toISOString()
-    await this.db.prepare(`
+    const row = await this.db.prepare(`
       INSERT INTO abuse_counters (key, action, ip_hash, bucket_start, count, updated_at)
       VALUES (?, ?, ?, ?, 1, ?)
       ON CONFLICT(key) DO UPDATE SET count = count + 1, updated_at = excluded.updated_at
-    `).bind(key, action, ipHash, bucketStart, now).run()
-
-    const row = await this.db.prepare('SELECT count FROM abuse_counters WHERE key = ?').bind(key).first<{count: number}>()
-    return row?.count || 0
+      WHERE abuse_counters.count <= ?
+      RETURNING count
+    `).bind(key, action, ipHash, bucketStart, now, maxCount).first<{count: number}>()
+    // Once the first blocked request raises the stored count to maxCount + 1,
+    // later blocked requests skip the UPDATE and therefore stop consuming D1
+    // rows-written. The effective count remains blocked for this window.
+    return row?.count ?? (maxCount + 1)
   }
 
-  async purgeAbuseCounters(before: string): Promise<number> {
-    const result = await this.db.prepare('DELETE FROM abuse_counters WHERE updated_at < ?').bind(before).run()
+  async purgeAbuseCounters(before: string, limit: number = 1000): Promise<number> {
+    const result = await this.db.prepare(`
+      DELETE FROM abuse_counters
+      WHERE rowid IN (
+        SELECT rowid FROM abuse_counters
+        WHERE updated_at < ?
+        ORDER BY updated_at ASC
+        LIMIT ?
+      )
+    `).bind(before, boundedPurgeLimit(limit)).run()
     return result.meta.changes || 0
   }
 
   async createAuditLog(log: AuditLog): Promise<void> {
     await this.db.prepare(`
-      INSERT INTO audit_logs (id, action, share_id, ip_hash, user_agent_hash, status, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO audit_logs (
+        id, action, share_id, subject_type, subject_name, size_bytes,
+        ip_hash, user_agent_hash, status, created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       log.id,
       log.action,
       log.share_id,
+      log.subject_type,
+      log.subject_name,
+      log.size_bytes,
       log.ip_hash,
       log.user_agent_hash,
       log.status,
@@ -315,11 +424,16 @@ export class DB {
         audit.id,
         audit.action,
         audit.share_id,
+        COALESCE(
+          audit.subject_type,
+          shares.type,
+          CASE WHEN uploads.id IS NOT NULL THEN 'file' END
+        ) AS subject_type,
         audit.ip_hash,
         audit.status,
         audit.created_at,
-        COALESCE(shares.display_name, uploads.display_name) AS subject_name,
-        COALESCE(shares.size_bytes, uploads.size_bytes) AS size_bytes
+        COALESCE(audit.subject_name, shares.display_name, uploads.display_name) AS subject_name,
+        COALESCE(audit.size_bytes, shares.size_bytes, uploads.size_bytes) AS size_bytes
       FROM audit_logs AS audit
       LEFT JOIN shares ON shares.id = audit.share_id
       LEFT JOIN upload_sessions AS uploads ON uploads.share_id = audit.share_id
@@ -368,13 +482,29 @@ export class DB {
     }
   }
 
-  async purgeAuditLogs(before: string): Promise<number> {
-    const result = await this.db.prepare('DELETE FROM audit_logs WHERE created_at < ?').bind(before).run()
+  async purgeAuditLogs(before: string, limit: number = 1000): Promise<number> {
+    const result = await this.db.prepare(`
+      DELETE FROM audit_logs
+      WHERE rowid IN (
+        SELECT rowid FROM audit_logs
+        WHERE created_at < ?
+        ORDER BY created_at ASC
+        LIMIT ?
+      )
+    `).bind(before, boundedPurgeLimit(limit)).run()
     return result.meta.changes || 0
   }
 
-  async purgeDeletedShares(before: string): Promise<number> {
-    const result = await this.db.prepare('DELETE FROM shares WHERE deleted_at IS NOT NULL AND deleted_at < ?').bind(before).run()
+  async purgeDeletedShares(before: string, limit: number = 1000): Promise<number> {
+    const result = await this.db.prepare(`
+      DELETE FROM shares
+      WHERE rowid IN (
+        SELECT rowid FROM shares
+        WHERE deleted_at IS NOT NULL AND deleted_at < ?
+        ORDER BY deleted_at ASC
+        LIMIT ?
+      )
+    `).bind(before, boundedPurgeLimit(limit)).run()
     return result.meta.changes || 0
   }
 
@@ -396,6 +526,7 @@ export class DB {
 
 }
 
-function countResult(result: D1Result<{ c: number | null }>): number {
-  return Number(result.results[0]?.c || 0)
+function boundedPurgeLimit(limit: number): number {
+  const normalized = Number.isFinite(limit) ? Math.trunc(limit) : 1000
+  return Math.min(Math.max(normalized, 1), 1000)
 }

@@ -37,21 +37,25 @@ const containerRef = ref<HTMLElement | null>(null)
 const widgetId = ref<string | null>(null)
 const loadError = ref(false)
 const statusMessage = ref('')
+let renderGeneration = 0
 
 const renderWidget = async () => {
+  const generation = ++renderGeneration
+  emit('verify', '')
+  removeWidget()
+  loadError.value = false
   if (!props.siteKey) {
     statusMessage.value = ''
     return
   }
   if (!containerRef.value) return
-  loadError.value = false
   statusMessage.value = t('a11y.turnstileLoading')
 
   try {
     await loadTurnstile()
     await nextTick()
+    if (generation !== renderGeneration) return
     if (!window.turnstile || !containerRef.value) throw new Error('Turnstile unavailable')
-    if (widgetId.value) window.turnstile.remove(widgetId.value)
 
     widgetId.value = window.turnstile.render(containerRef.value, {
       sitekey: props.siteKey,
@@ -59,20 +63,24 @@ const renderWidget = async () => {
       language: locale.value === 'zh' ? 'zh-CN' : locale.value === 'ja' ? 'ja' : 'en',
       theme: 'light',
       callback: (token: string) => {
+        if (generation !== renderGeneration) return
         statusMessage.value = t('a11y.turnstileVerified')
         emit('verify', token)
       },
       'expired-callback': () => {
+        if (generation !== renderGeneration) return
         statusMessage.value = t('a11y.turnstileExpired')
         emit('verify', '')
       },
       'error-callback': () => {
+        if (generation !== renderGeneration) return
         statusMessage.value = t('a11y.turnstileVerificationFailed')
         emit('verify', '')
       },
     })
-    statusMessage.value = ''
+    if (generation === renderGeneration) statusMessage.value = ''
   } catch (error) {
+    if (generation !== renderGeneration) return
     console.error('Turnstile widget failed to load:', error)
     loadError.value = true
     statusMessage.value = ''
@@ -88,14 +96,20 @@ const reset = () => {
   }
 }
 
+const removeWidget = () => {
+  if (widgetId.value && window.turnstile) {
+    window.turnstile.remove(widgetId.value)
+  }
+  widgetId.value = null
+}
+
 watch(() => props.siteKey, renderWidget)
 watch(locale, renderWidget)
 onMounted(renderWidget)
 
 onBeforeUnmount(() => {
-  if (widgetId.value && window.turnstile) {
-    window.turnstile.remove(widgetId.value)
-  }
+  renderGeneration++
+  removeWidget()
 })
 
 defineExpose({ reset })
@@ -104,7 +118,7 @@ function loadTurnstile(): Promise<void> {
   if (window.turnstile) return Promise.resolve()
   if (window.__r2fileboxTurnstileScript) return window.__r2fileboxTurnstileScript
 
-  window.__r2fileboxTurnstileScript = new Promise((resolve, reject) => {
+  const loadPromise = new Promise<void>((resolve, reject) => {
     const existing = document.querySelector<HTMLScriptElement>('script[data-r2filebox-turnstile]')
     if (existing) {
       existing.addEventListener('load', () => resolve(), { once: true })
@@ -120,6 +134,12 @@ function loadTurnstile(): Promise<void> {
     script.addEventListener('load', () => resolve(), { once: true })
     script.addEventListener('error', () => reject(new Error('Turnstile script failed')), { once: true })
     document.head.appendChild(script)
+  })
+
+  window.__r2fileboxTurnstileScript = loadPromise.catch((error) => {
+    window.__r2fileboxTurnstileScript = undefined
+    document.querySelector('script[data-r2filebox-turnstile]')?.remove()
+    throw error
   })
 
   return window.__r2fileboxTurnstileScript

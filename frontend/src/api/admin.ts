@@ -8,7 +8,6 @@ export interface AdminStats {
   active_shares: number
   expired_shares: number
   total_size: number
-  total_storage_bytes: number
   today_uploads: number
   total_downloads: number
 }
@@ -20,22 +19,19 @@ export interface AdminUser {
   role: 'admin'
 }
 
+interface AdminSessionData {
+  user: AdminUser
+}
+
 export interface AdminShare {
   id: string
-  share_id: string
   type: 'text' | 'file'
-  text: boolean
-  uuid_file_name: string | null
   display_name: string | null
-  file_name: string | null
-  size: number
-  used_count: number
+  size_bytes: number
   download_count: number
   max_downloads: number | null
-  CreatedAt: string
   created_at: string
-  expired_at: string
-  expire_time: string
+  expire_at: string
 }
 
 export interface AdminConfig {
@@ -56,7 +52,7 @@ export interface AdminConfig {
       uploadsize: number
     }
     rate_limit: {
-      enable_kv: number
+      enabled: number
       upload_per_minute: number
       upload_part_per_minute: number
       resolve_per_minute: number
@@ -85,6 +81,7 @@ export interface AuditLog {
   id: string
   action: string
   share_id: string | null
+  subject_type: string | null
   subject_name: string | null
   size_bytes: number | null
   ip_hash_prefix: string | null
@@ -94,7 +91,6 @@ export interface AuditLog {
 
 interface AdminFilesData {
   items: AdminShare[]
-  list: AdminShare[]
   total: number
   page: number
   page_size: number
@@ -112,18 +108,25 @@ interface AuditLogsData {
 }
 
 export const adminApi = {
-  login: (data: { username: string; password: string }) => request<ApiResponse<{
-    token: string
-    user: AdminUser
-  }>>({
+  login: (data: { username: string; password: string }) => request<ApiResponse<AdminSessionData>>({
     url: '/admin/login',
     method: 'POST',
     data,
+    suppressErrorMessage: true,
+    suppressAuthRedirect: true,
+  }),
+
+  getSession: () => request<ApiResponse<AdminSessionData>>({
+    url: '/admin/session',
+    method: 'GET',
+    suppressErrorMessage: true,
+    suppressAuthRedirect: true,
   }),
 
   logout: () => request<ApiResponse<void>>({
     url: '/admin/logout',
     method: 'POST',
+    suppressErrorMessage: true,
   }),
 
   getStats: () => request<ApiResponse<AdminStats>>({

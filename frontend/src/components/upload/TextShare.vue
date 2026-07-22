@@ -19,6 +19,8 @@
       id-prefix="text-share"
       v-model:expire-value="form.expire_value"
       v-model:expire-style="form.expire_style"
+      :max-expire-hours="maxExpireHours"
+      :expire-styles="configStore.config?.expireStyle"
     />
 
     <TurnstileWidget
@@ -56,6 +58,7 @@ import { useI18n } from '@/i18n'
 import { useConfigStore } from '@/stores/config'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import ShareSettings from '@/components/upload/ShareSettings.vue'
+import { expireSelectionFromHours, type ExpireStyle } from '@/utils/expiration'
 
 const emit = defineEmits<{
   success: [result: { code: string; share_url: string; full_share_url: string; qr_code_data: string }]
@@ -71,10 +74,12 @@ const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
 
 const requiresTurnstile = computed(() => configStore.config?.requireTurnstile === true)
 const turnstileSiteKey = computed(() => configStore.config?.turnstileSiteKey || '')
+const maxExpireHours = computed(() => configStore.config?.maxExpireHours ?? 168)
 
-const form = ref({
-  expire_value: 1,
-  expire_style: 'day',
+const initialExpire = expireSelectionFromHours(configStore.config?.defaultExpireHours ?? 24)
+const form = ref<{ expire_value: number; expire_style: ExpireStyle }>({
+  expire_value: initialExpire.value,
+  expire_style: initialExpire.style,
 })
 
 const handleShare = async () => {

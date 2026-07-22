@@ -103,7 +103,7 @@
             {{ loading ? t('admin.login.loading') : t('admin.login.button') }}
           </el-button>
         </el-form-item>
-        <p v-if="loginError" class="sr-only">{{ loginError }}</p>
+        <p v-if="loginError" class="sr-only" role="alert">{{ loginError }}</p>
       </el-form>
 
       <div class="login-footer">
@@ -183,7 +183,10 @@ const handleLogin = async () => {
   try {
     await userStore.login(loginForm.username, loginForm.password)
     ElMessage.success(t('admin.login.done'))
-    router.push('/admin')
+    const redirect = typeof router.currentRoute.value.query.redirect === 'string'
+      ? router.currentRoute.value.query.redirect
+      : '/admin'
+    await router.replace(redirect)
   } catch (error: unknown) {
     loginError.value = error instanceof Error ? error.message : t('admin.login.failed')
     ElMessage.error(loginError.value)

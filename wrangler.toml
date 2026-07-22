@@ -2,7 +2,7 @@
 
 name = "r2filebox"
 main = "worker/src/index.ts"
-compatibility_date = "2026-07-07"
+compatibility_date = "2026-07-20"
 compatibility_flags = ["nodejs_compat"]
 
 workers_dev = true
@@ -13,12 +13,8 @@ binding = "ASSETS"
 not_found_handling = "single-page-application"
 run_worker_first = [
   "/api/*",
-  "/share/*",
   "/admin/*",
-  "/health",
-  "/live",
-  "/ready",
-  "/ping"
+  "/health"
 ]
 
 [[r2_buckets]]
@@ -31,9 +27,25 @@ database_name = "r2filebox-db"
 database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "worker/migrations"
 
-[[kv_namespaces]]
-binding = "RATE_LIMIT"
-id = "00000000000000000000000000000000"
+[[ratelimits]]
+name = "UPLOAD_RATE_LIMITER"
+namespace_id = "2316401001"
+simple = { limit = 600, period = 60 }
+
+[[ratelimits]]
+name = "UPLOAD_PART_RATE_LIMITER"
+namespace_id = "2316401002"
+simple = { limit = 2000, period = 60 }
+
+[[ratelimits]]
+name = "RESOLVE_RATE_LIMITER"
+namespace_id = "2316401003"
+simple = { limit = 2000, period = 60 }
+
+[[ratelimits]]
+name = "DOWNLOAD_RATE_LIMITER"
+namespace_id = "2316401004"
+simple = { limit = 2000, period = 60 }
 
 [triggers]
 crons = [
@@ -47,7 +59,7 @@ head_sampling_rate = 0.1
 [vars]
 APP_NAME = "R2FileBox"
 APP_DESCRIPTION = "Private code-based file sharing on Cloudflare R2"
-APP_VERSION = "1.31"
+APP_VERSION = "1.40"
 
 R2_BUCKET_NAME = "r2filebox-files"
 D1_DATABASE_NAME = "r2filebox-db"
@@ -68,7 +80,7 @@ ENABLE_FILE_SHARE = "true"
 ENABLE_PUBLIC_UPLOAD = "true"
 ENABLE_AUDIT_LOG = "true"
 ENABLE_ACCESS_LOG = "false"
-ENABLE_KV_RATE_LIMIT = "true"
+ENABLE_NATIVE_RATE_LIMIT = "true"
 
 RATE_LIMIT_UPLOAD_PER_MINUTE = "10"
 RATE_LIMIT_UPLOAD_PART_PER_MINUTE = "80"

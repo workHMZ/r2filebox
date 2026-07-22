@@ -5,6 +5,7 @@
       :auto-upload="false"
       :on-change="handleFileChange"
       :show-file-list="false"
+      :disabled="uploading || fingerprinting"
       drag
       class="upload-dragger"
     >
@@ -32,7 +33,7 @@
           <div class="file-info-details">
             <div class="file-name">{{ selectedFile.name }}</div>
             <div class="file-meta">
-              <span class="file-size">{{ formatFileSize(selectedFile.size) }}</span>
+              <span class="file-size">{{ formatFileSize(selectedFile.size, getLocaleTag(locale)) }}</span>
               <span class="file-type-badge">{{ getFileType(selectedFile.name) }}</span>
             </div>
           </div>
@@ -43,6 +44,7 @@
             class="clear-file-btn"
             :aria-label="t('a11y.clearSelectedFile')"
             :title="t('a11y.clearSelectedFile')"
+            :disabled="uploading"
             @click.stop="clearFile"
           >
             <el-icon aria-hidden="true"><Close /></el-icon>
@@ -55,6 +57,8 @@
       id-prefix="file-share"
       v-model:expire-value="form.expire_value"
       v-model:expire-style="form.expire_style"
+      :max-expire-hours="maxExpireHours"
+      :expire-styles="configStore.config?.expireStyle"
     />
 
     <TurnstileWidget
@@ -65,20 +69,32 @@
       @verify="turnstileToken = $event"
     />
 
-    <el-button
-      type="primary"
-      size="large"
-      native-type="submit"
-      class="upload-btn"
-      :loading="uploading"
-      :aria-busy="uploading"
-      :disabled="!selectedFile || (requiresTurnstile && !hasResumableUpload && !turnstileToken)"
-    >
-      <template #icon>
-        <el-icon v-if="!uploading" aria-hidden="true"><Upload /></el-icon>
-      </template>
-      {{ uploading ? t('upload.uploading') : t('upload.start') }}
-    </el-button>
+    <div class="upload-actions">
+      <el-button
+        type="primary"
+        size="large"
+        native-type="submit"
+        class="upload-btn"
+        :loading="uploading || fingerprinting"
+        :aria-busy="uploading || fingerprinting"
+        :disabled="!selectedFile || !selectedFingerprint || fingerprinting || (requiresTurnstile && !hasResumableUpload && !turnstileToken)"
+      >
+        <template #icon>
+          <el-icon v-if="!uploading && !fingerprinting" aria-hidden="true"><Upload /></el-icon>
+        </template>
+        {{ uploading ? t('upload.uploading') : fingerprinting ? t('upload.prepare') : t('upload.start') }}
+      </el-button>
+      <el-button
+        v-if="uploading"
+        type="danger"
+        size="large"
+        plain
+        class="cancel-upload-btn"
+        @click="cancelUpload"
+      >
+        {{ t('upload.cancel') }}
+      </el-button>
+    </div>
 
     <transition name="fade">
       <div v-if="uploading" class="upload-progress-box">
@@ -97,22 +113,22 @@
     <p class="sr-only" role="status" aria-live="polite" aria-atomic="true">
       {{ uploadAnnouncement }}
     </p>
-    <p v-if="uploadErrorAnnouncement" class="sr-only">
-      {{ uploadErrorAnnouncement }}
-    </p>
   </form>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { shareApi } from '@/api/share'
+import { computed, onBeforeUnmount, ref } from 'vue'
+import { shareApi, UploadPartError } from '@/api/share'
+import { isAxiosError } from 'axios'
 import { ElMessage } from 'element-plus'
 import { UploadFilled, Document, InfoFilled, Close, Upload } from '@element-plus/icons-vue'
-import type { UploadFile } from 'element-plus'
+import type { UploadFile, UploadInstance } from 'element-plus'
 import { getLocaleTag, useI18n } from '@/i18n'
 import { useConfigStore } from '@/stores/config'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import ShareSettings from '@/components/upload/ShareSettings.vue'
+import { expireSelectionFromHours, type ExpireStyle } from '@/utils/expiration'
+import { formatFileSize } from '@/utils/format'
 
 const emit = defineEmits<{
   success: [result: { code: string; share_url: string; full_share_url: string; qr_code_data: string }]
@@ -125,6 +141,7 @@ const BYTES_PER_MB = 1024 * 1024
 type UploadedPart = {
   partNumber: number
   etag: string
+  sha256: string
 }
 
 type UploadState = {
@@ -141,25 +158,29 @@ type UploadState = {
 }
 
 const UPLOAD_STATE_PREFIX = 'r2filebox-upload:'
+const UPLOAD_STATE_MAX_AGE = 24 * 60 * 60 * 1000
+const FINGERPRINT_SAMPLE_SIZE = 64 * 1024
 
 const selectedFile = ref<File | null>(null)
+const uploadRef = ref<UploadInstance | null>(null)
+const selectedFingerprint = ref('')
+const resumableState = ref<UploadState | null>(null)
+const fingerprinting = ref(false)
 const uploading = ref(false)
 const uploadProgress = ref(0)
 const uploadStatusText = ref('')
 const uploadAnnouncement = ref('')
-const uploadErrorAnnouncement = ref('')
 const turnstileToken = ref('')
 const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
+let selectionVersion = 0
+let uploadController: AbortController | null = null
 
 const requiresTurnstile = computed(() => configStore.config?.requireTurnstile === true)
 const turnstileSiteKey = computed(() => configStore.config?.turnstileSiteKey || '')
 const maxUploadBytes = computed(() => {
   const config = configStore.config
   if (!config) return null
-  if (typeof config.maxUploadBytes === 'number' && config.maxUploadBytes > 0) {
-    return config.maxUploadBytes
-  }
-  return config.uploadSize > 0 ? config.uploadSize * BYTES_PER_MB : null
+  return config.maxUploadBytes > 0 ? config.maxUploadBytes : null
 })
 const uploadLimitText = computed(() => {
   if (maxUploadBytes.value === null) {
@@ -170,44 +191,62 @@ const uploadLimitText = computed(() => {
   }).format(maxUploadBytes.value / BYTES_PER_MB)
   return t('upload.hint', { size: `${size} MB` })
 })
-const hasResumableUpload = computed(() =>
-  selectedFile.value ? Boolean(loadUploadState(selectedFile.value)) : false,
-)
+const hasResumableUpload = computed(() => Boolean(resumableState.value))
+const maxExpireHours = computed(() => configStore.config?.maxExpireHours ?? 168)
 
-const form = ref({
-  expire_value: 1,
-  expire_style: 'day',
+const initialExpire = expireSelectionFromHours(configStore.config?.defaultExpireHours ?? 24)
+const form = ref<{ expire_value: number; expire_style: ExpireStyle }>({
+  expire_value: initialExpire.value,
+  expire_style: initialExpire.style,
 })
 
-const handleFileChange = (file: UploadFile) => {
+const handleFileChange = async (file: UploadFile) => {
+  if (uploading.value) return
+  const currentVersion = ++selectionVersion
   selectedFile.value = file.raw || null
-  uploadErrorAnnouncement.value = ''
-  if (selectedFile.value) {
+  selectedFingerprint.value = ''
+  resumableState.value = null
+  const selected = selectedFile.value
+  if (selected) {
     const fileAnnouncement = t('a11y.fileSelected', {
-      name: selectedFile.value.name,
-      size: formatFileSize(selectedFile.value.size),
+      name: selected.name,
+      size: formatFileSize(selected.size, getLocaleTag(locale.value)),
     })
-    if (loadUploadState(selectedFile.value)) {
-      uploadStatusText.value = t('upload.resumeDetected')
-      uploadAnnouncement.value = `${fileAnnouncement} ${t('upload.resumeDetected')}`
-    } else {
-      uploadAnnouncement.value = fileAnnouncement
+    uploadAnnouncement.value = fileAnnouncement
+    fingerprinting.value = true
+    try {
+      const fingerprint = await getFileFingerprint(selected)
+      if (currentVersion !== selectionVersion || selectedFile.value !== selected) return
+      selectedFingerprint.value = fingerprint
+      const savedState = loadUploadState(fingerprint, selected)
+      resumableState.value = savedState && await verifySavedParts(savedState, selected)
+        ? savedState
+        : null
+      if (savedState && !resumableState.value) removeUploadState(fingerprint)
+      if (resumableState.value) {
+        uploadStatusText.value = t('upload.resumeDetected')
+        uploadAnnouncement.value = `${fileAnnouncement} ${t('upload.resumeDetected')}`
+      }
+    } catch (error) {
+      if (currentVersion === selectionVersion) {
+        console.error('Failed to fingerprint selected file:', error)
+        ElMessage.error(t('upload.fingerprintFailed'))
+      }
+    } finally {
+      if (currentVersion === selectionVersion) fingerprinting.value = false
     }
   }
 }
 
 const clearFile = () => {
+  if (uploading.value) return
+  selectionVersion++
   selectedFile.value = null
+  selectedFingerprint.value = ''
+  resumableState.value = null
+  fingerprinting.value = false
+  uploadRef.value?.clearFiles()
   uploadAnnouncement.value = t('a11y.fileCleared')
-  uploadErrorAnnouncement.value = ''
-}
-
-const formatFileSize = (bytes: number) => {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
 }
 
 const getFileType = (filename: string) => {
@@ -238,16 +277,20 @@ const handleUpload = async () => {
   }
 
   await configStore.fetchConfig()
-  let state = loadUploadState(file)
+  const fingerprint = selectedFingerprint.value || await getFileFingerprint(file)
+  if (selectedFile.value !== file) return
+  selectedFingerprint.value = fingerprint
+  let state = resumableState.value
   if (!state && requiresTurnstile.value && !turnstileToken.value) {
     ElMessage.warning(t('turnstile.required'))
     return
   }
 
   uploading.value = true
-  uploadErrorAnnouncement.value = ''
   uploadProgress.value = 0
   uploadStatusText.value = t('upload.prepare')
+  const controller = new AbortController()
+  uploadController = controller
 
   try {
     if (state) {
@@ -259,14 +302,14 @@ const handleUpload = async () => {
         size: file.size,
         turnstileToken: turnstileToken.value || undefined,
         ...form.value,
-      })
+      }, controller.signal)
 
       if (initRes.code !== 200) {
         throw new Error(initRes.message || t('upload.initFailed'))
       }
 
       state = {
-        fingerprint: getFileFingerprint(file),
+        fingerprint,
         uploadToken: initRes.data.uploadToken,
         code: initRes.data.code,
         partSize: initRes.data.partSize,
@@ -278,6 +321,7 @@ const handleUpload = async () => {
         createdAt: Date.now(),
       }
       saveUploadState(state)
+      resumableState.value = state
     }
 
     for (let index = 0; index < state.partCount; index++) {
@@ -290,10 +334,20 @@ const handleUpload = async () => {
       const start = index * state.partSize
       const end = Math.min(start + state.partSize, file.size)
       uploadStatusText.value = t('upload.part', { current: partNumber, total: state.partCount })
-      const part = await uploadPartWithRetry(state.uploadToken, partNumber, file.slice(start, end))
-      state.parts.push(part)
+      const chunk = file.slice(start, end)
+      const [part, sha256] = await Promise.all([
+        uploadPartWithRetry(
+          state.uploadToken,
+          partNumber,
+          chunk,
+          controller.signal,
+        ),
+        sha256Blob(chunk),
+      ])
+      state.parts.push({ ...part, sha256 })
       state.parts.sort((a, b) => a.partNumber - b.partNumber)
       saveUploadState(state)
+      resumableState.value = state
       updateProgress(state)
     }
 
@@ -302,16 +356,18 @@ const handleUpload = async () => {
       uploadToken: state.uploadToken,
       code: state.code,
       parts: state.parts,
-    })
+    }, controller.signal)
 
     if (res.code !== 200) {
       throw new Error(res.message || t('upload.mergeFailed'))
     }
 
-    removeUploadState(file)
+    removeUploadState(state.fingerprint)
+    resumableState.value = null
     turnstileRef.value?.reset()
     uploadProgress.value = 100
     uploadStatusText.value = t('upload.successStatus')
+    uploadAnnouncement.value = t('upload.successStatus')
     ElMessage.success(t('upload.done'))
     
     emit('success', {
@@ -320,31 +376,52 @@ const handleUpload = async () => {
       full_share_url: res.data.full_share_url,
       qr_code_data: res.data.qr_code_data,
     })
-    
-    setTimeout(() => {
-      selectedFile.value = null
-      uploading.value = false
-      uploadProgress.value = 0
-    }, 2000)
+
+    uploading.value = false
+    selectedFile.value = null
+    selectedFingerprint.value = ''
+    uploadRef.value?.clearFiles()
+    uploadProgress.value = 0
   } catch (error: unknown) {
     turnstileRef.value?.reset()
+    if (controller.signal.aborted || isAbortError(error)) {
+      uploadStatusText.value = t('upload.cancelled')
+      uploadAnnouncement.value = t('upload.cancelled')
+      ElMessage.info(t('upload.cancelled'))
+      uploading.value = false
+      return
+    }
+    if (state && isTerminalUploadError(error)) {
+      removeUploadState(state.fingerprint)
+      resumableState.value = null
+    }
     const errorMessage = error instanceof Error ? error.message : t('upload.failed')
-    uploadErrorAnnouncement.value = errorMessage
     ElMessage.error(errorMessage)
     uploading.value = false
+  } finally {
+    uploadController = null
   }
 }
 
-const uploadPartWithRetry = async (uploadToken: string, partNumber: number, chunk: Blob): Promise<UploadedPart> => {
+const uploadPartWithRetry = async (
+  uploadToken: string,
+  partNumber: number,
+  chunk: Blob,
+  signal: AbortSignal,
+): Promise<Omit<UploadedPart, 'sha256'>> => {
   let lastError: unknown
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const res = await shareApi.uploadFilePart(uploadToken, partNumber, chunk)
+      const res = await shareApi.uploadFilePart(uploadToken, partNumber, chunk, signal)
       return res.data
     } catch (error) {
       lastError = error
+      if (signal.aborted || !shouldRetryPart(error) || attempt === 3) break
       uploadStatusText.value = t('upload.retry', { part: partNumber, attempt })
-      await sleep(500 * attempt)
+      const delay = error instanceof UploadPartError && error.retryAfterMs !== null
+        ? error.retryAfterMs
+        : 500 * attempt
+      await sleep(delay, signal)
     }
   }
   throw lastError instanceof Error ? lastError : new Error(t('upload.failed'))
@@ -354,40 +431,155 @@ const updateProgress = (state: UploadState) => {
   uploadProgress.value = Math.min(95, Math.floor((state.parts.length / state.partCount) * 95))
 }
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
+  const onAbort = () => {
+    window.clearTimeout(timer)
+    reject(new DOMException('Upload cancelled', 'AbortError'))
+  }
+  const timer = window.setTimeout(() => {
+    signal.removeEventListener('abort', onAbort)
+    resolve()
+  }, ms)
+  signal.addEventListener('abort', onAbort, { once: true })
+})
 
-const getFileFingerprint = (file: File) => `${file.name}:${file.size}:${file.lastModified}`
+const shouldRetryPart = (error: unknown) => {
+  if (error instanceof UploadPartError) return error.status === 429 || error.status >= 500
+  return error instanceof TypeError
+}
 
-const getUploadStateKey = (file: File) => `${UPLOAD_STATE_PREFIX}${getFileFingerprint(file)}`
+const isTerminalUploadError = (error: unknown) => {
+  const status = error instanceof UploadPartError
+    ? error.status
+    : isAxiosError(error)
+      ? error.response?.status
+      : undefined
+  return status !== undefined && [400, 401, 404, 410, 413].includes(status)
+}
 
-const loadUploadState = (file: File): UploadState | null => {
+const isAbortError = (error: unknown) => error instanceof DOMException && error.name === 'AbortError'
+
+const getFileFingerprint = async (file: File): Promise<string> => {
+  const sampleOffsets = [
+    0,
+    Math.max(0, Math.floor((file.size - FINGERPRINT_SAMPLE_SIZE) / 2)),
+    Math.max(0, file.size - FINGERPRINT_SAMPLE_SIZE),
+  ]
+  const samples = await Promise.all(
+    sampleOffsets.map((start) => file.slice(start, start + FINGERPRINT_SAMPLE_SIZE).arrayBuffer()),
+  )
+  const metadata = new TextEncoder().encode(`${file.name}\u0000${file.size}\u0000${file.lastModified}\u0000`)
+  const totalLength = metadata.byteLength + samples.reduce((sum, sample) => sum + sample.byteLength, 0)
+  const input = new Uint8Array(totalLength)
+  input.set(metadata)
+  let offset = metadata.byteLength
+  for (const sample of samples) {
+    input.set(new Uint8Array(sample), offset)
+    offset += sample.byteLength
+  }
+  const digest = await crypto.subtle.digest('SHA-256', input)
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+const getUploadStateKey = (fingerprint: string) => `${UPLOAD_STATE_PREFIX}${fingerprint}`
+
+const loadUploadState = (fingerprint: string, file: File): UploadState | null => {
   try {
-    const raw = localStorage.getItem(getUploadStateKey(file))
+    const raw = localStorage.getItem(getUploadStateKey(fingerprint))
     if (!raw) return null
     const state = JSON.parse(raw) as UploadState
     if (
-      state.fingerprint !== getFileFingerprint(file) ||
+      state.fingerprint !== fingerprint ||
+      typeof state.uploadToken !== 'string' ||
+      typeof state.code !== 'string' ||
+      !Number.isInteger(state.partSize) ||
+      state.partSize <= 0 ||
+      !Number.isInteger(state.partCount) ||
+      state.partCount <= 0 ||
+      state.partCount !== Math.ceil(file.size / state.partSize) ||
+      !Array.isArray(state.parts) ||
+      !state.parts.every((part) =>
+        Number.isInteger(part.partNumber) &&
+        part.partNumber >= 1 &&
+        part.partNumber <= state.partCount &&
+        typeof part.etag === 'string' &&
+        part.etag.length > 0 &&
+        /^[a-f0-9]{64}$/.test(part.sha256)
+      ) ||
+      new Set(state.parts.map((part) => part.partNumber)).size !== state.parts.length ||
       state.fileSize !== file.size ||
       state.fileLastModified !== file.lastModified ||
-      Date.now() - state.createdAt > 24 * 60 * 60 * 1000
+      !Number.isFinite(state.createdAt) ||
+      Date.now() - state.createdAt > UPLOAD_STATE_MAX_AGE
     ) {
-      removeUploadState(file)
+      removeUploadState(fingerprint)
       return null
     }
     return state
   } catch {
-    removeUploadState(file)
+    removeUploadState(fingerprint)
     return null
   }
 }
 
-const saveUploadState = (state: UploadState) => {
-  localStorage.setItem(`${UPLOAD_STATE_PREFIX}${state.fingerprint}`, JSON.stringify(state))
+const verifySavedParts = async (state: UploadState, file: File): Promise<boolean> => {
+  for (const part of state.parts) {
+    const start = (part.partNumber - 1) * state.partSize
+    const end = Math.min(start + state.partSize, file.size)
+    if (await sha256Blob(file.slice(start, end)) !== part.sha256) return false
+  }
+  return true
 }
 
-const removeUploadState = (file: File) => {
-  localStorage.removeItem(getUploadStateKey(file))
+const sha256Blob = async (blob: Blob): Promise<string> => {
+  const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
+
+const saveUploadState = (state: UploadState) => {
+  try {
+    localStorage.setItem(getUploadStateKey(state.fingerprint), JSON.stringify(state))
+  } catch {
+    // Resume is optional. Uploading can continue when storage is unavailable.
+  }
+}
+
+const removeUploadState = (fingerprint: string) => {
+  try {
+    localStorage.removeItem(getUploadStateKey(fingerprint))
+  } catch {
+    // Ignore storage restrictions in private browsing modes.
+  }
+}
+
+const pruneExpiredUploadStates = () => {
+  try {
+    const now = Date.now()
+    const keys: string[] = []
+    for (let index = 0; index < localStorage.length; index++) {
+      const key = localStorage.key(index)
+      if (key?.startsWith(UPLOAD_STATE_PREFIX)) keys.push(key)
+    }
+    for (const key of keys) {
+      try {
+        const raw = localStorage.getItem(key)
+        const state = raw ? JSON.parse(raw) as Partial<UploadState> : null
+        if (!state?.createdAt || now - state.createdAt > UPLOAD_STATE_MAX_AGE) {
+          localStorage.removeItem(key)
+        }
+      } catch {
+        localStorage.removeItem(key)
+      }
+    }
+  } catch {
+    // Resume state is best-effort only.
+  }
+}
+
+const cancelUpload = () => uploadController?.abort()
+
+pruneExpiredUploadStates()
+onBeforeUnmount(cancelUpload)
 </script>
 
 <style scoped>
@@ -560,11 +752,25 @@ const removeUploadState = (file: File) => {
   border-color: var(--danger-color) !important;
 }
 
+.upload-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
 .upload-btn {
+  flex: 1;
+  min-width: 0;
   width: 100%;
   height: 52px;
   font-size: 16px;
   font-weight: 700;
+  border-radius: var(--radius-md);
+}
+
+.cancel-upload-btn {
+  min-width: 96px;
+  height: 52px;
   border-radius: var(--radius-md);
 }
 
@@ -601,6 +807,14 @@ const removeUploadState = (file: File) => {
 
   .file-name {
     max-width: 50vw;
+  }
+
+  .upload-actions {
+    flex-direction: column;
+  }
+
+  .cancel-upload-btn {
+    width: 100%;
   }
 }
 </style>

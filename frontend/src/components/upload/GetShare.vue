@@ -54,30 +54,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Key, Download, HelpFilled } from '@element-plus/icons-vue'
 import { useI18n } from '@/i18n'
 
-interface Props {
-  initialCode?: string
-}
-
-const props = defineProps<Props>()
 const router = useRouter()
 const { t } = useI18n()
 
 const shareCode = ref('')
 const lookupError = ref(false)
-
-// 监听 initialCode 变化
-watch(() => props.initialCode, (newCode) => {
-  if (newCode) {
-    shareCode.value = newCode
-    handleGetShare()
-  }
-}, { immediate: true })
 
 const handleGetShare = () => {
   if (!shareCode.value.trim()) {

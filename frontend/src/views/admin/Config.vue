@@ -72,8 +72,8 @@
               </span>
             </el-form-item>
 
-            <el-form-item :label="t('config.kvRateLimit')">
-              <el-switch v-model="configForm.transfer.rate_limit.enable_kv" :active-value="1" :inactive-value="0" />
+            <el-form-item :label="t('config.nativeRateLimit')">
+              <el-switch v-model="configForm.transfer.rate_limit.enabled" :active-value="1" :inactive-value="0" />
             </el-form-item>
 
             <el-form-item :label="t('config.uploadInitRate')">
@@ -158,7 +158,7 @@ const configForm = reactive({
       uploadsize: 10485760
     },
     rate_limit: {
-      enable_kv: 1,
+      enabled: 1,
       upload_per_minute: 10,
       upload_part_per_minute: 80,
       resolve_per_minute: 120,
@@ -200,7 +200,6 @@ const fetchConfig = async () => {
     }
   } catch (error) {
     console.error('Failed to load config:', error)
-    ElMessage.error(t('config.fetchFailed'))
   } finally {
     loading.value = false
   }
@@ -220,7 +219,6 @@ const saveConfig = async () => {
     }
   } catch (error) {
     console.error('Failed to save config:', error)
-    ElMessage.error(t('config.saveFailed'))
   } finally {
     saving.value = false
   }

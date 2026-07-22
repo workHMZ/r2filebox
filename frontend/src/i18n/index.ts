@@ -86,10 +86,13 @@ const messages: Record<Locale, MessageMap> = {
     'upload.hintLoading': '支持任意文件类型，正在读取上传限制',
     'upload.hintUnavailable': '支持任意文件类型，暂时无法读取上传限制',
     'upload.expire': '过期时间',
+    'upload.expireLimit': '最长过期时间为 {value} 小时',
     'upload.access': '访问方式',
     'upload.codeAccess': '提取码访问',
     'upload.start': '生成提取码',
     'upload.uploading': '上传中，请勿关闭页面...',
+    'upload.cancel': '取消上传',
+    'upload.cancelled': '上传已取消，可稍后继续断点上传',
     'upload.selectFirst': '请先选择文件',
     'upload.prepare': '准备建立多分片上传...',
     'upload.resume': '恢复断点并继续上传分片...',
@@ -102,6 +105,7 @@ const messages: Record<Locale, MessageMap> = {
     'upload.failed': '上传异常',
     'upload.mergeFailed': '合并文件失败',
     'upload.initFailed': '初始化上传会话失败',
+    'upload.fingerprintFailed': '无法安全识别所选文件，请重新选择',
     'turnstile.required': '请先完成人机验证',
     'turnstile.loadFailed': '人机验证加载失败，请刷新页面重试',
     'text.placeholder': '在此处输入或粘贴要分享的文本内容（代码、口信、配置等）...',
@@ -204,7 +208,7 @@ const messages: Record<Locale, MessageMap> = {
     'config.auditLog': '启用审计日志',
     'config.accessLog': '记录访问日志',
     'config.accessLogHint': '关闭可减少 D1 写入',
-    'config.kvRateLimit': '启用 KV 限流',
+    'config.nativeRateLimit': '启用原生限流保护',
     'config.uploadInitRate': '上传初始化/分钟',
     'config.uploadPartRate': '上传分片/分钟',
     'config.resolveRate': '提取查询/分钟',
@@ -353,10 +357,13 @@ const messages: Record<Locale, MessageMap> = {
     'upload.hintLoading': 'Any file type; loading the upload limit',
     'upload.hintUnavailable': 'Any file type; the upload limit is temporarily unavailable',
     'upload.expire': 'Expires after',
+    'upload.expireLimit': 'The maximum expiration is {value} hours',
     'upload.access': 'Access',
     'upload.codeAccess': 'Pickup code',
     'upload.start': 'Create pickup code',
     'upload.uploading': 'Uploading, keep this page open...',
+    'upload.cancel': 'Cancel upload',
+    'upload.cancelled': 'Upload cancelled. You can resume it later.',
     'upload.selectFirst': 'Select a file first',
     'upload.prepare': 'Preparing multipart upload...',
     'upload.resume': 'Resuming unfinished upload...',
@@ -369,6 +376,7 @@ const messages: Record<Locale, MessageMap> = {
     'upload.failed': 'Upload failed',
     'upload.mergeFailed': 'Could not finalize upload',
     'upload.initFailed': 'Could not create upload session',
+    'upload.fingerprintFailed': 'Could not identify this file safely. Select it again.',
     'turnstile.required': 'Complete the security check first',
     'turnstile.loadFailed': 'Security check failed to load. Refresh the page and try again.',
     'text.placeholder': 'Type or paste text to share, such as code, notes, or config...',
@@ -471,7 +479,7 @@ const messages: Record<Locale, MessageMap> = {
     'config.auditLog': 'Audit log',
     'config.accessLog': 'Access log',
     'config.accessLogHint': 'Disable to reduce D1 writes',
-    'config.kvRateLimit': 'KV rate limiting',
+    'config.nativeRateLimit': 'Native rate-limit protection',
     'config.uploadInitRate': 'Upload init / minute',
     'config.uploadPartRate': 'Upload parts / minute',
     'config.resolveRate': 'Lookup requests / minute',
@@ -620,10 +628,13 @@ const messages: Record<Locale, MessageMap> = {
     'upload.hintLoading': '任意のファイル形式に対応、上限を確認中',
     'upload.hintUnavailable': '任意のファイル形式に対応、上限を取得できません',
     'upload.expire': '有効期限',
+    'upload.expireLimit': '有効期限は最大 {value} 時間です',
     'upload.access': 'アクセス',
     'upload.codeAccess': '受取コード',
     'upload.start': '受取コードを作成',
     'upload.uploading': 'アップロード中です。このページを閉じないでください...',
+    'upload.cancel': 'アップロードを中止',
+    'upload.cancelled': 'アップロードを中止しました。後で再開できます。',
     'upload.selectFirst': '先にファイルを選択してください',
     'upload.prepare': '分割アップロードを準備中...',
     'upload.resume': '未完了のアップロードを再開中...',
@@ -636,6 +647,7 @@ const messages: Record<Locale, MessageMap> = {
     'upload.failed': 'アップロードに失敗しました',
     'upload.mergeFailed': 'アップロードを確定できませんでした',
     'upload.initFailed': 'アップロードセッションを作成できませんでした',
+    'upload.fingerprintFailed': 'ファイルを安全に識別できませんでした。選択し直してください。',
     'turnstile.required': '先にセキュリティ確認を完了してください',
     'turnstile.loadFailed': 'セキュリティ確認を読み込めませんでした。ページを再読み込みしてください。',
     'text.placeholder': '共有したいテキスト、コード、メモ、設定などを入力または貼り付けてください...',
@@ -738,7 +750,7 @@ const messages: Record<Locale, MessageMap> = {
     'config.auditLog': '監査ログ',
     'config.accessLog': 'アクセスログ',
     'config.accessLogHint': '無効にすると D1 書き込みを減らせます',
-    'config.kvRateLimit': 'KV レート制限',
+    'config.nativeRateLimit': 'ネイティブレート制限保護',
     'config.uploadInitRate': '初期化 / 分',
     'config.uploadPartRate': '分割アップロード / 分',
     'config.resolveRate': '取得照会 / 分',
@@ -826,7 +838,11 @@ export function initI18n() {
 
 export function setLocale(nextLocale: Locale) {
   currentLocale.value = nextLocale
-  localStorage.setItem(STORAGE_KEY, nextLocale)
+  try {
+    localStorage.setItem(STORAGE_KEY, nextLocale)
+  } catch {
+    // The selected language still applies when storage is blocked.
+  }
   applyDocumentLanguage(nextLocale)
 }
 
@@ -851,7 +867,12 @@ export function useI18n() {
 }
 
 function detectLocale(): Locale {
-  const saved = localStorage.getItem(STORAGE_KEY)
+  let saved: string | null = null
+  try {
+    saved = localStorage.getItem(STORAGE_KEY)
+  } catch {
+    // Fall back to browser language in restricted/private contexts.
+  }
   if (isLocale(saved)) return saved
 
   const languages = navigator.languages?.length ? navigator.languages : [navigator.language]

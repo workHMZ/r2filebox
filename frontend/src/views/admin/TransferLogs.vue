@@ -90,7 +90,7 @@
 
         <el-table-column prop="size_bytes" :label="t('logs.contentSize')" width="120">
           <template #default="{ row }">
-            {{ formatFileSize(row.size_bytes) }}
+            {{ formatFileSize(row.size_bytes, getLocaleTag(locale)) }}
           </template>
         </el-table-column>
 
@@ -133,15 +133,16 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { adminApi } from '@/api/admin'
 import type { AuditLog } from '@/api/admin'
 import { getLocaleTag, useI18n } from '@/i18n'
+import { formatDateTime, formatFileSize } from '@/utils/format'
 
 const loading = ref(false)
 const logsList = ref<AuditLog[]>([])
 const { t, locale } = useI18n()
+let requestVersion = 0
 
 const pagination = reactive({
   page: 1,
@@ -156,22 +157,8 @@ const stats = reactive({
   activeSources: 0
 })
 
-const formatFileSize = (bytes: number | null): string => {
-  if (bytes === null || !Number.isFinite(bytes) || bytes < 0) return '-'
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
 const formatDate = (dateStr: string): string => {
-  if (!dateStr) return '-'
-  try {
-    return new Date(dateStr).toLocaleString(getLocaleTag(locale.value))
-  } catch {
-    return '-'
-  }
+  return formatDateTime(dateStr, getLocaleTag(locale.value))
 }
 
 const getActionLabel = (action: string): string => {
@@ -229,6 +216,7 @@ const getStatusType = (status: string): TagType => {
 const formatHashPrefix = (prefix: string | null): string => prefix ? `${prefix}…` : '-'
 
 const fetchLogs = async () => {
+  const currentVersion = ++requestVersion
   loading.value = true
   try {
     const res = await adminApi.getAuditLogs({
@@ -236,7 +224,7 @@ const fetchLogs = async () => {
       page_size: pagination.pageSize
     })
 
-    if (res.code === 200) {
+    if (currentVersion === requestVersion && res.code === 200) {
       logsList.value = res.data.items
       pagination.total = res.data.pagination.total
       stats.totalEvents = res.data.stats.total
@@ -246,9 +234,8 @@ const fetchLogs = async () => {
     }
   } catch (error) {
     console.error('Failed to load audit logs:', error)
-    ElMessage.error(t('logs.fetchFailed'))
   } finally {
-    loading.value = false
+    if (currentVersion === requestVersion) loading.value = false
   }
 }
 

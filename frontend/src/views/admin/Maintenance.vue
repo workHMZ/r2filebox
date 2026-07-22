@@ -121,6 +121,7 @@ import {
 } from '@element-plus/icons-vue'
 import { adminApi } from '@/api/admin'
 import { useI18n } from '@/i18n'
+import { formatFileSize } from '@/utils/format'
 
 const cleaningExpired = ref(false)
 const loadingSystemInfo = ref(false)
@@ -134,14 +135,6 @@ const systemInfo = reactive({
   totalFiles: 0,
   totalSize: 0
 })
-
-const formatFileSize = (bytes: number): string => {
-  if (!bytes || bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
 
 const cleanExpiredFiles = async () => {
   try {
@@ -165,7 +158,7 @@ const cleanExpiredFiles = async () => {
     }
   } catch (error: unknown) {
     if (error !== 'cancel') {
-      ElMessage.error(t('maintenance.cleanFailed'))
+      console.error('Failed to clean expired files:', error)
     }
   } finally {
     cleaningExpired.value = false
@@ -175,17 +168,16 @@ const cleanExpiredFiles = async () => {
 const fetchSystemInfo = async () => {
   loadingSystemInfo.value = true
   try {
-    // 获取系统信息
-    const infoRes = await adminApi.getSystemInfo()
+    const [infoRes, statsRes] = await Promise.all([
+      adminApi.getSystemInfo(),
+      adminApi.getStats(),
+    ])
     if (infoRes.code === 200 && infoRes.data) {
       systemInfo.version = infoRes.data.version || '-'
       systemInfo.runtime = infoRes.data.runtime || '-'
       systemInfo.platform = infoRes.data.platform || '-'
       systemInfo.storage = infoRes.data.storage || '-'
     }
-
-    // 获取统计数据
-    const statsRes = await adminApi.getStats()
     if (statsRes.code === 200 && statsRes.data) {
       systemInfo.totalFiles = statsRes.data.total_files || 0
       systemInfo.totalSize = statsRes.data.total_size || 0

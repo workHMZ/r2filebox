@@ -9,7 +9,11 @@ import { R2Storage, generateR2Key } from '../lib/r2'
 import { getRequiredSecret } from '../lib/env'
 import { getClientIp } from '../lib/security'
 import { signJWT, verifyJWT } from '../lib/auth'
-import { getRuntimeConfig, type RuntimeConfig } from '../lib/runtime-config'
+import {
+  getRuntimeConfig,
+  RuntimeConfigUnavailableError,
+  type RuntimeConfig,
+} from '../lib/runtime-config'
 import { checkRateLimit } from '../lib/rate-limit'
 import { BodyTooLargeError, InvalidBodyError, readStructuredBody } from '../lib/body'
 
@@ -20,8 +24,9 @@ const MULTIPART_PART_SIZE = 8 * 1024 * 1024
 const MAX_TEXT_BYTES = 1024 * 1024
 const MAX_TEXT_REQUEST_BYTES = MAX_TEXT_BYTES + (64 * 1024)
 const MAX_INIT_BODY_BYTES = 16 * 1024
-const MAX_COMPLETE_BODY_BYTES = 64 * 1024
+const MAX_COMPLETE_BODY_BYTES = 8 * 1024
 const MAX_RESOLVE_BODY_BYTES = 4 * 1024
+const MAX_MULTIPART_PARTS = 12
 
 interface UploadTokenPayload extends Record<string, unknown> {
   purpose: 'multipart-upload'
@@ -32,10 +37,13 @@ interface UploadTokenPayload extends Record<string, unknown> {
   r2_key: string
 }
 
-app.post('/share/text/', createTextShare)
+interface AuditSubject {
+  type: string
+  name: string | null
+  sizeBytes: number | null
+}
+
 app.post('/api/share/text', createTextShare)
-app.post('/share/file/', unsupportedLegacyFileShare)
-app.post('/api/share/file', unsupportedLegacyFileShare)
 app.post('/api/share/file/init', initMultipartFileShare)
 app.put('/api/share/file/part', uploadMultipartPart)
 app.post('/api/share/file/complete', completeMultipartFileShare)
@@ -67,7 +75,7 @@ async function createTextShare(c: Context<{ Bindings: Bindings }>) {
       ipHash,
       60,
       config.rateLimitUploadPerMinute,
-      config.enableKvRateLimit,
+      config.enableNativeRateLimit,
     )
     if (limited.limited) {
       return rateLimited(c, limited.resetAt)
@@ -93,7 +101,7 @@ async function createTextShare(c: Context<{ Bindings: Bindings }>) {
     const shareId = crypto.randomUUID()
     const r2Key = generateR2Key(shareId)
     const expireAt = getExpireAt(config, body)
-    const maxDownloads = getMaxDownloads(config, body)
+    const maxDownloads = getMaxDownloads(config)
 
     const r2 = new R2Storage(c.env.BUCKET)
     const uploaded = await r2.uploadFile(
@@ -138,23 +146,22 @@ async function createTextShare(c: Context<{ Bindings: Bindings }>) {
     }
 
     const url = `${new URL(c.req.url).origin}/#/share/${rawCode}`
-    await audit(db, c, 'share_text_create', shareId, 'success', ipHash)
+    await audit(db, c, 'share_text_create', shareId, 'success', ipHash, {
+      config,
+      subject: { type: 'text', name: 'text.txt', sizeBytes: textBytes.length },
+    })
 
     return c.json(success({
       code: rawCode,
       share_url: `/share/${rawCode}`,
       full_share_url: url,
       qr_code_data: url,
-      expireAt,
-      maxDownloads,
+      expire_at: expireAt,
+      max_downloads: maxDownloads,
     }, '分享成功'))
   } catch (e: unknown) {
     return routeFailure(c, 'create text share', e, '分享失败')
   }
-}
-
-async function unsupportedLegacyFileShare(c: Context<{ Bindings: Bindings }>) {
-  return c.json(error('请使用分片上传接口 /api/share/file/init', 410), 410)
 }
 
 async function initMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
@@ -167,10 +174,7 @@ async function initMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
 
     const maxUploadBytes = config.maxUploadBytes
     const body = await readStructuredBody(c.req.raw, MAX_INIT_BODY_BYTES)
-    if (!await verifyTurnstileIfRequired(c, body, config, 'file-share')) {
-      return c.json(error('人机验证失败', 403), 403)
-    }
-    const sizeBytes = Number.parseInt(String(body.size || body.size_bytes || '0'), 10)
+    const sizeBytes = Number.parseInt(String(body.size || '0'), 10)
     if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
       return c.json(error('文件大小无效', 400), 400)
     }
@@ -188,23 +192,26 @@ async function initMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
       ipHash,
       60,
       config.rateLimitUploadPerMinute,
-      config.enableKvRateLimit,
+      config.enableNativeRateLimit,
     )
     if (limited.limited) {
       return rateLimited(c, limited.resetAt)
     }
+    if (!await verifyTurnstileIfRequired(c, body, config, 'file-share')) {
+      return c.json(error('人机验证失败', 403), 403)
+    }
 
     const maxStorage = config.maxTotalStorageBytes
 
-    const safeFilename = sanitizeFilename(String(body.filename || body.name || 'upload.bin'))
-    const mimeType = sanitizeMimeType(String(body.mimeType || body.mime_type || 'application/octet-stream'))
+    const safeFilename = sanitizeFilename(String(body.filename || 'upload.bin'))
+    const mimeType = sanitizeMimeType(String(body.mimeType || 'application/octet-stream'))
     const codeLength = config.codeLength
     const rawCode = generateCode(codeLength)
     const codeHash = await hashCode(rawCode, pepper)
     const shareId = crypto.randomUUID()
     const r2Key = generateR2Key(shareId)
     const expireAt = getExpireAt(config, body)
-    const maxDownloads = getMaxDownloads(config, body)
+    const maxDownloads = getMaxDownloads(config)
 
     const r2 = new R2Storage(c.env.BUCKET)
     const multipart = await r2.createMultipartUpload(r2Key, {
@@ -245,20 +252,16 @@ async function initMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
 
     const uploadToken = await signUploadToken(c.env, session)
     const partCount = Math.ceil(sizeBytes / MULTIPART_PART_SIZE)
-    await audit(db, c, 'multipart_file_init', shareId, 'success', ipHash)
+    await audit(db, c, 'multipart_file_init', shareId, 'success', ipHash, {
+      config,
+      subject: { type: 'file', name: safeFilename, sizeBytes },
+    })
 
     return c.json(success({
-      uploadId: multipart.uploadId,
       uploadToken,
       code: rawCode,
-      shareId,
       partSize: MULTIPART_PART_SIZE,
       partCount,
-      expireAt,
-      maxDownloads,
-      file_name: safeFilename,
-      filename: safeFilename,
-      size: sizeBytes,
     }, '上传会话已创建'))
   } catch (e: unknown) {
     return routeFailure(c, 'initialize multipart upload', e, '初始化上传失败')
@@ -291,7 +294,7 @@ async function uploadMultipartPart(c: Context<{ Bindings: Bindings }>) {
       ipHash || payload.session_id,
       60,
       config.rateLimitUploadPartPerMinute,
-      config.enableKvRateLimit,
+      config.enableNativeRateLimit,
     )
     if (limited.limited) {
       return rateLimited(c, limited.resetAt)
@@ -354,20 +357,34 @@ async function completeMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
     }
     const body = await readStructuredBody(c.req.raw, MAX_COMPLETE_BODY_BYTES)
     const code = String(body.code || '')
+    if (!Array.isArray(body.parts) || body.parts.length > MAX_MULTIPART_PARTS) {
+      return c.json(error('分片完成信息无效', 400), 400)
+    }
     const parts = normalizeUploadedParts(body.parts)
     if (!parts.length) {
       return c.json(error('缺少分片完成信息', 400), 400)
     }
 
     const pepper = getRequiredSecret(c.env, 'CODE_HASH_PEPPER')
+    const requestIpHash = await hashIp(getClientIp(c), pepper)
     if (await hashCode(code, pepper) !== payload.code_hash) {
       return c.json(error('上传会话无效', 401), 401)
     }
 
     const db = new DB(c.env.DB)
     const session = await db.getUploadSession(payload.session_id)
+    if (!session) {
+      const completedShare = await db.getShareById(payload.share_id)
+      if (
+        completedShare?.type === 'file' &&
+        completedShare.code_hash === payload.code_hash &&
+        completedShare.r2_key === payload.r2_key
+      ) {
+        return completedUploadResponse(c, code, completedShare)
+      }
+      return c.json(error('上传会话不存在', 404), 404)
+    }
     if (
-      !session ||
       session.share_id !== payload.share_id ||
       session.upload_id !== payload.upload_id ||
       session.r2_key !== payload.r2_key ||
@@ -391,61 +408,74 @@ async function completeMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
     }
 
     const multipart = r2.resumeMultipartUpload(session.r2_key, session.upload_id)
-    const uploaded = await multipart.complete(parts)
+    let uploaded: R2Object
+    try {
+      uploaded = await multipart.complete(parts)
+    } catch (completeError) {
+      // If the isolate stopped after R2 completed but before D1 committed, the
+      // multipart upload no longer exists. Recover from the final object.
+      const existing = await r2.headObject(session.r2_key)
+      if (!existing || existing.size !== session.size_bytes) throw completeError
+      uploaded = existing
+    }
     if (uploaded.size !== session.size_bytes) {
       await r2.deleteObject(session.r2_key)
       await db.deleteUploadSession(session.id)
-      await audit(db, c, 'multipart_file_size_mismatch', session.share_id, 'failed', session.created_ip_hash)
+      await audit(db, c, 'multipart_file_size_mismatch', session.share_id, 'failed', requestIpHash, {
+        subject: { type: 'file', name: session.display_name, sizeBytes: session.size_bytes },
+      })
       return c.json(error('文件大小校验失败，请重新上传', 400), 400)
     }
 
     const now = new Date().toISOString()
-    try {
-      await db.createShare({
-        id: session.share_id,
-        code_hash: session.code_hash,
-        type: 'file',
-        r2_key: session.r2_key,
-        display_name: session.display_name,
-        mime_type: session.mime_type,
-        size_bytes: session.size_bytes,
-        title: session.title,
-        created_at: now,
-        expire_at: session.expire_at,
-        deleted_at: null,
-        max_downloads: session.max_downloads,
-        download_count: 0,
-        created_ip_hash: session.created_ip_hash,
-        last_access_at: null,
-        object_etag: uploaded.etag,
-        object_uploaded_at: now,
-      })
-    } catch (error) {
-      await Promise.allSettled([
-        r2.deleteObject(session.r2_key),
-        db.deleteUploadSession(session.id),
-      ])
-      throw error
+    const completedShare: Share = {
+      id: session.share_id,
+      code_hash: session.code_hash,
+      type: 'file',
+      r2_key: session.r2_key,
+      display_name: session.display_name,
+      mime_type: session.mime_type,
+      size_bytes: session.size_bytes,
+      title: session.title,
+      created_at: now,
+      expire_at: session.expire_at,
+      deleted_at: null,
+      max_downloads: session.max_downloads,
+      download_count: 0,
+      created_ip_hash: session.created_ip_hash,
+      last_access_at: null,
+      object_etag: uploaded.etag,
+      object_uploaded_at: now,
     }
+    // D1 batch is transactional: the active share and reservation cannot be
+    // left double-counted if the isolate stops between two statements.
+    let persistedShare = completedShare
+    let newlyPersisted = true
     try {
+      await db.completeUploadSession(completedShare, session)
+    } catch (databaseError) {
+      // Repair the state produced by versions that inserted the share and
+      // deleted the upload session in separate D1 operations.
+      const existing = await db.getShareById(session.share_id).catch(() => null)
+      if (
+        !existing ||
+        existing.type !== 'file' ||
+        existing.code_hash !== session.code_hash ||
+        existing.r2_key !== session.r2_key
+      ) {
+        throw databaseError
+      }
       await db.deleteUploadSession(session.id)
-    } catch (error) {
-      console.error(`Failed to delete completed upload session ${session.id}:`, error)
+      persistedShare = existing
+      newlyPersisted = false
     }
 
-    const url = `${new URL(c.req.url).origin}/#/share/${code}`
-    await audit(db, c, 'multipart_file_complete', session.share_id, 'success', session.created_ip_hash)
-    return c.json(success({
-      code,
-      share_url: `/share/${code}`,
-      full_share_url: url,
-      qr_code_data: url,
-      file_name: session.display_name,
-      filename: session.display_name,
-      size: session.size_bytes,
-      expireAt: session.expire_at,
-      maxDownloads: session.max_downloads,
-    }, '文件上传成功'))
+    if (newlyPersisted) {
+      await audit(db, c, 'multipart_file_complete', session.share_id, 'success', requestIpHash, {
+        subject: { type: 'file', name: session.display_name, sizeBytes: session.size_bytes },
+      })
+    }
+    return completedUploadResponse(c, code, persistedShare)
   } catch (e: unknown) {
     return routeFailure(c, 'complete multipart upload', e, '完成上传失败')
   }
@@ -471,6 +501,20 @@ async function abortMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
 }
 
 
+
+function completedUploadResponse(c: Context, code: string, share: Share) {
+  const url = `${new URL(c.req.url).origin}/#/share/${code}`
+  return c.json(success({
+    code,
+    share_url: `/share/${code}`,
+    full_share_url: url,
+    qr_code_data: url,
+    file_name: share.display_name,
+    size_bytes: share.size_bytes,
+    expire_at: share.expire_at,
+    max_downloads: share.max_downloads,
+  }, '文件上传成功'))
+}
 
 async function resolveShareFromBody(c: Context<{ Bindings: Bindings }>) {
   try {
@@ -498,7 +542,7 @@ async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string 
       ipHash,
       60,
       config.rateLimitResolvePerMinute,
-      config.enableKvRateLimit,
+      config.enableNativeRateLimit,
     )
     if (limited.limited) {
       return rateLimited(c, limited.resetAt)
@@ -508,7 +552,7 @@ async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string 
     const share = await db.getShareByCodeHash(codeHash)
 
     if (!isShareAvailable(share)) {
-      return c.json(error('提取码无效或文件已不可用', 404, { has_password: false }), 404)
+      return c.json(error('提取码无效或文件已不可用', 404), 404)
     }
 
     if (share.type === 'text') {
@@ -521,19 +565,19 @@ async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string 
       if (!await db.consumeShareDownload(share.id)) {
         return c.json(error('提取码无效或文件已不可用', 404), 404)
       }
-      await audit(db, c, 'share_resolve_text', share.id, 'success', ipHash, true)
+      await audit(db, c, 'share_resolve_text', share.id, 'success', ipHash, {
+        accessLog: true,
+        config,
+        subject: shareAuditSubject(share),
+      })
       return c.json(success({
         code: rawCode,
         type: 'text',
         text,
-        file_name: share.display_name || undefined,
-        file_size: share.size_bytes,
-        has_password: false,
-        expire_time: share.expire_at,
-        views: share.download_count + 1,
-        max_views: share.max_downloads,
-        downloadCount: share.download_count + 1,
-        maxDownloads: share.max_downloads,
+        size_bytes: share.size_bytes,
+        expire_at: share.expire_at,
+        download_count: share.download_count + 1,
+        max_downloads: share.max_downloads,
       }))
     }
 
@@ -546,24 +590,23 @@ async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string 
     const downloadUrl = `/api/share/download/${share.id}`
     c.header(
       'Set-Cookie',
-      `download_session=${token}; HttpOnly; Secure; SameSite=Strict; Path=${downloadUrl}; Max-Age=120`,
+      downloadSessionCookie(token, downloadUrl, c.req.url, 120),
     )
 
-    await audit(db, c, 'share_resolve_file', share.id, 'success', ipHash, true)
+    await audit(db, c, 'share_resolve_file', share.id, 'success', ipHash, {
+      accessLog: true,
+      config,
+      subject: shareAuditSubject(share),
+    })
     return c.json(success({
       code: rawCode,
       type: 'file',
       file_name: share.display_name || undefined,
-      filename: share.display_name || undefined,
-      file_size: share.size_bytes,
-      size: share.size_bytes,
-      mimeType: share.mime_type,
-      has_password: false,
-      expire_time: share.expire_at,
-      views: share.download_count,
-      max_views: share.max_downloads,
-      downloadCount: share.download_count,
-      maxDownloads: share.max_downloads,
+      size_bytes: share.size_bytes,
+      mime_type: share.mime_type,
+      expire_at: share.expire_at,
+      download_count: share.download_count,
+      max_downloads: share.max_downloads,
       download_url: downloadUrl,
     }))
   } catch (e: unknown) {
@@ -599,7 +642,7 @@ async function downloadWithSession(c: Context<{ Bindings: Bindings }>) {
       ipHash,
       60,
       config.rateLimitDownloadPerMinute,
-      config.enableKvRateLimit,
+      config.enableNativeRateLimit,
     )
     if (limited.limited) {
       return new Response('请求过于频繁，请稍后再试', {
@@ -622,7 +665,11 @@ async function downloadWithSession(c: Context<{ Bindings: Bindings }>) {
     if (!await db.consumeShareDownload(share.id)) {
       return new Response('提取码无效或文件已不可用', { status: 404 })
     }
-    c.executionCtx.waitUntil(audit(db, c, 'share_download_file', share.id, 'success', ipHash, true))
+    c.executionCtx.waitUntil(audit(db, c, 'share_download_file', share.id, 'success', ipHash, {
+      accessLog: true,
+      config,
+      subject: shareAuditSubject(share),
+    }))
 
     const headers = new Headers()
     obj.writeHttpMetadata(headers)
@@ -634,11 +681,18 @@ async function downloadWithSession(c: Context<{ Bindings: Bindings }>) {
     headers.set('etag', obj.httpEtag)
     headers.append(
       'Set-Cookie',
-      `download_session=; HttpOnly; Secure; SameSite=Strict; Path=/api/share/download/${share.id}; Max-Age=0`,
+      downloadSessionCookie('', `/api/share/download/${share.id}`, c.req.url, 0),
     )
 
     return new Response(obj.body, { headers })
   } catch (e: unknown) {
+    if (e instanceof RuntimeConfigUnavailableError) {
+      console.error('download share failed:', e)
+      return new Response('服务配置暂时不可用，请稍后重试', {
+        status: 503,
+        headers: { 'Cache-Control': 'no-store' },
+      })
+    }
     console.error('download share failed:', e)
     return new Response('下载失败', { status: 500 })
   }
@@ -657,6 +711,11 @@ function getCookieValue(cookieHeader: string, name: string): string | null {
   }
 }
 
+function downloadSessionCookie(token: string, path: string, requestUrl: string, maxAge: number): string {
+  const secure = new URL(requestUrl).protocol === 'https:' ? '; Secure' : ''
+  return `download_session=${encodeURIComponent(token)}; HttpOnly${secure}; SameSite=Strict; Path=${path}; Max-Age=${maxAge}`
+}
+
 async function verifyTurnstileIfRequired(
   c: Context<{ Bindings: Bindings }>,
   body: Record<string, unknown>,
@@ -665,7 +724,7 @@ async function verifyTurnstileIfRequired(
 ): Promise<boolean> {
   if (!config.requireTurnstile) return true
 
-  const token = body.turnstileToken || body.turnstile_token || body['cf-turnstile-response']
+  const token = body.turnstileToken || body['cf-turnstile-response']
   if (!token || typeof token !== 'string' || token.length > 2048) return false
 
   try {
@@ -742,23 +801,18 @@ function normalizeUploadedParts(parts: unknown): R2UploadedPart[] {
 function getExpireAt(config: RuntimeConfig, body: Record<string, unknown>): string {
   const expireValue = Number.parseInt(String(body.expire_value || '1'), 10)
   const expireStyle = String(body.expire_style || 'day')
-  const expireHours = body.expireHours || body.expire_hours
-    ? Number.parseInt(String(body.expireHours || body.expire_hours), 10)
-    : undefined
   return calculateExpireAt(
     expireValue,
     expireStyle,
-    expireHours,
     config.defaultExpireHours,
     config.maxExpireHours,
   )
 }
 
-function getMaxDownloads(config: RuntimeConfig, body: Record<string, unknown>): number | null {
-  const raw = body.maxDownloads || body.max_downloads || body.maxViews || body.max_views
-  const fallback = config.defaultMaxDownloads
-  const parsed = raw ? Number.parseInt(String(raw), 10) : fallback
-  return parsed > 0 ? Math.min(parsed, 1_000_000) : null
+function getMaxDownloads(config: RuntimeConfig): number | null {
+  return config.defaultMaxDownloads > 0
+    ? Math.min(config.defaultMaxDownloads, 1_000_000)
+    : null
 }
 
 function getContentLength(c: Context): number | null {
@@ -832,8 +886,20 @@ function routeFailure(c: Context, operation: string, cause: unknown, message: st
   if (cause instanceof InvalidBodyError) {
     return c.json(error('请求格式无效', 400), 400)
   }
+  if (cause instanceof RuntimeConfigUnavailableError) {
+    console.error(`${operation} failed:`, cause)
+    return c.json(error('服务配置暂时不可用，请稍后重试', 503), 503)
+  }
   console.error(`${operation} failed:`, cause)
   return c.json(error(message, 500), 500)
+}
+
+function shareAuditSubject(share: Share): AuditSubject {
+  return {
+    type: share.type,
+    name: share.display_name,
+    sizeBytes: share.size_bytes,
+  }
 }
 
 async function audit(
@@ -843,16 +909,23 @@ async function audit(
   shareId: string | null,
   status: string,
   ipHash: string | null,
-  accessLog = false,
+  options: {
+    accessLog?: boolean
+    config?: RuntimeConfig
+    subject?: AuditSubject
+  } = {},
 ): Promise<void> {
   try {
-    const config = await getRuntimeConfig(c.env, db)
+    const config = options.config || await getRuntimeConfig(c.env, db)
     if (!config.enableAuditLog) return
-    if (accessLog && !config.enableAccessLog) return
+    if (options.accessLog && !config.enableAccessLog) return
     await db.createAuditLog({
       id: crypto.randomUUID(),
       action,
       share_id: shareId,
+      subject_type: options.subject?.type || null,
+      subject_name: options.subject?.name || null,
+      size_bytes: options.subject?.sizeBytes ?? null,
       ip_hash: ipHash,
       user_agent_hash: null,
       status,

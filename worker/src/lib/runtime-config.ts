@@ -17,7 +17,7 @@ export interface RuntimeConfig {
   enablePublicUpload: boolean
   enableAuditLog: boolean
   enableAccessLog: boolean
-  enableKvRateLimit: boolean
+  enableNativeRateLimit: boolean
   requireTurnstile: boolean
   turnstileSiteKey?: string
   rateLimitUploadPerMinute: number
@@ -27,8 +27,23 @@ export interface RuntimeConfig {
   rateLimitAuthPer15Min: number
 }
 
+export class RuntimeConfigUnavailableError extends Error {
+  override readonly name = 'RuntimeConfigUnavailableError'
+
+  constructor(cause: unknown) {
+    super('Runtime configuration is temporarily unavailable', { cause })
+  }
+}
+
 export async function getRuntimeConfig(env: Env, db = new DB(env.DB)): Promise<RuntimeConfig> {
-  const settings = await db.getSettings().catch(() => ({}))
+  let settings: Record<string, string>
+  try {
+    settings = await db.getSettings()
+  } catch (cause) {
+    // Security switches live in D1. Falling back to permissive defaults after
+    // a read failure could silently re-enable uploads or disable Turnstile.
+    throw new RuntimeConfigUnavailableError(cause)
+  }
   return buildRuntimeConfig(env, settings)
 }
 
@@ -51,7 +66,7 @@ export function buildRuntimeConfig(env: Env, settings: Record<string, string> = 
     enablePublicUpload: booleanValue(settings.ENABLE_PUBLIC_UPLOAD, env.ENABLE_PUBLIC_UPLOAD, true),
     enableAuditLog: booleanValue(settings.ENABLE_AUDIT_LOG, env.ENABLE_AUDIT_LOG, true),
     enableAccessLog: booleanValue(settings.ENABLE_ACCESS_LOG, env.ENABLE_ACCESS_LOG, false),
-    enableKvRateLimit: booleanValue(settings.ENABLE_KV_RATE_LIMIT, env.ENABLE_KV_RATE_LIMIT, true),
+    enableNativeRateLimit: booleanValue(settings.ENABLE_NATIVE_RATE_LIMIT, env.ENABLE_NATIVE_RATE_LIMIT, true),
     requireTurnstile: booleanValue(settings.REQUIRE_TURNSTILE, env.REQUIRE_TURNSTILE, false),
     turnstileSiteKey: stringValue(settings.TURNSTILE_SITE_KEY, env.TURNSTILE_SITE_KEY, '') || undefined,
     rateLimitUploadPerMinute: clamp(numberValue(settings.RATE_LIMIT_UPLOAD_PER_MINUTE, env.RATE_LIMIT_UPLOAD_PER_MINUTE, 10), 1, 600),

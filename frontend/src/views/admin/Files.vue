@@ -35,12 +35,12 @@
               </div>
               <div class="file-details">
                 <div class="file-name">
-                  {{ row.uuid_file_name || row.share_id }}
+                  {{ row.display_name || row.id }}
                 </div>
                 <div class="share-id">
                   <span class="share-id-label">{{ t('files.shareId') }}</span>
                   <el-tag size="small" type="info">
-                    {{ row.share_id }}
+                    {{ row.id }}
                   </el-tag>
                 </div>
               </div>
@@ -48,44 +48,44 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="size" :label="t('common.size')" width="120" align="center">
+        <el-table-column prop="size_bytes" :label="t('common.size')" width="120" align="center">
           <template #default="{ row }">
             <el-tag type="info" effect="plain">
-              {{ formatFileSize(row.size) }}
+              {{ formatFileSize(row.size_bytes, getLocaleTag(locale)) }}
             </el-tag>
           </template>
         </el-table-column>
 
         <el-table-column :label="t('files.uploadType')" width="120" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.text ? 'success' : 'primary'" effect="light">
-              <el-icon><component :is="row.text ? Document : Picture" /></el-icon>
-              {{ row.text ? t('common.text') : t('common.file') }}
+            <el-tag :type="row.type === 'text' ? 'success' : 'primary'" effect="light">
+              <el-icon><component :is="row.type === 'text' ? Document : Picture" /></el-icon>
+              {{ row.type === 'text' ? t('common.text') : t('common.file') }}
             </el-tag>
           </template>
         </el-table-column>
 
-        <el-table-column prop="used_count" :label="t('files.downloads')" width="100" align="center">
+        <el-table-column prop="download_count" :label="t('files.downloads')" width="100" align="center">
           <template #default="{ row }">
             <div class="download-count">
               <el-icon><Download /></el-icon>
-              {{ row.used_count || 0 }}
+              {{ row.download_count || 0 }}
             </div>
           </template>
         </el-table-column>
 
-        <el-table-column prop="CreatedAt" :label="t('files.createdAt')" width="180">
+        <el-table-column prop="created_at" :label="t('files.createdAt')" width="180">
           <template #default="{ row }">
-            {{ formatDate(row.CreatedAt) }}
+            {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
 
-        <el-table-column prop="expired_at" :label="t('files.expiredAt')" width="220">
+        <el-table-column prop="expire_at" :label="t('files.expiredAt')" width="220">
           <template #default="{ row }">
-            <div :class="['expire-time', { expired: isExpired(row.expired_at) }]">
-              <span>{{ formatDate(row.expired_at) }}</span>
+            <div :class="['expire-time', { expired: isExpired(row.expire_at) }]">
+              <span>{{ formatDate(row.expire_at) }}</span>
               <el-tag
-                v-if="isExpired(row.expired_at)"
+                v-if="isExpired(row.expire_at)"
                 type="danger"
                 effect="plain"
                 size="small"
@@ -137,10 +137,12 @@ import {
 import { adminApi } from '@/api/admin'
 import type { AdminShare } from '@/api/admin'
 import { getLocaleTag, useI18n } from '@/i18n'
+import { formatDateTime, formatFileSize } from '@/utils/format'
 
 const loading = ref(false)
 const filesList = ref<AdminShare[]>([])
 const { t, locale } = useI18n()
+let requestVersion = 0
 
 const pagination = reactive({
   page: 1,
@@ -148,21 +150,8 @@ const pagination = reactive({
   total: 0
 })
 
-const formatFileSize = (bytes: number): string => {
-  if (!bytes || bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
 const formatDate = (dateStr: string): string => {
-  if (!dateStr) return '-'
-  try {
-    return new Date(dateStr).toLocaleString(getLocaleTag(locale.value))
-  } catch {
-    return '-'
-  }
+  return formatDateTime(dateStr, getLocaleTag(locale.value))
 }
 
 const isExpired = (dateStr: string): boolean => {
@@ -175,7 +164,7 @@ const isExpired = (dateStr: string): boolean => {
 }
 
 const getFileIcon = (row: AdminShare) => {
-  const filename = row.uuid_file_name || ''
+  const filename = row.display_name || ''
   const ext = filename.split('.').pop()?.toLowerCase()
   
   const iconMap: Record<string, Component> = {
@@ -193,7 +182,7 @@ const getFileIcon = (row: AdminShare) => {
 }
 
 const getFileIconColor = (row: AdminShare) => {
-  const filename = row.uuid_file_name || ''
+  const filename = row.display_name || ''
   const ext = filename.split('.').pop()?.toLowerCase()
   
   const colorMap: Record<string, string> = {
@@ -211,6 +200,7 @@ const getFileIconColor = (row: AdminShare) => {
 }
 
 const fetchFiles = async () => {
+  const currentVersion = ++requestVersion
   loading.value = true
   try {
     const res = await adminApi.getFiles({
@@ -218,22 +208,21 @@ const fetchFiles = async () => {
       page_size: pagination.pageSize
     })
     
-    if (res.code === 200) {
-      filesList.value = res.data.list
+    if (currentVersion === requestVersion && res.code === 200) {
+      filesList.value = res.data.items
       pagination.total = res.data.total
     }
   } catch (error) {
     console.error('Failed to load files:', error)
-    ElMessage.error(t('files.fetchFailed'))
   } finally {
-    loading.value = false
+    if (currentVersion === requestVersion) loading.value = false
   }
 }
 
 const deleteFile = async (file: AdminShare) => {
   try {
     await ElMessageBox.confirm(
-      t('files.deleteConfirm', { name: file.uuid_file_name || file.share_id }),
+      t('files.deleteConfirm', { name: file.display_name || file.id }),
       t('files.deleteTitle'),
       { 
         type: 'warning',
@@ -251,7 +240,7 @@ const deleteFile = async (file: AdminShare) => {
     }
   } catch (error: unknown) {
     if (error !== 'cancel') {
-      ElMessage.error(t('files.deleteFailed'))
+      console.error('Failed to delete file:', error)
     }
   }
 }

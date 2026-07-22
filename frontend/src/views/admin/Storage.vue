@@ -56,6 +56,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { adminApi } from '@/api/admin'
 import { useI18n } from '@/i18n'
+import { formatFileSize } from '@/utils/format'
 
 const loading = ref(false)
 const { t } = useI18n()
@@ -68,25 +69,17 @@ const storageInfo = reactive({
   d1DatabaseName: '-'
 })
 
-const formatFileSize = (bytes: number): string => {
-  if (!bytes || bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
 const fetchStorageInfo = async () => {
   loading.value = true
   try {
-    const res = await adminApi.getSystemInfo()
+    const [res, statsRes] = await Promise.all([
+      adminApi.getSystemInfo(),
+      adminApi.getStats(),
+    ])
     if (res.code === 200 && res.data) {
       storageInfo.r2BucketName = res.data.r2_bucket_name || '-'
       storageInfo.d1DatabaseName = res.data.d1_database_name || '-'
     }
-
-    // 获取统计数据
-    const statsRes = await adminApi.getStats()
     if (statsRes.code === 200 && statsRes.data) {
       storageInfo.totalFiles = statsRes.data.total_files || 0
       storageInfo.totalSize = statsRes.data.total_size || 0

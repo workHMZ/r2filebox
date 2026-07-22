@@ -1,64 +1,78 @@
 import axios from 'axios'
-import type { AxiosInstance, AxiosRequestConfig } from 'axios'
+import type { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios'
 import { ElMessage } from 'element-plus'
 import { t } from '@/i18n'
+
+export interface RequestConfig extends AxiosRequestConfig {
+  suppressErrorMessage?: boolean
+  suppressAuthRedirect?: boolean
+}
 
 const instance: AxiosInstance = axios.create({
   baseURL: '',
   timeout: 30000,
+  withCredentials: true,
 })
 
-// 请求拦截器
-instance.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token')
-    if (token && isAdminApi(config.url) && config.url !== '/admin/login') {
-      config.headers.Authorization = `Bearer ${token}`
-    }
-    return config
-  },
-  (error) => {
-    return Promise.reject(error)
-  }
-)
+let lastMessage = ''
+let lastMessageAt = 0
+let authRedirecting = false
 
 // 响应拦截器
 instance.interceptors.response.use(
   (response) => {
+    if (isAdminApi(response.config.url)) authRedirecting = false
     return response.data
   },
-  (error) => {
+  (error: AxiosError<{ message?: string }>) => {
+    const config = (error.config || {}) as RequestConfig
+    const responseMessage = error.response?.data?.message
+    if (responseMessage) error.message = responseMessage
+
     if (error.response) {
       switch (error.response.status) {
         case 401:
-          ElMessage.error(t('request.unauthorized'))
-          if (isAdminApi(error.config?.url)) {
-            localStorage.removeItem('token')
-            localStorage.removeItem('userRole')
-            window.location.href = '/#/admin/login'
+          showErrorOnce(responseMessage || t('request.unauthorized'), config)
+          if (
+            isAdminApi(error.config?.url) &&
+            error.config?.url !== '/admin/login' &&
+            !config.suppressAuthRedirect &&
+            !authRedirecting
+          ) {
+            authRedirecting = true
+            window.location.replace('/#/admin/login')
           }
           break
         case 403:
-          ElMessage.error(t('request.forbidden'))
+          showErrorOnce(responseMessage || t('request.forbidden'), config)
           break
         case 404:
-          ElMessage.error(t('request.notFound'))
+          showErrorOnce(responseMessage || t('request.notFound'), config)
           break
         case 500:
-          ElMessage.error(t('request.server'))
+          showErrorOnce(responseMessage || t('request.server'), config)
           break
         default:
-          ElMessage.error(error.response.data?.message || t('request.failed'))
+          showErrorOnce(responseMessage || t('request.failed'), config)
       }
     } else {
-      ElMessage.error(t('request.network'))
+      showErrorOnce(t('request.network'), config)
     }
     return Promise.reject(error)
   }
 )
 
-export const request = <T = unknown>(config: AxiosRequestConfig): Promise<T> => {
+export const request = <T = unknown>(config: RequestConfig): Promise<T> => {
   return instance.request<unknown, T>(config)
+}
+
+function showErrorOnce(message: string, config: RequestConfig): void {
+  if (config.suppressErrorMessage) return
+  const now = Date.now()
+  if (message === lastMessage && now - lastMessageAt < 1500) return
+  lastMessage = message
+  lastMessageAt = now
+  ElMessage.error(message)
 }
 
 function isAdminApi(url: string | undefined): boolean {

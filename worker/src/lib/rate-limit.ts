@@ -6,8 +6,10 @@ export interface RateLimitResult {
   count: number
   limit: number
   resetAt: string
-  source: 'kv' | 'd1' | 'none'
+  source: 'native' | 'd1' | 'none'
 }
+
+type NativeRateLimitAction = 'upload' | 'upload_part' | 'resolve' | 'download'
 
 export async function checkRateLimit(
   env: Env,
@@ -16,52 +18,40 @@ export async function checkRateLimit(
   identity: string | null,
   windowSeconds: number,
   maxCount: number,
-  useKv: boolean,
+  useNativeLimiter: boolean,
 ): Promise<RateLimitResult> {
   if (!identity || maxCount <= 0 || windowSeconds <= 0) {
     return result(false, 0, maxCount, windowSeconds, 'none')
   }
 
-  if (useKv && env.RATE_LIMIT) {
-    const kvResult = await checkKvRateLimit(env.RATE_LIMIT, action, identity, windowSeconds, maxCount)
-    if (kvResult) return kvResult
+  const nativeLimiter = useNativeLimiter ? nativeRateLimiter(env, action) : undefined
+  if (nativeLimiter) {
+    try {
+      const nativeResult = await nativeLimiter.limit({ key: identity })
+      if (!nativeResult.success) {
+        return result(true, maxCount, maxCount, windowSeconds, 'native')
+      }
+    } catch (cause: unknown) {
+      console.error('Native rate limiter unavailable; falling back to the exact D1 limit', {
+        action,
+        message: cause instanceof Error ? cause.message : String(cause),
+      })
+    }
   }
 
   const bucket = bucketStart(windowSeconds)
-  const count = await db.incrementAbuseCounter(action, identity, bucket)
+  const count = await db.incrementAbuseCounter(action, identity, bucket, maxCount)
   return result(count > maxCount, count, maxCount, windowSeconds, 'd1')
 }
 
-async function checkKvRateLimit(
-  kv: KVNamespace,
-  action: string,
-  identity: string,
-  windowSeconds: number,
-  maxCount: number,
-): Promise<RateLimitResult | null> {
-  const bucket = Math.floor(Date.now() / (windowSeconds * 1000))
-  const key = `rl:${action}:${identity}:${bucket}`
-  const ttl = Math.max(60, windowSeconds * 2)
-
-  try {
-    const current = await kv.get<{ count?: number }>(key, 'json')
-    const count = Math.max(Number(current?.count || 0), 0)
-    if (count >= maxCount) {
-      return result(true, count, maxCount, windowSeconds, 'kv')
-    }
-
-    await kv.put(key, JSON.stringify({ count: count + 1, updatedAt: new Date().toISOString() }), {
-      expirationTtl: ttl,
-    })
-    return result(false, count + 1, maxCount, windowSeconds, 'kv')
-  } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : String(e)
-    if (message.includes('429') || message.toLowerCase().includes('too many')) {
-      return result(true, maxCount, maxCount, windowSeconds, 'kv')
-    }
-    console.error(`KV rate limit failed for ${action}:`, e)
-    return null
+function nativeRateLimiter(env: Env, action: string): RateLimit | undefined {
+  const bindings: Record<NativeRateLimitAction, RateLimit> = {
+    upload: env.UPLOAD_RATE_LIMITER,
+    upload_part: env.UPLOAD_PART_RATE_LIMITER,
+    resolve: env.RESOLVE_RATE_LIMITER,
+    download: env.DOWNLOAD_RATE_LIMITER,
   }
+  return action in bindings ? bindings[action as NativeRateLimitAction] : undefined
 }
 
 function bucketStart(windowSeconds: number): string {

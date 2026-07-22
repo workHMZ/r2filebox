@@ -3,19 +3,16 @@ import type { ApiResponse } from '@/types/common'
 
 export interface PublicConfig {
   name: string
-  appName?: string
   description: string
-  appDescription?: string
-  uploadSize: number
-  maxUploadBytes?: number
-  enableChunk: number
+  maxUploadBytes: number
   openUpload: number
   expireStyle: string[]
-  initialized?: boolean
-  enableFileShare?: boolean
-  enableTextShare?: boolean
-  requireTurnstile?: boolean
-  turnstileSiteKey?: string
+  defaultExpireHours: number
+  maxExpireHours: number
+  enableFileShare: boolean
+  enableTextShare: boolean
+  requireTurnstile: boolean
+  turnstileSiteKey: string
 }
 
 export const publicApi = {
