@@ -3,7 +3,13 @@ import type { Context } from 'hono'
 import type { Env, Share, UploadSession } from '../types'
 import { success, error } from '../lib/response'
 import { generateCode, hashCode, hashIp } from '../lib/code'
-import { contentDispositionAttachment, sanitizeFilename, sanitizeMimeType, calculateExpireAt } from '../lib/validators'
+import {
+  calculateExpireAt,
+  contentDispositionAttachment,
+  contentDispositionInline,
+  sanitizeFilename,
+  sanitizeMimeType,
+} from '../lib/validators'
 import { DB } from '../lib/db'
 import { R2Storage, generateR2Key } from '../lib/r2'
 import { getRequiredSecret } from '../lib/env'
@@ -16,6 +22,7 @@ import {
 } from '../lib/runtime-config'
 import { checkRateLimit } from '../lib/rate-limit'
 import { BodyTooLargeError, InvalidBodyError, readStructuredBody } from '../lib/body'
+import { recordMetric } from '../lib/metrics'
 
 type Bindings = Env
 
@@ -27,6 +34,7 @@ const MAX_INIT_BODY_BYTES = 16 * 1024
 const MAX_COMPLETE_BODY_BYTES = 8 * 1024
 const MAX_RESOLVE_BODY_BYTES = 4 * 1024
 const MAX_MULTIPART_PARTS = 12
+const DOWNLOAD_SESSION_TTL_SECONDS = 15 * 60
 
 interface UploadTokenPayload extends Record<string, unknown> {
   purpose: 'multipart-upload'
@@ -114,6 +122,9 @@ async function createTextShare(c: Context<{ Bindings: Bindings }>) {
         },
       },
     )
+    if (!uploaded) {
+      return c.json(error('存储写入失败', 500), 500)
+    }
 
     const now = new Date().toISOString()
     try {
@@ -149,6 +160,12 @@ async function createTextShare(c: Context<{ Bindings: Bindings }>) {
     await audit(db, c, 'share_text_create', shareId, 'success', ipHash, {
       config,
       subject: { type: 'text', name: 'text.txt', sizeBytes: textBytes.length },
+    })
+    recordMetric(c.env, {
+      event: 'share_text_create',
+      status: 'success',
+      subjectType: 'text',
+      sizeBytes: textBytes.length,
     })
 
     return c.json(success({
@@ -300,16 +317,19 @@ async function uploadMultipartPart(c: Context<{ Bindings: Bindings }>) {
       return rateLimited(c, limited.resetAt)
     }
 
+    // R2 resumeMultipartUpload() deliberately does not validate the upload ID.
+    // Keep the D1 session read so cancellation, cleanup and configured expiry
+    // take effect before accepting another paid R2 part operation.
     const session = await db.getUploadSession(payload.session_id)
     if (
       !session ||
       session.share_id !== payload.share_id ||
       session.upload_id !== payload.upload_id ||
-      session.r2_key !== payload.r2_key
+      session.r2_key !== payload.r2_key ||
+      session.code_hash !== payload.code_hash
     ) {
       return c.json(error('上传会话不存在', 404), 404)
     }
-
     const r2 = new R2Storage(c.env.BUCKET)
     if (isExpiredIso(session.expire_at)) {
       await abortUploadSession(r2, db, session)
@@ -556,15 +576,18 @@ async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string 
     }
 
     if (share.type === 'text') {
+      // Reserve the extraction atomically before loading the R2 body. A
+      // concurrent request that loses the final download slot must not read
+      // text content that it is no longer allowed to return.
+      if (!await db.consumeShareDownload(share.id)) {
+        return c.json(error('提取码无效或文件已不可用', 404), 404)
+      }
       const r2 = new R2Storage(c.env.BUCKET)
       const obj = await r2.getObject(share.r2_key)
       if (!obj) {
         return c.json(error('提取码无效或文件已不可用', 404), 404)
       }
       const text = await obj.text()
-      if (!await db.consumeShareDownload(share.id)) {
-        return c.json(error('提取码无效或文件已不可用', 404), 404)
-      }
       await audit(db, c, 'share_resolve_text', share.id, 'success', ipHash, {
         accessLog: true,
         config,
@@ -581,22 +604,54 @@ async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string 
       }))
     }
 
+    const downloadLimited = await checkRateLimit(
+      c.env,
+      db,
+      'download',
+      ipHash,
+      60,
+      config.rateLimitDownloadPerMinute,
+      config.enableNativeRateLimit,
+    )
+    if (downloadLimited.limited) {
+      return rateLimited(c, downloadLimited.resetAt)
+    }
+
+    // Count one extraction as one logical download. The resulting short-lived
+    // session can then serve all Range requests needed for playback or seeking
+    // without consuming additional download slots or D1 writes.
+    const r2 = new R2Storage(c.env.BUCKET)
+    const storedObject = await r2.headObject(share.r2_key)
+    if (!storedObject) {
+      return c.json(error('提取码无效或文件已不可用', 404), 404)
+    }
+    const sessionSecret = getRequiredSecret(c.env, 'SESSION_SECRET')
+    if (!await db.consumeShareDownload(share.id)) {
+      return c.json(error('提取码无效或文件已不可用', 404), 404)
+    }
     const token = await signJWT({
       purpose: 'download',
       share_id: share.id,
-      exp: Math.floor(Date.now() / 1000) + 120,
+      exp: Math.floor(Date.now() / 1000) + DOWNLOAD_SESSION_TTL_SECONDS,
       nonce: crypto.randomUUID(),
-    }, getRequiredSecret(c.env, 'SESSION_SECRET'))
+    }, sessionSecret)
     const downloadUrl = `/api/share/download/${share.id}`
     c.header(
       'Set-Cookie',
-      downloadSessionCookie(token, downloadUrl, c.req.url, 120),
+      downloadSessionCookie(token, downloadUrl, c.req.url, DOWNLOAD_SESSION_TTL_SECONDS),
     )
 
     await audit(db, c, 'share_resolve_file', share.id, 'success', ipHash, {
       accessLog: true,
       config,
       subject: shareAuditSubject(share),
+    })
+    recordMetric(c.env, {
+      event: 'download_file',
+      status: 'success',
+      subjectType: 'file',
+      mimeType: share.mime_type || undefined,
+      sizeBytes: share.size_bytes,
     })
     return c.json(success({
       code: rawCode,
@@ -605,7 +660,7 @@ async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string 
       size_bytes: share.size_bytes,
       mime_type: share.mime_type,
       expire_at: share.expire_at,
-      download_count: share.download_count,
+      download_count: share.download_count + 1,
       max_downloads: share.max_downloads,
       download_url: downloadUrl,
     }))
@@ -632,59 +687,71 @@ async function downloadWithSession(c: Context<{ Bindings: Bindings }>) {
     }
 
     const db = new DB(c.env.DB)
-    const config = await getRuntimeConfig(c.env, db)
-    const pepper = getRequiredSecret(c.env, 'CODE_HASH_PEPPER')
-    const ipHash = await hashIp(getClientIp(c), pepper)
-    const limited = await checkRateLimit(
-      c.env,
-      db,
-      'download',
-      ipHash,
-      60,
-      config.rateLimitDownloadPerMinute,
-      config.enableNativeRateLimit,
-    )
-    if (limited.limited) {
-      return new Response('请求过于频繁，请稍后再试', {
-        status: 429,
-        headers: { 'Retry-After': '60' },
-      })
-    }
-
     const share = await db.getShareById(shareId)
-    if (!isShareAvailable(share) || share.type !== 'file') {
+    if (!isDownloadSessionShareAvailable(share) || share.type !== 'file') {
       return new Response('提取码无效或文件已不可用', { status: 404 })
     }
 
+    const ifNoneMatch = c.req.header('If-None-Match')
+    const currentHttpEtag = share.object_etag ? toHttpEtag(share.object_etag) : null
+    if (ifNoneMatch && currentHttpEtag && ifNoneMatchMatches(ifNoneMatch, currentHttpEtag)) {
+      return new Response(null, {
+        status: 304,
+        headers: {
+          'Cache-Control': 'private, no-store',
+          ETag: currentHttpEtag,
+        },
+      })
+    }
+
+    const rangeHeader = c.req.header('Range')
+    const r2Options: R2GetOptions | undefined = rangeHeader
+      ? { range: c.req.raw.headers }
+      : undefined
+
     const r2 = new R2Storage(c.env.BUCKET)
-    const obj = await r2.getObject(share.r2_key)
+    const obj = await r2.getObject(share.r2_key, r2Options)
     if (!obj) {
       return new Response('提取码无效或文件已不可用', { status: 404 })
     }
 
-    if (!await db.consumeShareDownload(share.id)) {
-      return new Response('提取码无效或文件已不可用', { status: 404 })
-    }
-    c.executionCtx.waitUntil(audit(db, c, 'share_download_file', share.id, 'success', ipHash, {
-      accessLog: true,
-      config,
-      subject: shareAuditSubject(share),
-    }))
-
     const headers = new Headers()
     obj.writeHttpMetadata(headers)
     headers.set('Content-Type', share.mime_type || 'application/octet-stream')
-    headers.set('Content-Disposition', contentDispositionAttachment(share.display_name || 'download'))
+    const disposition = c.req.query('disposition') === 'inline' && isSafeInlinePreviewMime(share.mime_type)
+      ? 'inline'
+      : 'attachment'
+    headers.set(
+      'Content-Disposition',
+      disposition === 'inline'
+        ? contentDispositionInline(share.display_name || 'preview')
+        : contentDispositionAttachment(share.display_name || 'download'),
+    )
     headers.set('Cache-Control', 'private, no-store')
     headers.set('X-Content-Type-Options', 'nosniff')
     headers.set('Referrer-Policy', 'no-referrer')
+    headers.set('Accept-Ranges', 'bytes')
     headers.set('etag', obj.httpEtag)
-    headers.append(
-      'Set-Cookie',
-      downloadSessionCookie('', `/api/share/download/${share.id}`, c.req.url, 0),
-    )
 
-    return new Response(obj.body, { headers })
+    let status = 200
+    if (rangeHeader && obj.range) {
+      status = 206
+      if ('offset' in obj.range && typeof obj.range.offset === 'number') {
+        const offset = obj.range.offset
+        const length = obj.range.length ?? (share.size_bytes - offset)
+        const end = Math.min(offset + length - 1, share.size_bytes - 1)
+        headers.set('Content-Range', `bytes ${offset}-${end}/${share.size_bytes}`)
+        headers.set('Content-Length', String(end - offset + 1))
+      } else if ('suffix' in obj.range && typeof obj.range.suffix === 'number') {
+        const suffix = obj.range.suffix
+        const start = Math.max(share.size_bytes - suffix, 0)
+        const end = share.size_bytes - 1
+        headers.set('Content-Range', `bytes ${start}-${end}/${share.size_bytes}`)
+        headers.set('Content-Length', String(end - start + 1))
+      }
+    }
+
+    return new Response(obj.body, { status, headers })
   } catch (e: unknown) {
     if (e instanceof RuntimeConfigUnavailableError) {
       console.error('download share failed:', e)
@@ -855,6 +922,32 @@ function isExpiredIso(value: string): boolean {
   return new Date(value) <= new Date()
 }
 
+export function ifNoneMatchMatches(header: string, currentEtag: string): boolean {
+  const current = normalizeEntityTag(currentEtag)
+  return header.split(',').some((candidate) => {
+    const trimmed = candidate.trim()
+    return trimmed === '*' || normalizeEntityTag(trimmed) === current
+  })
+}
+
+function normalizeEntityTag(value: string): string {
+  const withoutWeakPrefix = value.trim().replace(/^W\//i, '')
+  return withoutWeakPrefix.startsWith('"') && withoutWeakPrefix.endsWith('"')
+    ? withoutWeakPrefix.slice(1, -1)
+    : withoutWeakPrefix
+}
+
+function toHttpEtag(value: string): string {
+  const normalized = normalizeEntityTag(value).replace(/["\\]/g, '')
+  return `"${normalized}"`
+}
+
+export function isSafeInlinePreviewMime(mimeType: string | null): boolean {
+  const normalized = mimeType?.trim().toLowerCase() || ''
+  if (normalized.startsWith('audio/') || normalized.startsWith('video/')) return true
+  return normalized.startsWith('image/') && normalized !== 'image/svg+xml'
+}
+
 async function abortUploadSession(r2: R2Storage, db: DB, session: UploadSession): Promise<void> {
   try {
     const multipart = r2.resumeMultipartUpload(session.r2_key, session.upload_id)
@@ -877,6 +970,12 @@ function isShareAvailable(share: Share | null): share is Share {
   if (new Date(share.expire_at) <= new Date()) return false
   if (share.max_downloads !== null && share.download_count >= share.max_downloads) return false
   return true
+}
+
+function isDownloadSessionShareAvailable(share: Share | null): share is Share {
+  if (!share) return false
+  if (share.deleted_at) return false
+  return new Date(share.expire_at) > new Date()
 }
 
 function routeFailure(c: Context, operation: string, cause: unknown, message: string) {

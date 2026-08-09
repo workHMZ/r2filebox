@@ -137,7 +137,7 @@ import { RouterLink, useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { 
   Monitor, Folder, Setting, ArrowDown, 
-  Box, Document, Tools, Promotion, SwitchButton, Expand, Close
+  Document, Tools, Promotion, SwitchButton, Expand, Close
 } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { useConfigStore } from '@/stores/config'
@@ -161,7 +161,6 @@ const backgroundInactive = computed(() => isMobile.value && sidebarOpen.value)
 const adminMenuItems = computed(() => [
   { path: '/admin/dashboard', label: t('admin.dashboard'), icon: Monitor },
   { path: '/admin/files', label: t('admin.files'), icon: Folder },
-  { path: '/admin/storage', label: t('admin.storage'), icon: Box },
   { path: '/admin/logs', label: t('admin.logs'), icon: Document },
   { path: '/admin/config', label: t('admin.config'), icon: Setting },
   { path: '/admin/maintenance', label: t('admin.maintenance'), icon: Tools },
@@ -177,7 +176,6 @@ const pageTitle = computed(() => {
     '/admin': t('admin.dashboard'),
     '/admin/files': t('admin.files'),
     '/admin/config': t('admin.config'),
-    '/admin/storage': t('admin.storage'),
     '/admin/logs': t('admin.logs'),
     '/admin/maintenance': t('admin.maintenance')
   }

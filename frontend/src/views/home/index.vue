@@ -130,6 +130,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   CopyDocument,
@@ -167,9 +168,18 @@ const shareCode = ref('')
 const qrCodeDataUrl = ref('')
 let qrGenerationVersion = 0
 
+const route = useRoute()
+
 watch(
-  [fileShareEnabled, textShareEnabled],
-  ([fileEnabled, textEnabled]) => {
+  [fileShareEnabled, textShareEnabled, () => route.path],
+  ([fileEnabled, textEnabled, path]) => {
+    const isShareTarget = path === '/share-target'
+    if (isShareTarget && textEnabled) {
+      activeTab.value = 'text'
+      tabChosenByUser.value = true
+      return
+    }
+
     const enabledTabs = [fileEnabled && 'file', textEnabled && 'text', 'get'].filter(Boolean)
     if (!enabledTabs.includes(activeTab.value)) activeTab.value = enabledTabs[0] as string
     if (!tabChosenByUser.value && activeTab.value === 'get' && fileEnabled) activeTab.value = 'file'
@@ -392,12 +402,14 @@ const focusActiveShareTab = () => {
 
 .share-code-card {
   display: flex;
-  max-width: 420px;
+  width: 100%;
+  max-width: 460px;
+  box-sizing: border-box;
   margin: 0 auto 20px;
   padding: 16px 18px;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  gap: 16px;
   border: 1px solid var(--primary-border);
   border-radius: var(--radius-lg);
   background: var(--primary-soft);
@@ -405,16 +417,21 @@ const focusActiveShareTab = () => {
 
 .code-header {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 6px;
   color: var(--primary-active);
   font-size: 12px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .code-body {
   display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
   align-items: center;
+  justify-content: flex-end;
   gap: 12px;
 }
 
@@ -425,6 +442,12 @@ const focusActiveShareTab = () => {
   font-weight: 800;
   letter-spacing: 2px;
   line-height: 1;
+  white-space: nowrap;
+}
+
+.code-body :deep(.el-button) {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .qrcode-section {

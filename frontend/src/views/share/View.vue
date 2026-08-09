@@ -67,7 +67,20 @@
 
           <div v-else class="file-share-content">
             <div class="file-card">
-              <div class="file-icon">
+              <!-- 音视频/图片流式在线预览区 -->
+              <div v-if="downloadUrl && (isMediaVideo || isMediaAudio || isMediaImage)" class="media-preview-box">
+                <div v-if="isMediaVideo" class="video-preview-wrapper">
+                  <video :src="previewUrl" controls preload="metadata" class="preview-video"></video>
+                </div>
+                <div v-else-if="isMediaAudio" class="audio-preview-wrapper">
+                  <audio :src="previewUrl" controls preload="metadata" class="preview-audio"></audio>
+                </div>
+                <div v-else-if="isMediaImage" class="image-preview-wrapper">
+                  <el-image :src="previewUrl" :preview-src-list="[previewUrl]" fit="contain" class="preview-image" loading="lazy" />
+                </div>
+              </div>
+
+              <div v-else class="file-icon">
                 <div class="icon-glow-ring">
                   <el-icon :size="36"><Folder /></el-icon>
                 </div>
@@ -77,6 +90,9 @@
                 <div class="file-meta">
                   <el-tag type="info" size="large" class="meta-tag">
                     {{ formatFileSize(shareData.size_bytes, getLocaleTag(locale)) }}
+                  </el-tag>
+                  <el-tag v-if="shareData.mime_type" type="success" size="large" class="meta-tag">
+                    {{ shareData.mime_type }}
                   </el-tag>
                 </div>
               </div>
@@ -141,6 +157,24 @@ const shareStatus = computed(() => {
   return ''
 })
 
+const downloadUrl = computed(() => shareData.value?.download_url || '')
+const previewUrl = computed(() => withDisposition(downloadUrl.value, 'inline'))
+
+const isMediaVideo = computed(() => {
+  const mime = (shareData.value?.mime_type || '').toLowerCase()
+  return mime.startsWith('video/')
+})
+
+const isMediaAudio = computed(() => {
+  const mime = (shareData.value?.mime_type || '').toLowerCase()
+  return mime.startsWith('audio/')
+})
+
+const isMediaImage = computed(() => {
+  const mime = (shareData.value?.mime_type || '').toLowerCase()
+  return mime.startsWith('image/') && mime !== 'image/svg+xml'
+})
+
 const fetchShare = async (code: string, version: number) => {
   loading.value = true
   error.value = ''
@@ -182,7 +216,13 @@ const downloadFile = () => {
     ElMessage.error(t('shareView.networkFailed'))
     return
   }
-  window.open(url, '_blank', 'noopener,noreferrer')
+  window.open(withDisposition(url, 'attachment'), '_blank', 'noopener,noreferrer')
+}
+
+const withDisposition = (url: string, disposition: 'inline' | 'attachment') => {
+  if (!url) return ''
+  const separator = url.includes('?') ? '&' : '?'
+  return `${url}${separator}disposition=${disposition}`
 }
 
 watch(() => route.params.code, (value) => {
@@ -352,6 +392,50 @@ watch(() => route.params.code, (value) => {
 .actions {
   display: flex;
   justify-content: flex-end;
+}
+
+/* 媒体流式在线预览样式 */
+.media-preview-box {
+  width: 100%;
+  margin-bottom: 24px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.04);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.video-preview-wrapper,
+.audio-preview-wrapper,
+.image-preview-wrapper {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.preview-video {
+  width: 100%;
+  max-height: 420px;
+  border-radius: var(--radius-lg);
+  background: #000;
+}
+
+.preview-audio {
+  width: 100%;
+  padding: 12px;
+}
+
+.preview-video:focus-visible,
+.preview-audio:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 3px;
+}
+
+.preview-image {
+  max-width: 100%;
+  max-height: 400px;
+  border-radius: var(--radius-lg);
 }
 
 /* 文件提取 */

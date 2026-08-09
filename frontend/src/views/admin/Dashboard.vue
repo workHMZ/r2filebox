@@ -168,6 +168,7 @@
         </el-card>
       </el-col>
     </el-row>
+
   </div>
 </template>
 
@@ -442,7 +443,7 @@ onMounted(async () => {
     await Promise.all([
       fetchDashboardStats(),
       fetchCharts(),
-      fetchRecentFiles()
+      fetchRecentFiles(),
     ])
   } finally {
     loading.value = false
@@ -626,4 +627,5 @@ onBeforeUnmount(() => {
     height: 240px;
   }
 }
+
 </style>

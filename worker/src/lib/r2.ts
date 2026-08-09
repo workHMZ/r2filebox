@@ -4,15 +4,15 @@ export class R2Storage {
   /**
    * Upload a file to R2
    */
-  async uploadFile(key: string, file: File | Blob, options?: R2PutOptions): Promise<R2Object> {
+  async uploadFile(key: string, file: File | Blob, options?: R2PutOptions): Promise<R2Object | null> {
     return await this.bucket.put(key, file, options)
   }
 
   /**
    * Get an object from R2
    */
-  async getObject(key: string): Promise<R2ObjectBody | null> {
-    return await this.bucket.get(key)
+  async getObject(key: string, options?: R2GetOptions): Promise<R2ObjectBody | null> {
+    return await this.bucket.get(key, options)
   }
 
   async headObject(key: string): Promise<R2Object | null> {

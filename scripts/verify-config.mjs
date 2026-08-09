@@ -11,6 +11,10 @@ const wrangler = readFileSync(resolve(root, 'wrangler.toml'), 'utf8')
 const generatedBindings = readFileSync(resolve(root, 'worker/worker-configuration.d.ts'), 'utf8')
 const failures = []
 
+if (packageJson.scripts?.deploy !== 'node scripts/deploy-worker.mjs') {
+  failures.push('npm run deploy must use the migration-first metadata-aware deploy helper')
+}
+
 const expectMatch = (pattern, message) => {
   if (!pattern.test(wrangler)) failures.push(message)
 }
@@ -31,6 +35,8 @@ if (/\[\[kv_namespaces\]\]/.test(wrangler) || /binding = "RATE_LIMIT"/.test(wran
 if (/^ENABLE_KV_RATE_LIMIT\s*=/m.test(wrangler)) {
   failures.push('The obsolete ENABLE_KV_RATE_LIMIT variable must not be configured')
 }
+expectMatch(/^GIT_COMMIT_HASH = "unknown"$/m, 'GIT_COMMIT_HASH must have a safe local fallback')
+expectMatch(/^BUILD_TIMESTAMP = ""$/m, 'BUILD_TIMESTAMP must have a safe local fallback')
 
 const expectedRateLimits = new Map([
   ['UPLOAD_RATE_LIMITER', 600],
@@ -56,6 +62,9 @@ for (const name of expectedRateLimits.keys()) failures.push(`Missing native rate
 
 for (const binding of ['UPLOAD_RATE_LIMITER', 'UPLOAD_PART_RATE_LIMITER', 'RESOLVE_RATE_LIMITER', 'DOWNLOAD_RATE_LIMITER']) {
   if (!generatedBindings.includes(`\t${binding}: RateLimit;`)) failures.push(`Generated bindings are stale: ${binding} is missing`)
+}
+for (const binding of ['GIT_COMMIT_HASH', 'BUILD_TIMESTAMP']) {
+  if (!generatedBindings.includes(`\t${binding}: `)) failures.push(`Generated bindings are stale: ${binding} is missing`)
 }
 
 if (process.env.REQUIRE_PLACEHOLDER_BINDINGS === '1') {

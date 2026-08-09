@@ -1,5 +1,8 @@
-import { env, SELF } from 'cloudflare:test'
+import { createExecutionContext, env, SELF } from 'cloudflare:test'
 import { beforeAll, describe, expect, it } from 'vitest'
+import worker from '../src/index'
+import { signJWT } from '../src/lib/auth'
+import type { Env } from '../src/types'
 
 describe('administrator cookie session', () => {
   beforeAll(async () => {
@@ -75,6 +78,33 @@ describe('administrator cookie session', () => {
     expect(response.status).toBe(401)
   })
 
+  it('returns maintenance runtime and configured storage resources', async () => {
+    const login = await loginAt('https://example.test')
+    const response = await SELF.fetch('https://example.test/admin/maintenance/system-info', {
+      headers: { Cookie: cookiePair(login.headers.get('set-cookie') || '') },
+    })
+
+    expect(response.status).toBe(200)
+    const body = await response.json<{
+      data: {
+        runtime: string
+        platform: string
+        storage: string
+        version: string
+        r2_bucket_name: string | null
+        d1_database_name: string | null
+      }
+    }>()
+    expect(body.data).toEqual({
+      runtime: 'Cloudflare Workers',
+      platform: 'V8 isolate',
+      storage: 'D1 + R2 + Workers Rate Limiting',
+      version: '2.0',
+      r2_bucket_name: 'r2filebox-files',
+      d1_database_name: 'r2filebox-db',
+    })
+  })
+
   it('rejects cross-origin cookie mutations', async () => {
     const login = await loginAt('https://example.test')
     const setCookie = login.headers.get('set-cookie') || ''
@@ -139,6 +169,100 @@ describe('administrator cookie session', () => {
       'size_bytes',
       'type',
     ])
+  })
+
+  it('removes the R2 object before soft-deleting its D1 share', async () => {
+    const id = crypto.randomUUID()
+    const key = `admin-delete/${id}`
+    const now = new Date().toISOString()
+    await env.BUCKET.put(key, 'delete me')
+    await env.DB.prepare(`
+      INSERT INTO shares (
+        id, code_hash, type, r2_key, display_name, mime_type, size_bytes,
+        title, created_at, expire_at, deleted_at, max_downloads,
+        download_count, created_ip_hash, last_access_at, object_etag,
+        object_uploaded_at
+      ) VALUES (?, ?, 'file', ?, 'delete.txt', 'text/plain', 9,
+        NULL, ?, ?, NULL, 10, 0, NULL, NULL, NULL, ?)
+    `).bind(
+      id,
+      crypto.randomUUID(),
+      key,
+      now,
+      new Date(Date.now() + 60_000).toISOString(),
+      now,
+    ).run()
+
+    const login = await loginAt('https://example.test')
+    const response = await SELF.fetch(`https://example.test/admin/files/${id}`, {
+      method: 'DELETE',
+      headers: {
+        Cookie: cookiePair(login.headers.get('set-cookie') || ''),
+        Origin: 'https://example.test',
+      },
+    })
+
+    expect(response.status).toBe(200)
+    expect(await env.BUCKET.head(key)).toBeNull()
+    const stored = await env.DB.prepare('SELECT deleted_at FROM shares WHERE id = ?')
+      .bind(id)
+      .first<{ deleted_at: string | null }>()
+    expect(stored?.deleted_at).not.toBeNull()
+  })
+
+  it('keeps the D1 share active when R2 deletion fails', async () => {
+    const id = crypto.randomUUID()
+    const now = new Date().toISOString()
+    await env.DB.prepare(`
+      INSERT INTO shares (
+        id, code_hash, type, r2_key, display_name, mime_type, size_bytes,
+        title, created_at, expire_at, deleted_at, max_downloads,
+        download_count, created_ip_hash, last_access_at, object_etag,
+        object_uploaded_at
+      ) VALUES (?, ?, 'file', ?, 'retry.txt', 'text/plain', 5,
+        NULL, ?, ?, NULL, 10, 0, NULL, NULL, NULL, ?)
+    `).bind(
+      id,
+      crypto.randomUUID(),
+      `admin-delete-failure/${id}`,
+      now,
+      new Date(Date.now() + 60_000).toISOString(),
+      now,
+    ).run()
+
+    const sessionSecret = '2222222222222222222222222222222222222222222222222222222222222222'
+    const token = await signJWT({
+      sub: 'admin',
+      username: 'admin',
+      role: 'admin',
+      exp: Math.floor(Date.now() / 1000) + 60,
+    }, sessionSecret)
+    const failingEnv = {
+      DB: env.DB,
+      SESSION_SECRET: sessionSecret,
+      BUCKET: {
+        async delete() {
+          throw new Error('R2 unavailable')
+        },
+      },
+    } as unknown as Env
+    const response = await worker.fetch(
+      new Request(`https://example.test/admin/files/${id}`, {
+        method: 'DELETE',
+        headers: {
+          Cookie: `admin_session=${encodeURIComponent(token)}`,
+          Origin: 'https://example.test',
+        },
+      }),
+      failingEnv,
+      createExecutionContext(),
+    )
+
+    expect(response.status).toBe(500)
+    const stored = await env.DB.prepare('SELECT deleted_at FROM shares WHERE id = ?')
+      .bind(id)
+      .first<{ deleted_at: string | null }>()
+    expect(stored?.deleted_at).toBeNull()
   })
 })
 

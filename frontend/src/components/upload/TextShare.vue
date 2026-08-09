@@ -50,7 +50,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { shareApi } from '@/api/share'
 import { ElMessage } from 'element-plus'
 import { Promotion } from '@element-plus/icons-vue'
@@ -64,10 +65,28 @@ const emit = defineEmits<{
   success: [result: { code: string; share_url: string; full_share_url: string; qr_code_data: string }]
 }>()
 
+const route = useRoute()
 const { t } = useI18n()
 const configStore = useConfigStore()
 
 const textContent = ref('')
+
+onMounted(() => {
+  const search = new URLSearchParams(window.location.search)
+  const sharedValue = (key: 'title' | 'text' | 'url') => {
+    const routeValue = route.query[key]
+    return (typeof routeValue === 'string' ? routeValue : search.get(key) || '').trim()
+  }
+  const parts = [
+    sharedValue('title'),
+    sharedValue('text'),
+    sharedValue('url'),
+  ].filter(Boolean)
+  if (parts.length) {
+    textContent.value = parts.join('\n\n')
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.hash}`)
+  }
+})
 const sharing = ref(false)
 const turnstileToken = ref('')
 const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)

@@ -170,15 +170,13 @@ export class DB {
     const safeOffset = Math.max(offset, 0)
 
     const countStmt = this.db.prepare('SELECT count(*) as count FROM shares WHERE deleted_at IS NULL')
-    const countRes = await countStmt.first<{count: number}>()
-    
     const itemsStmt = this.db.prepare('SELECT * FROM shares WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT ? OFFSET ?')
       .bind(safeLimit, safeOffset)
-    const { results } = await itemsStmt.all<Share>()
+    const [countRes, itemsRes] = await this.db.batch([countStmt, itemsStmt])
     
     return {
-      items: results,
-      total: countRes?.count || 0
+      items: (itemsRes.results || []) as Share[],
+      total: (countRes.results as Array<{ count: number }>)?.[0]?.count || 0,
     }
   }
 

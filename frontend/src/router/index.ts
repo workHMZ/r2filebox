@@ -15,6 +15,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/share/View.vue'),
     meta: { titleKey: 'nav.share' },
   },
+  {
+    path: '/share-target',
+    name: 'ShareTarget',
+    component: () => import('@/views/home/index.vue'),
+    meta: { titleKey: 'nav.home' },
+  },
 
   {
     path: '/admin/login',
@@ -52,12 +58,6 @@ const routes: RouteRecordRaw[] = [
         name: 'AdminConfig',
         component: () => import('@/views/admin/Config.vue'),
         meta: { titleKey: 'admin.config' },
-      },
-      {
-        path: 'storage',
-        name: 'AdminStorage',
-        component: () => import('@/views/admin/Storage.vue'),
-        meta: { titleKey: 'admin.storage' },
       },
       {
         path: 'logs',

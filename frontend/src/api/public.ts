@@ -15,10 +15,23 @@ export interface PublicConfig {
   turnstileSiteKey: string
 }
 
+export interface VersionInfo {
+  version: string
+  commit_hash: string
+  short_hash: string
+  build_time: string | null
+}
+
 export const publicApi = {
   getConfig: () => {
     return request<ApiResponse<PublicConfig>>({
       url: '/api/config',
+      method: 'GET',
+    })
+  },
+  getVersion: () => {
+    return request<ApiResponse<VersionInfo>>({
+      url: '/api/version',
       method: 'GET',
     })
   },

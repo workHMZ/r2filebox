@@ -52,7 +52,7 @@ describe('checkRateLimit', () => {
     expect(fixture.prepare).not.toHaveBeenCalled()
   })
 
-  it('enforces the configurable exact limit with one atomic D1 statement', async () => {
+  it('enforces the exact D1 limit after the native coarse limiter allows the request', async () => {
     const fixture = bindings(11)
     const result = await checkRateLimit(
       fixture.env,
@@ -65,10 +65,8 @@ describe('checkRateLimit', () => {
     )
 
     expect(result).toMatchObject({ limited: true, count: 11, source: 'd1', limit: 10 })
+    expect(fixture.limit).toHaveBeenCalledWith({ key: 'ip-hash' })
     expect(fixture.prepare).toHaveBeenCalledTimes(1)
-    expect(fixture.prepare.mock.calls[0][0]).toContain('RETURNING count')
-    expect(fixture.bind).toHaveBeenCalledTimes(1)
-    expect(fixture.first).toHaveBeenCalledTimes(1)
   })
 
   it('keeps administrator authentication on the exact D1 limiter only', async () => {

@@ -121,7 +121,7 @@ a {
   transform: translateY(0);
 }
 
-#main-content:focus:not(:focus-visible) {
+#main-content:focus {
   outline: none;
 }
 

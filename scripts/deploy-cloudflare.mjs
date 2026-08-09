@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { randomBytes, webcrypto } from 'node:crypto'
 import { Writable } from 'node:stream'
+import { getDeployVarsArgs } from './deploy-metadata.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const wranglerTomlPath = resolve(root, 'wrangler.toml')
@@ -51,6 +52,7 @@ async function main() {
     whoami = run('npx', ['wrangler', 'whoami'], root)
   }
   await selectCloudflareAccount(whoami)
+  const deployVars = () => getDeployVarsArgs(root)
 
   const configuredDatabaseId = readConfiguredDatabaseId()
   const existingDeployment = Boolean(configuredDatabaseId && !isPlaceholderDatabaseId(configuredDatabaseId))
@@ -68,7 +70,7 @@ async function main() {
 
     run('npm', ['run', 'build'], root)
     run('npx', ['wrangler', 'd1', 'migrations', 'apply', 'DB', '--remote'], root)
-    run('npx', ['wrangler', 'deploy'], root)
+    run('npx', ['wrangler', 'deploy', ...deployVars()], root)
     console.log('Deploy complete. Existing secrets were not changed.')
     return
   }
@@ -137,7 +139,7 @@ async function main() {
   run('npx', ['wrangler', 'd1', 'migrations', 'apply', 'DB', '--remote'], root)
 
   if (!initializeSecrets) {
-    run('npx', ['wrangler', 'deploy'], root)
+    run('npx', ['wrangler', 'deploy', ...deployVars()], root)
     console.log('Deploy complete. Existing secrets were not changed.')
     return
   }
@@ -169,7 +171,7 @@ async function main() {
 
   console.log('\nBuild and database migration succeeded. Writing first-deployment secrets now.')
   for (const [name, value] of secrets) putSecret(name, value)
-  run('npx', ['wrangler', 'deploy'], root)
+  run('npx', ['wrangler', 'deploy', ...deployVars()], root)
 
   console.log('Deploy complete.')
 }

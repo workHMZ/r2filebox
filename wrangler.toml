@@ -5,6 +5,9 @@ main = "worker/src/index.ts"
 compatibility_date = "2026-07-20"
 compatibility_flags = ["nodejs_compat"]
 
+[placement]
+mode = "smart"
+
 workers_dev = true
 
 [assets]
@@ -52,6 +55,10 @@ crons = [
   "0 * * * *"
 ]
 
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "r2filebox_metrics"
+
 [observability]
 enabled = true
 head_sampling_rate = 0.1
@@ -59,7 +66,9 @@ head_sampling_rate = 0.1
 [vars]
 APP_NAME = "R2FileBox"
 APP_DESCRIPTION = "Private code-based file sharing on Cloudflare R2"
-APP_VERSION = "1.40"
+APP_VERSION = "2.0"
+GIT_COMMIT_HASH = "unknown"
+BUILD_TIMESTAMP = ""
 
 R2_BUCKET_NAME = "r2filebox-files"
 D1_DATABASE_NAME = "r2filebox-db"

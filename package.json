@@ -1,6 +1,6 @@
 {
   "name": "r2filebox",
-  "version": "1.40.0",
+  "version": "2.0.0",
   "private": true,
   "license": "LGPL-3.0-or-later",
   "engines": {
@@ -8,9 +8,10 @@
   },
   "scripts": {
     "dev": "wrangler dev",
+    "icons:generate": "node scripts/generate-icons.mjs",
     "build": "npm --prefix frontend ci && npm --prefix frontend run build",
-    "deploy": "npm run db:migrate:remote && wrangler deploy",
-    "deploy:dry-run": "npm run build && wrangler deploy --dry-run",
+    "deploy": "node scripts/deploy-worker.mjs",
+    "deploy:dry-run": "npm run build && node scripts/deploy-worker.mjs --dry-run",
     "deploy:cf": "node scripts/deploy-cloudflare.mjs",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
@@ -19,19 +20,23 @@
     "typecheck": "tsc -p worker/tsconfig.json --noEmit",
     "typecheck:test": "tsc -p worker/test/tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:scripts": "node --test scripts/*.test.mjs",
     "verify:config": "node scripts/verify-config.mjs",
-    "verify": "npm run verify:config && npm run cf-typegen:check && npm run typecheck && npm run typecheck:test && npm test",
+    "verify:assets": "node scripts/verify-assets.mjs",
+    "verify:i18n": "node scripts/verify-i18n.mjs",
+    "verify": "npm run verify:config && npm run verify:assets && npm run verify:i18n && npm run cf-typegen:check && npm run typecheck && npm run typecheck:test && npm run test:scripts && npm test",
     "hash-password": "node worker/scripts/hash-password.mjs"
   },
   "dependencies": {
-    "hono": "^4.12.31"
+    "hono": "^4.13.1"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "0.18.7",
-    "@cloudflare/workers-types": "5.20260721.1",
-    "typescript": "^5.4.3",
+    "@cloudflare/vitest-pool-workers": "0.20.3",
+    "@cloudflare/workers-types": "5.20260808.1",
+    "sharp": "0.35.2",
+    "typescript": "~5.9.3",
     "vitest": "4.1.10",
-    "wrangler": "4.113.0"
+    "wrangler": "4.120.0"
   },
   "cloudflare": {
     "bindings": {

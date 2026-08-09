@@ -168,6 +168,9 @@ app.delete('/admin/files/:id', async (c) => {
       return c.json(error('文件不存在', 404), 404)
     }
 
+    // Delete the object first. R2 deletion is idempotent, so if the following
+    // D1 update fails the administrator can safely retry without leaving an
+    // untracked object in the private bucket.
     const r2 = new R2Storage(c.env.BUCKET)
     await r2.deleteObject(share.r2_key)
     await db.deleteShareById(id)
@@ -299,7 +302,7 @@ app.get('/admin/maintenance/system-info', (c) => {
     runtime: 'Cloudflare Workers',
     platform: 'V8 isolate',
     storage: 'D1 + R2 + Workers Rate Limiting',
-    version: c.env.APP_VERSION,
+    version: c.env.APP_VERSION || '2.0',
     r2_bucket_name: c.env.R2_BUCKET_NAME || null,
     d1_database_name: c.env.D1_DATABASE_NAME || null,
   }))

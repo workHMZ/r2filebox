@@ -22,7 +22,7 @@ let authRedirecting = false
 instance.interceptors.response.use(
   (response) => {
     if (isAdminApi(response.config.url)) authRedirecting = false
-    return response.data
+    return response
   },
   (error: AxiosError<{ message?: string }>) => {
     const config = (error.config || {}) as RequestConfig
@@ -63,7 +63,7 @@ instance.interceptors.response.use(
 )
 
 export const request = <T = unknown>(config: RequestConfig): Promise<T> => {
-  return instance.request<unknown, T>(config)
+  return instance.request<T>(config).then((response) => response.data)
 }
 
 function showErrorOnce(message: string, config: RequestConfig): void {

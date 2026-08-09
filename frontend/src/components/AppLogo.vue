@@ -1,13 +1,10 @@
 <template>
   <span :class="['app-logo', `app-logo--${size}`]" aria-hidden="true">
-    <el-icon><Box /></el-icon>
-    <span class="app-logo__accent"></span>
+    <img src="/app-icon-192.png" alt="" class="app-logo__img" />
   </span>
 </template>
 
 <script setup lang="ts">
-import { Box } from '@element-plus/icons-vue'
-
 withDefaults(defineProps<{
   size?: 'small' | 'medium' | 'large'
 }>(), {
@@ -26,26 +23,19 @@ withDefaults(defineProps<{
   flex: 0 0 var(--logo-size);
   align-items: center;
   justify-content: center;
-  border: 1px solid #075f5a;
+  border: 1px solid rgba(8, 111, 104, 0.22);
   border-radius: 10px;
-  background: var(--primary-color);
-  color: #ffffff;
-  box-shadow: 0 7px 18px rgba(8, 111, 104, 0.18);
+  background: #f3f6f8;
+  overflow: hidden;
+  color: #14212b;
+  box-shadow: 0 4px 14px rgba(8, 111, 104, 0.12);
 }
 
-.app-logo .el-icon {
-  font-size: var(--logo-icon-size);
-}
-
-.app-logo__accent {
-  position: absolute;
-  top: -3px;
-  right: -3px;
-  width: 10px;
-  height: 10px;
-  border: 2px solid #ffffff;
-  border-radius: 50%;
-  background: var(--accent-color);
+.app-logo__img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
 }
 
 .app-logo--small {

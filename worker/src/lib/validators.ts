@@ -53,6 +53,16 @@ export const calculateExpireAt = (
 }
 
 export const contentDispositionAttachment = (filename: string): string => {
+  return contentDisposition('attachment', filename)
+}
+
+export const contentDispositionInline = (filename: string): string => {
+  return contentDisposition('inline', filename)
+}
+
+const contentDisposition = (disposition: 'attachment' | 'inline', filename: string): string => {
   const safe = sanitizeFilename(filename).replace(/"/g, '')
-  return `attachment; filename*=UTF-8''${encodeURIComponent(safe)}`
+  // ASCII-only fallback for clients that don't support RFC 5987 filename*
+  const asciiFallback = safe.replace(/[^\x20-\x7E]/g, '_') || 'download'
+  return `${disposition}; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(safe)}`
 }

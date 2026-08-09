@@ -31,6 +31,9 @@ export async function checkRateLimit(
       if (!nativeResult.success) {
         return result(true, maxCount, maxCount, windowSeconds, 'native')
       }
+      // The native limiter is deliberately a permissive, location-local
+      // coarse guard. Continue to D1 so the administrator-configured limit
+      // remains exact across Cloudflare locations.
     } catch (cause: unknown) {
       console.error('Native rate limiter unavailable; falling back to the exact D1 limit', {
         action,
