@@ -38,7 +38,10 @@
               <AppLogo />
               <div class="logo-text">
                 <h1>{{ t('shareView.header') }}</h1>
-                <p>{{ t('shareView.codePrefix') }}: <span class="badge-code">{{ shareCode }}</span></p>
+                <p>
+                  {{ t('shareView.codePrefix') }}:
+                  <span class="badge-code" :title="t('a11y.selectShareCode')">{{ shareCode }}</span>
+                </p>
               </div>
             </div>
             <el-button class="home-btn" @click="$router.push('/')">
@@ -58,10 +61,15 @@
               <pre>{{ shareData.text }}</pre>
             </div>
             <div class="actions">
-              <el-button type="primary" size="large" @click="copyText">
-                <el-icon><CopyDocument /></el-icon>
+              <ActionFeedbackButton
+                type="primary"
+                size="large"
+                :icon="CopyDocument"
+                :success="textCopied"
+                @click="copyText"
+              >
                 {{ t('shareView.copyText') }}
-              </el-button>
+              </ActionFeedbackButton>
             </div>
           </div>
 
@@ -96,10 +104,16 @@
                   </el-tag>
                 </div>
               </div>
-              <el-button type="primary" size="large" class="download-btn" @click="downloadFile">
-                <el-icon><Download /></el-icon>
+              <ActionFeedbackButton
+                type="primary"
+                size="large"
+                class="download-btn"
+                :icon="Download"
+                :success="downloadStarted"
+                @click="downloadFile"
+              >
                 {{ t('shareView.downloadFile') }}
-              </el-button>
+              </ActionFeedbackButton>
             </div>
           </div>
 
@@ -133,14 +147,21 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { 
-  HomeFilled, Document, Folder, Download, CopyDocument, Loading
+import {
+  CopyDocument,
+  Document,
+  Download,
+  Folder,
+  HomeFilled,
+  Loading,
 } from '@element-plus/icons-vue'
 import { shareApi } from '@/api/share'
 import type { ResolvedShare } from '@/api/share'
+import ActionFeedbackButton from '@/components/ActionFeedbackButton.vue'
 import { getLocaleTag, useI18n } from '@/i18n'
 import AppLogo from '@/components/AppLogo.vue'
 import LanguageSwitch from '@/components/LanguageSwitch.vue'
+import { useActionFeedback } from '@/composables/useActionFeedback'
 import { formatDateTime, formatFileSize } from '@/utils/format'
 
 const route = useRoute()
@@ -197,12 +218,16 @@ const fetchShare = async (code: string, version: number) => {
   }
 }
 
+const { active: textCopied, reset: resetTextCopyFeedback, show: showTextCopied } = useActionFeedback()
+const { active: downloadStarted, reset: resetDownloadFeedback, show: showDownloadStarted } = useActionFeedback()
+
 const copyText = async () => {
   if (!shareData.value?.text) return
   
   try {
     await navigator.clipboard.writeText(shareData.value.text)
     ElMessage.success(t('shareView.copyDone'))
+    showTextCopied()
   } catch {
     ElMessage.error(t('shareView.copyFailed'))
   }
@@ -217,6 +242,7 @@ const downloadFile = () => {
     return
   }
   window.open(withDisposition(url, 'attachment'), '_blank', 'noopener,noreferrer')
+  showDownloadStarted()
 }
 
 const withDisposition = (url: string, disposition: 'inline' | 'attachment') => {
@@ -226,6 +252,8 @@ const withDisposition = (url: string, disposition: 'inline' | 'attachment') => {
 }
 
 watch(() => route.params.code, (value) => {
+  resetTextCopyFeedback()
+  resetDownloadFeedback()
   const version = ++requestVersion
   const code = typeof value === 'string' ? value.trim() : ''
   if (code) {
@@ -333,6 +361,8 @@ watch(() => route.params.code, (value) => {
   border: 1px solid var(--primary-border);
   padding: 1px 6px;
   border-radius: 4px;
+  user-select: all;
+  cursor: pointer;
 }
 
 .home-btn {
@@ -342,6 +372,7 @@ watch(() => route.params.code, (value) => {
   border-radius: var(--radius-md);
   transition: border-color 0.18s ease, color 0.18s ease;
 }
+
 
 .home-btn:hover {
   background: var(--surface-page) !important;
@@ -566,7 +597,7 @@ watch(() => route.params.code, (value) => {
     gap: 16px;
     align-items: stretch;
   }
-  
+
   .home-btn {
     width: 100%;
   }
@@ -574,13 +605,13 @@ watch(() => route.params.code, (value) => {
   .file-card {
     padding: 28px 16px;
   }
-  
+
   .info-row {
     flex-direction: column;
     align-items: flex-start;
     gap: 6px;
   }
-  
+
   .info-val {
     align-self: flex-end;
   }

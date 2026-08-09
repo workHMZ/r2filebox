@@ -7,9 +7,16 @@
       <template #header>
         <div class="card-header">
           <h3>{{ t('logs.title') }}</h3>
-          <el-button @click="fetchLogs" :icon="Refresh" size="small">
+          <ActionFeedbackButton
+            type="primary"
+            size="small"
+            :icon="Refresh"
+            :loading="loading"
+            :success="refreshSucceeded"
+            @click="refreshLogs"
+          >
             {{ t('common.refresh') }}
-          </el-button>
+          </ActionFeedbackButton>
         </div>
       </template>
 
@@ -136,6 +143,8 @@ import { ref, reactive, onMounted } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { adminApi } from '@/api/admin'
 import type { AuditLog } from '@/api/admin'
+import ActionFeedbackButton from '@/components/ActionFeedbackButton.vue'
+import { useActionFeedback } from '@/composables/useActionFeedback'
 import { getLocaleTag, useI18n } from '@/i18n'
 import { formatDateTime, formatFileSize } from '@/utils/format'
 
@@ -143,6 +152,7 @@ const loading = ref(false)
 const logsList = ref<AuditLog[]>([])
 const { t, locale } = useI18n()
 let requestVersion = 0
+const { active: refreshSucceeded, show: showRefreshSucceeded } = useActionFeedback()
 
 const pagination = reactive({
   page: 1,
@@ -215,7 +225,7 @@ const getStatusType = (status: string): TagType => {
 
 const formatHashPrefix = (prefix: string | null): string => prefix ? `${prefix}…` : '-'
 
-const fetchLogs = async () => {
+const fetchLogs = async (): Promise<boolean> => {
   const currentVersion = ++requestVersion
   loading.value = true
   try {
@@ -231,12 +241,19 @@ const fetchLogs = async () => {
       stats.completedShares = res.data.stats.completedShares
       stats.completedRetrievals = res.data.stats.completedRetrievals
       stats.activeSources = res.data.stats.activeSources
+      return true
     }
+    return false
   } catch (error) {
     console.error('Failed to load audit logs:', error)
+    return false
   } finally {
     if (currentVersion === requestVersion) loading.value = false
   }
+}
+
+const refreshLogs = async () => {
+  if (await fetchLogs()) showRefreshSucceeded()
 }
 
 const handleSizeChange = () => {

@@ -8,128 +8,105 @@
 
 ## 中文
 
-一个运行在 Cloudflare 边缘网络上的匿名文件与文本分享服务。用户通过提取码存取内容，管理员通过后台管理一切。没有注册流程，没有用户系统，部署完成即可使用。
+R2FileBox 是一个运行在 Cloudflare Workers 上的文件与文本分享服务。用户无需注册，通过提取码分享和获取内容；管理员可在后台查看文件、审计日志、运行状态和存储配置。
 
-### 它是怎么工作的
+### 主要优势
 
+- **Cloudflare 原生架构**：API 与 Vue 前端由 Workers 托管，文件进入私有 R2，元数据和配置进入 D1。
+- **安全提取**：提取码使用 SHA-256 + Pepper 哈希，R2 对象不提供可绕过 Worker 的公开地址。
+- **适合文件传输**：支持 R2 Multipart Upload、HTTP Range、ETag、断点续传和短期下载会话。
+- **低维护成本**：自带定时清理、双层限流、审计日志、运行指标和管理后台。
+- **完整客户端体验**：支持中文、English、日本語、PWA 安装和文本分享目标。
+
+### 架构
+
+#### 数据与授权流程
+
+```text
+上传文件 / 文本
+    │
+    ▼
+Worker：校验、限流、生成随机提取码
+    ├─ 正文 ─────────────────────────→ 私有 R2（随机对象键）
+    └─ SHA-256(Pepper:提取码) + 元数据 ─→ D1（不保存提取码明文）
+
+输入提取码 → Worker 重新哈希 → D1 查找分享并原子扣减提取次数
+    ├─ 文本：Worker 从 R2 读取后返回
+    └─ 文件：签发 15 分钟 JWT → Worker 从 R2 流式返回（Range / ETag）
 ```
-用户上传文件 ──→ Worker 分片写入 R2 ──→ 生成提取码（明文仅返回一次）
-                       │                         │
-                       ▼                         ▼
-                D1 存储哈希后的提取码      R2 以不透明随机路径存储原始文件
-                       │
-                       ▼
-用户输入提取码 ──→ Worker 比对哈希 ──→ 签发 15 分钟下载会话 ──→ 流式返回文件
-```
 
-提取码经过 SHA-256 + Pepper 哈希后存入 D1，明文永远不落库。文件存储在私有 R2 Bucket 中，不需要开启公开访问。下载通过短期 JWT 会话完成，R2 对象不会暴露为可绕过 Worker 的公开地址。
+这里采用的是服务端访问控制，不是端到端加密：Worker 必须能够读取正文才能返回内容。安全边界来自私有 R2、不可逆的提取码哈希、短期下载会话和只经过 Worker 的访问路径；如需端到端加密，应在上传前自行加密文件。
 
-### 技术栈
-
-| 层级 | 技术 | 职责 |
+| 层级 | 技术 | 用途 |
 |------|------|------|
-| **API** | Hono on Workers | 路由、鉴权、安全头、Cron 清理 |
-| **数据库** | Cloudflare D1 | 分享元数据、上传会话、配置、审计日志、原子限流计数 |
-| **存储** | Cloudflare R2 | 文件（Multipart Upload）和文本的对象存储 |
-| **前端** | Vue 3 + Element Plus | SPA，由 Workers Static Assets 托管 |
-| **指标** | Analytics Engine | 选定的创建和提取事件，不消耗 D1 写入配额 |
-| **限流** | Native Rate Limiting + D1 | 边缘粗粒度拦截 + 全局精确计数双层防护 |
+| 边缘应用 | Hono + Cloudflare Workers | API、鉴权、安全头、流式下载、Cron 清理 |
+| 对象存储 | Cloudflare R2 | 私有存储文件和文本正文 |
+| 数据库 | Cloudflare D1 | 分享元数据、配置、上传会话、审计和精确限流 |
+| 前端 | Vue 3 + Element Plus | 用户页面和管理后台，由 Workers Static Assets 托管 |
+| 指标与防护 | Analytics Engine + Workers Rate Limiting | 轻量指标和边缘限流 |
 
-### 关键设计
+### 测试与质量检查
 
-**分片上传**：大文件通过 R2 Multipart Upload 分片传输。每个上传会话签发 HMAC JWT Token，包含 session/upload/r2_key 等信息。分片上传结束后，Worker 在一个 D1 事务中同时插入 share 记录并删除上传会话预留，保证存储配额计数的原子性。
+```bash
+npm run verify          # 配置、PWA 资源、多语言、类型检查、脚本测试和 Worker 测试
+npm run deploy:dry-run  # 完整构建并验证 Wrangler 部署包，不上传
+```
 
-**下载会话**：解析提取码时一次性扣减下载次数并签发 15 分钟 JWT 下载会话。会话有效期内所有 Range 请求（视频拖拽、断点续传）不再消耗下载次数和 D1 写操作。支持 HTTP 206 Range 和 ETag 条件请求。
-
-**双层限流**：公开接口先经过 Cloudflare Native Rate Limiting（边缘位置的低开销粗粒度保护），再经过 D1 原子计数器精确执行管理员配置的全局限额。管理员登录仅使用 D1 精确限流，不走 Native 层。
-
-**定时清理**：每小时 Cron Trigger 自动清理过期分享、失效上传会话、历史日志和过期限流计数器。清理结果中若有失败项，会在 Cloudflare Past Events 中标记为失败。
-
-**PWA 分享目标**：安装为 Web App 后可接收系统分享菜单中的文本、标题和链接，并自动填入文本分享页；当前不会声明或接收文件分享目标。
+测试覆盖管理员鉴权、分享解析与下载、ETag、限流、存储计数、运行时配置、定时清理、指标、健康检查和版本信息。GitHub Actions 会在每次推送和 Pull Request 时运行相同检查。
 
 ### 部署
 
-#### 方式一：命令行部署（推荐）
+需要 Node.js `>=24.11.0 <25`，版本以 [.nvmrc](./.nvmrc) 为准。
 
-前置条件：Node.js `>=24.11.0 <25`（见 `.nvmrc`），已登录 Wrangler。
+#### 命令行部署（推荐）
 
 ```bash
 npm run deploy:cf
 ```
 
-首次部署时，脚本会自动完成以下全部步骤：
+首次运行会引导登录 Cloudflare、创建或绑定 R2/D1、设置管理员凭据和密钥、应用 D1 迁移并部署 Worker。后续运行会复用现有资源和密钥，只执行构建、迁移和部署。
 
-1. 安装依赖并检查 Wrangler 登录状态
-2. 创建或绑定 R2 Bucket 和 D1 数据库
-3. 将实际的 D1 database_id 写入 `wrangler.toml`
-4. 构建前端并应用 D1 数据库迁移
-5. 交互式设置管理员密码（留空则自动生成强密码并显示一次）
-6. 自动生成 `CODE_HASH_PEPPER` 和 `SESSION_SECRET`
-7. 部署 Worker
+#### Deploy to Cloudflare
 
-**后续升级**再次运行 `npm run deploy:cf`；脚本检测到已有 D1 绑定后会要求确认，确认后仅执行构建、迁移和部署，不会重新创建资源或修改密钥。
+点击顶部按钮，并确认构建配置为：
 
-#### 方式二：Deploy to Cloudflare 按钮
+```text
+Build command:  npm run build
+Deploy command: npm run deploy
+```
 
-点击本页顶部的 **Deploy to Cloudflare** 按钮。在部署配置页中：
+`npm run deploy` 会先应用 D1 迁移再部署 Worker，不要替换成单独的 `wrangler deploy`。首次部署需要配置：
 
-- **Build command**：`npm run build`
-- **Deploy command**：`npm run deploy`（⚠️ 如果页面默认显示 `npx wrangler deploy`，务必改为 `npm run deploy`，否则数据库迁移不会执行）
-
-需要填写的 Secrets：
-
-| Secret | 说明 |
+| Secret | 要求 |
 |--------|------|
 | `ADMIN_PASSWORD` | 管理员密码，16–4096 字符 |
-| `CODE_HASH_PEPPER` | `openssl rand -hex 32` 生成，**不可更换**（否则已有提取码失效） |
-| `SESSION_SECRET` | `openssl rand -hex 32` 生成，更换后已有会话失效 |
+| `CODE_HASH_PEPPER` | 使用 `openssl rand -hex 32` 生成，设置后不要更换 |
+| `SESSION_SECRET` | 使用 `openssl rand -hex 32` 生成，更换后已有会话失效 |
 
-`ADMIN_USERNAME` 可选，默认为 `admin`。Turnstile 默认关闭，部署后可在管理后台启用。
+`ADMIN_USERNAME` 可选，默认为 `admin`。Turnstile 默认关闭，可在部署后从管理后台启用。
 
-#### 方式三：本地开发
+### 本地开发
 
 ```bash
-cp .dev.vars.example .dev.vars   # 填入密码和密钥
+cp .dev.vars.example .dev.vars   # 填写本地管理员密码和密钥
 npm ci
 npm run build
 npm run db:migrate:local
-npm run dev                       # → http://localhost:8787
+npm run dev                       # http://localhost:8787
 ```
 
-### 验证
+修改前端后重新运行 `npm run build`，Wrangler 会自动重新加载静态资源。
 
-```bash
-npm run verify    # 类型检查 + 配置/多语言/资源校验 + 全部测试
-npm run deploy:dry-run   # 构建并模拟部署（不上传）
-```
+### 安全提示
 
-### 安全要点
+- `.dev.vars`、管理员密码和生产密钥不得提交到 Git。
+- `CODE_HASH_PEPPER` 更换后，已有提取码将无法验证。
+- `SESSION_SECRET` 更换后，管理员和下载会话会失效。
+- 公开部署建议结合 Cloudflare WAF，并按需要启用 Turnstile。
 
-- 提取码哈希使用 SHA-256 + Pepper，`CODE_HASH_PEPPER` 一旦设置就不应更换
-- `SESSION_SECRET` 用于签发所有 JWT（管理员会话、下载会话、上传 Token），更换后全部失效
-- 静态页和 API 响应携带 CSP、X-Frame-Options、X-Content-Type-Options 等安全头
-- 多实例部署时，给每个实例的 Rate Limiting binding 分配不同的 `namespace_id`
-- 高流量场景建议额外配合 Cloudflare WAF 规则和 Turnstile 人机验证
+### 许可
 
-### 项目结构
-
-```
-r2filebox/
-├── frontend/              Vue 3 + Vite + Element Plus
-│   ├── src/views/         页面组件
-│   └── src/components/    可复用组件
-├── worker/
-│   ├── src/routes/        API 路由 (share / admin / health / config / version)
-│   ├── src/lib/           核心逻辑 (db / r2 / auth / rate-limit / cleanup / ...)
-│   ├── migrations/        D1 SQL 迁移
-│   └── test/              Vitest + Cloudflare Workers 运行时测试
-├── scripts/               部署与校验脚本
-└── wrangler.toml          Worker 配置、绑定与默认参数
-```
-
-### 致谢与许可
-
-本项目参考了 [FileCodeBox](https://github.com/vastsa/FileCodeBox) (LGPL-3.0) 的提取码交互设计，以及其 [Go 实现](https://github.com/zy84338719/FileCodeBox) (MIT) 的部分管理后台和分片上传思路。本项目是独立的 Cloudflare Workers 实现，不是 FileCodeBox 官方版本。
+本项目参考了 [FileCodeBox](https://github.com/vastsa/FileCodeBox) 的提取码交互设计及其 [Go 实现](https://github.com/zy84338719/FileCodeBox) 的部分思路，是独立的 Cloudflare Workers 实现。
 
 **LGPL-3.0-or-later** · [LICENSE](./LICENSE) · [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)
 
@@ -137,101 +114,106 @@ r2filebox/
 
 ## English
 
-A file and text sharing service running on Cloudflare's edge network. Users exchange content through extraction codes. One admin account controls everything. No sign-ups, no user management — deploy and go.
+R2FileBox is a file and text sharing service built for Cloudflare Workers. Users share and retrieve content with pickup codes—no registration required—while one admin console manages files, audit logs, runtime health, and storage configuration.
 
-### How It Works
+### Screenshots
 
+| File sharing | Get a share |
+|:---:|:---:|
+| [![File sharing screen](./docs/screenshots/home-file-share.png)](./docs/screenshots/home-file-share.png) | [![Pickup code entry screen](./docs/screenshots/home-get-share.png)](./docs/screenshots/home-get-share.png) |
+| **Share created** | **Pickup box** |
+| [![Share created dialog](./docs/screenshots/share-created.png)](./docs/screenshots/share-created.png) | [![Shared file pickup screen](./docs/screenshots/pickup-file.png)](./docs/screenshots/pickup-file.png) |
+| **Admin dashboard** | **Maintenance and storage** |
+| [![Admin dashboard](./docs/screenshots/admin-dashboard.png)](./docs/screenshots/admin-dashboard.png) | [![Maintenance and storage screen](./docs/screenshots/admin-maintenance.png)](./docs/screenshots/admin-maintenance.png) |
+
+### Highlights
+
+- **Cloudflare-native**: the API and Vue frontend run on Workers, objects stay private in R2, and metadata lives in D1.
+- **Code-based access**: pickup codes are SHA-256 + Pepper hashed, and R2 objects have no public bypass URL.
+- **Transfer-friendly**: R2 Multipart Upload, HTTP Range, ETag, resume support, and short-lived download sessions.
+- **Low maintenance**: scheduled cleanup, two-tier rate limiting, audit logs, operational metrics, and an admin console.
+- **Complete client experience**: Chinese, English, Japanese, PWA installation, and a text share target.
+
+### Architecture
+
+#### Data and authorization flow
+
+```text
+Upload file / text
+    │
+    ▼
+Worker: validate, rate-limit, and generate a random pickup code
+    ├─ Body ───────────────────────────────→ private R2 (opaque object key)
+    └─ SHA-256(Pepper:pickup code) + metadata → D1 (no plaintext code stored)
+
+Enter code → Worker hashes it again → D1 finds the share and atomically consumes one pickup
+    ├─ Text: Worker reads the R2 object and returns it
+    └─ File: issue a 15-minute JWT → Worker streams from R2 (Range / ETag)
 ```
-Upload file ──→ Worker chunks to R2 ──→ Returns extraction code (shown once)
-                     │                           │
-                     ▼                           ▼
-              D1 stores hashed code      R2 stores file at opaque key
-                     │
-                     ▼
-Enter code ──→ Worker matches hash ──→ Issues 15-min download session ──→ Streams file
+
+This is server-side access control, not end-to-end encryption: the Worker must be able to read content in order to serve it. Protection comes from private R2 storage, irreversible pickup-code hashing, short-lived download sessions, and routing access through the Worker. Encrypt files before upload if end-to-end encryption is required.
+
+| Layer | Technology | Purpose |
+|-------|------------|---------|
+| Edge app | Hono + Cloudflare Workers | API, authentication, security headers, streaming, cron cleanup |
+| Object storage | Cloudflare R2 | Private file and shared-text bodies |
+| Database | Cloudflare D1 | Metadata, settings, upload sessions, audit logs, exact rate counters |
+| Frontend | Vue 3 + Element Plus | Public UI and admin console through Workers Static Assets |
+| Metrics and guard | Analytics Engine + Workers Rate Limiting | Lightweight events and edge throttling |
+
+### Test Coverage
+
+```bash
+npm run verify          # config, PWA assets, i18n, types, scripts, and Worker tests
+npm run deploy:dry-run  # full build and Wrangler bundle validation without upload
 ```
 
-Extraction codes are SHA-256 + Pepper hashed before storage — plaintext never touches the database. Files live in a private R2 bucket with no public access. Downloads go through short-lived JWT sessions, and R2 objects are not exposed through public URLs that bypass the Worker.
-
-### Stack
-
-| Layer | Technology | Role |
-|-------|-----------|------|
-| **API** | Hono on Workers | Routing, auth, security headers, cron cleanup |
-| **Database** | Cloudflare D1 | Share metadata, upload sessions, config, audit logs, atomic rate counters |
-| **Storage** | Cloudflare R2 | Object storage for multipart-uploaded files and text |
-| **Frontend** | Vue 3 + Element Plus | SPA served by Workers Static Assets |
-| **Metrics** | Analytics Engine | Selected creation and extraction events without D1 writes |
-| **Rate Limiting** | Native + D1 | Edge-level coarse guard + globally exact counters |
-
-### Key Design Decisions
-
-**Chunked uploads** use R2 Multipart Upload. Each upload session carries an HMAC-signed JWT token. On completion, the Worker atomically inserts the share record and deletes the upload reservation in one D1 batch, keeping storage accounting consistent.
-
-**Download sessions** decouple code resolution from file transfer. Resolving a code consumes a download slot once and issues a 15-minute JWT. Within that window, all Range requests (video seeking, resume) cost zero additional download slots or D1 writes. HTTP 206 Range and ETag conditional requests are fully supported.
-
-**Two-tier rate limiting**: public endpoints pass through Cloudflare Native Rate Limiting as a low-overhead, coarse per-location guard, then D1 atomic counters enforce the exact admin-configured global limits. Admin login uses only the exact D1 tier.
-
-**Scheduled cleanup** runs hourly via Cron Triggers — expired shares, stale upload sessions, old audit logs, and rate-limit counters. Partial failures surface as failed invocations in Cloudflare Past Events.
-
-**PWA share target** accepts text, titles, and links from the system share sheet after installation and pre-fills the text-sharing form. It intentionally does not declare or accept file share targets.
+The suite covers admin authentication, share resolution and downloads, ETag behavior, rate limiting, storage accounting, runtime config, scheduled cleanup, metrics, health, and version reporting. GitHub Actions runs the same checks on every push and pull request.
 
 ### Deploy
 
-#### Option A: CLI (Recommended)
+Node.js `>=24.11.0 <25` is required; [.nvmrc](./.nvmrc) is the source of truth.
 
-Prerequisites: Node.js `>=24.11.0 <25` (see `.nvmrc`), logged into Wrangler.
+#### CLI (recommended)
 
 ```bash
 npm run deploy:cf
 ```
 
-On first run, the script handles everything: dependency install, R2/D1 provisioning, `wrangler.toml` patching, frontend build, D1 migrations, interactive password setup (or auto-generation), secret creation, and deployment. On subsequent runs, an existing D1 binding triggers a confirmation prompt; after confirmation, the script only builds, migrates, and deploys without changing secrets.
+The first run provisions or binds R2 and D1, configures admin credentials and secrets, applies D1 migrations, and deploys the Worker. Later runs preserve existing resources and secrets, then build, migrate, and deploy.
 
-#### Option B: Deploy Button
+#### Deploy to Cloudflare
 
-Click the **Deploy to Cloudflare** button at the top. On the config page:
+Use the button at the top and set:
 
-- **Build command**: `npm run build`
-- **Deploy command**: `npm run deploy` (⚠️ replace the default `npx wrangler deploy` — otherwise migrations won't run)
+```text
+Build command:  npm run build
+Deploy command: npm run deploy
+```
 
-Required secrets:
+`npm run deploy` applies D1 migrations before `wrangler deploy`. The first deployment requires `ADMIN_PASSWORD`, `CODE_HASH_PEPPER`, and `SESSION_SECRET`; `ADMIN_USERNAME` is optional and defaults to `admin`.
 
-| Secret | Notes |
-|--------|-------|
-| `ADMIN_PASSWORD` | 16–4,096 characters |
-| `CODE_HASH_PEPPER` | `openssl rand -hex 32` — **never rotate** (breaks existing codes) |
-| `SESSION_SECRET` | `openssl rand -hex 32` — rotation invalidates all sessions |
-
-`ADMIN_USERNAME` is optional (defaults to `admin`). Turnstile is off by default; enable it in the admin panel after deployment.
-
-#### Option C: Local Development
+### Local Development
 
 ```bash
-cp .dev.vars.example .dev.vars   # fill in password and secrets
+cp .dev.vars.example .dev.vars   # add local admin credentials and secrets
 npm ci
 npm run build
 npm run db:migrate:local
-npm run dev                       # → http://localhost:8787
+npm run dev                       # http://localhost:8787
 ```
 
-### Verification
+Run `npm run build` again after frontend changes; Wrangler will reload the generated static assets.
 
-```bash
-npm run verify          # type checks + config/i18n/asset validation + all tests
-npm run deploy:dry-run  # build and simulate deploy (no upload)
-```
+### Security
 
-### Security Notes
+- Never commit `.dev.vars`, admin passwords, or production secrets.
+- Rotating `CODE_HASH_PEPPER` invalidates existing pickup codes.
+- Rotating `SESSION_SECRET` invalidates admin and download sessions.
+- Public instances should consider Cloudflare WAF and enable Turnstile when appropriate.
 
-- Extraction codes are hashed with SHA-256 + Pepper; `CODE_HASH_PEPPER` must never be rotated
-- `SESSION_SECRET` signs all JWTs (admin sessions, download sessions, upload tokens); rotation invalidates everything
-- Responses include CSP, X-Frame-Options, X-Content-Type-Options, and cache-control headers
-- Multi-instance deployments should assign distinct `namespace_id` values to each Rate Limiting binding
-- High-traffic instances should additionally enable Cloudflare WAF rules and Turnstile
+### License
 
-### Acknowledgements & License
-
-Inspired by [FileCodeBox](https://github.com/vastsa/FileCodeBox) (LGPL-3.0) and its [Go implementation](https://github.com/zy84338719/FileCodeBox) (MIT). This is an independent Cloudflare Workers implementation, not an official FileCodeBox release.
+Inspired by [FileCodeBox](https://github.com/vastsa/FileCodeBox) and parts of its [Go implementation](https://github.com/zy84338719/FileCodeBox). This is an independent Cloudflare Workers implementation.
 
 **LGPL-3.0-or-later** · [LICENSE](./LICENSE) · [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)

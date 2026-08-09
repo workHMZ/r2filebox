@@ -87,31 +87,27 @@
           
           <div class="header-right">
             <LanguageSwitch inline />
-            <el-dropdown @command="handleCommand" trigger="click">
-              <button
-                class="user-info"
-                type="button"
-                aria-haspopup="menu"
-                :aria-label="t('a11y.accountMenu', { name: t('common.admin') })"
-              >
-                <el-avatar :size="32" class="user-avatar">
-                  {{ t('common.admin').slice(0, 1) }}
-                </el-avatar>
-                <div class="user-details">
-                  <span class="user-name">{{ t('common.admin') }}</span>
-                  <span class="user-role">{{ t('admin.role') }}</span>
-                </div>
-                <el-icon class="arrow-icon"><ArrowDown /></el-icon>
-              </button>
-              <template #dropdown>
-                <el-dropdown-menu class="admin-dropdown-menu">
-                  <el-dropdown-item command="logout" divided>
-                    <el-icon><SwitchButton /></el-icon>
-                    {{ t('admin.logout') }}
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
+            <button
+              class="user-info"
+              type="button"
+              :disabled="loggingOut"
+              :aria-busy="loggingOut || undefined"
+              :aria-label="t('admin.logout')"
+              :title="t('admin.logout')"
+              @click="confirmLogout"
+            >
+              <el-avatar :size="32" class="user-avatar">
+                {{ t('common.admin').slice(0, 1) }}
+              </el-avatar>
+              <div class="user-details">
+                <span class="user-name">{{ t('common.admin') }}</span>
+                <span class="user-role">{{ t('admin.role') }}</span>
+              </div>
+              <el-icon class="logout-icon" :class="{ 'is-loading': loggingOut }">
+                <Loading v-if="loggingOut" />
+                <SwitchButton v-else />
+              </el-icon>
+            </button>
           </div>
         </el-header>
         
@@ -135,9 +131,17 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import { RouterLink, useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { 
-  Monitor, Folder, Setting, ArrowDown, 
-  Document, Tools, Promotion, SwitchButton, Expand, Close
+import {
+  Close,
+  Document,
+  Expand,
+  Folder,
+  Loading,
+  Monitor,
+  Promotion,
+  Setting,
+  SwitchButton,
+  Tools,
 } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { useConfigStore } from '@/stores/config'
@@ -152,6 +156,7 @@ const configStore = useConfigStore()
 const { t } = useI18n()
 const sidebarOpen = ref(false)
 const isMobile = ref(false)
+const loggingOut = ref(false)
 const sidebarRef = ref<HTMLElement | ComponentPublicInstance | null>(null)
 const menuToggleRef = ref<HTMLElement | ComponentPublicInstance | null>(null)
 let mobileMediaQuery: MediaQueryList | null = null
@@ -271,28 +276,27 @@ onUnmounted(() => {
   mobileMediaQuery?.removeEventListener('change', syncMobileState)
 })
 
-const handleCommand = async (command: string) => {
-  switch (command) {
-    case 'logout':
-      try {
-        await ElMessageBox.confirm(t('admin.logoutConfirm'), t('admin.logoutTitle'), {
-          type: 'warning',
-          confirmButtonText: t('common.confirm'),
-          cancelButtonText: t('common.cancel')
-        })
-        const serverLoggedOut = await userStore.logout()
-        if (serverLoggedOut) {
-          ElMessage.success(t('admin.logoutDone'))
-        } else {
-          ElMessage.warning(t('request.network'))
-        }
-        router.push('/admin/login')
-      } catch (error: unknown) {
-        if (error !== 'cancel') {
-          console.error('登出故障:', error)
-        }
-      }
-      break
+const confirmLogout = async () => {
+  try {
+    await ElMessageBox.confirm(t('admin.logoutConfirm'), t('admin.logoutTitle'), {
+      type: 'warning',
+      confirmButtonText: t('common.confirm'),
+      cancelButtonText: t('common.cancel'),
+    })
+    loggingOut.value = true
+    const serverLoggedOut = await userStore.logout()
+    if (serverLoggedOut) {
+      ElMessage.success(t('admin.logoutDone'))
+    } else {
+      ElMessage.warning(t('request.network'))
+    }
+    await router.push('/admin/login')
+  } catch (error: unknown) {
+    if (error !== 'cancel' && error !== 'close') {
+      console.error('Logout failed:', error)
+    }
+  } finally {
+    loggingOut.value = false
   }
 }
 </script>
@@ -508,6 +512,11 @@ const handleCommand = async (command: string) => {
   border-color: var(--border-subtle);
 }
 
+.user-info:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 .user-avatar {
   background: var(--accent-soft);
   color: #9a480b;
@@ -531,9 +540,23 @@ const handleCommand = async (command: string) => {
   color: var(--glass-text-secondary);
 }
 
-.arrow-icon {
+.logout-icon {
   color: var(--glass-text-secondary);
-  font-size: 12px;
+  font-size: 15px;
+  transition: color 0.18s ease, transform 0.18s ease;
+}
+
+.user-info:hover .logout-icon {
+  color: var(--danger-color);
+  transform: translateX(1px);
+}
+
+.logout-icon.is-loading {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* 内容区 */
@@ -598,7 +621,7 @@ const handleCommand = async (command: string) => {
   }
 
   .user-details,
-  .arrow-icon {
+  .logout-icon {
     display: none;
   }
 
@@ -618,6 +641,14 @@ const handleCommand = async (command: string) => {
 
   .header-right :deep(.language-select) {
     width: 94px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logout-icon,
+  .logout-icon.is-loading {
+    animation: none;
+    transition: none;
   }
 }
 </style>

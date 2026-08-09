@@ -63,10 +63,15 @@ dataset = "r2filebox_metrics"
 enabled = true
 head_sampling_rate = 0.1
 
+[observability.logs]
+enabled = true
+head_sampling_rate = 0.1
+invocation_logs = true
+
 [vars]
 APP_NAME = "R2FileBox"
 APP_DESCRIPTION = "Private code-based file sharing on Cloudflare R2"
-APP_VERSION = "2.0"
+APP_VERSION = "2.1"
 GIT_COMMIT_HASH = "unknown"
 BUILD_TIMESTAMP = ""
 

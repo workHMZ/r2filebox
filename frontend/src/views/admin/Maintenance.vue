@@ -57,14 +57,15 @@
                 <h4>{{ t('maintenance.cleanExpiredTitle') }}</h4>
                 <p>{{ t('maintenance.cleanExpiredDesc') }}</p>
               </div>
-              <el-button
+              <ActionFeedbackButton
                 type="danger"
-                @click="cleanExpiredFiles"
+                :icon="Delete"
                 :loading="cleaningExpired"
-                :aria-busy="cleaningExpired"
+                :success="cleanupSucceeded"
+                @click="cleanExpiredFiles"
               >
                 {{ t('common.execute') }}
-              </el-button>
+              </ActionFeedbackButton>
             </div>
           </div>
         </el-card>
@@ -196,6 +197,8 @@ import {
 } from '@element-plus/icons-vue'
 import { adminApi } from '@/api/admin'
 import { publicApi, type VersionInfo } from '@/api/public'
+import ActionFeedbackButton from '@/components/ActionFeedbackButton.vue'
+import { useActionFeedback } from '@/composables/useActionFeedback'
 import { getLocaleTag, useI18n } from '@/i18n'
 import { formatDateTime, formatFileSize } from '@/utils/format'
 
@@ -203,9 +206,10 @@ const cleaningExpired = ref(false)
 const loadingSystemInfo = ref(false)
 const isMobile = useMediaQuery('(max-width: 767px)')
 const { locale, t } = useI18n()
+const { active: cleanupSucceeded, show: showCleanupSucceeded } = useActionFeedback()
 
 const versionInfo = ref<VersionInfo>({
-  version: '2.0',
+  version: '2.1',
   commit_hash: 'dev',
   short_hash: 'dev',
   build_time: null,
@@ -236,8 +240,9 @@ const cleanExpiredFiles = async () => {
     cleaningExpired.value = true
     const res = await adminApi.cleanExpiredFiles()
     if (res.code === 200) {
-      ElMessage.success(t('maintenance.cleanDone', { count: res.data.deleted_count || 0 }))
       await fetchSystemInfo()
+      showCleanupSucceeded()
+      ElMessage.success(t('maintenance.cleanDone', { count: res.data.deleted_count || 0 }))
     } else {
       ElMessage.error(res.message || t('maintenance.cleanFailed'))
     }

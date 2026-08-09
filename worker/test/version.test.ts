@@ -19,7 +19,7 @@ describe('/api/version route', () => {
 
     expect(body.code).toBe(200)
     expect(body.success).toBe(true)
-    expect(body.data.version).toBe('2.0')
+    expect(body.data.version).toBe('2.1')
     expect(body.data.commit_hash).toBe('dev')
     expect(body.data.short_hash).toBe('dev')
     expect(body.data.build_time).toBeNull()

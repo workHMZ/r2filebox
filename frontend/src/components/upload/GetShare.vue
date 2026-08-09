@@ -59,6 +59,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Key, Download, HelpFilled } from '@element-plus/icons-vue'
 import { useI18n } from '@/i18n'
+import { parseShareCode } from '@/utils/share-code'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -67,14 +68,21 @@ const shareCode = ref('')
 const lookupError = ref(false)
 
 const handleGetShare = () => {
-  if (!shareCode.value.trim()) {
+  const input = shareCode.value.trim()
+  if (!input) {
     lookupError.value = true
     ElMessage.warning(t('get.empty'))
     return
   }
 
-  // 跳转到分享查看页面
-  router.push(`/share/${shareCode.value.trim()}`)
+  const code = parseShareCode(input)
+  if (!code) {
+    lookupError.value = true
+    ElMessage.warning(t('get.invalid'))
+    return
+  }
+
+  router.push({ name: 'ShareView', params: { code } })
 }
 </script>
 

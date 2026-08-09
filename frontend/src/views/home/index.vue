@@ -82,7 +82,7 @@
       :title="t('share.success.title')"
       width="560px"
       :close-on-click-modal="false"
-      @closed="focusActiveShareTab"
+      @closed="handleDialogClosed"
     >
       <div class="share-result">
         <el-result icon="success" :title="t('share.success.title')" :sub-title="t('share.success.subtitle')">
@@ -93,11 +93,16 @@
                 <span>{{ t('share.code.label') }}</span>
               </div>
               <div class="code-body">
-                <span class="code-text">{{ shareCode }}</span>
-                <el-button type="primary" size="small" @click="copyShareCode">
-                  <el-icon><CopyDocument /></el-icon>
+                <span class="code-text" :title="t('a11y.selectShareCode')">{{ shareCode }}</span>
+                <ActionFeedbackButton
+                  type="primary"
+                  size="small"
+                  :icon="CopyDocument"
+                  :success="codeCopied"
+                  @click="copyShareCode"
+                >
                   {{ t('share.code.copy') }}
-                </el-button>
+                </ActionFeedbackButton>
               </div>
             </div>
 
@@ -114,10 +119,14 @@
                 :aria-label="t('a11y.shareLink')"
               >
                 <template #append>
-                  <el-button type="primary" @click="copyShareUrl">
-                    <el-icon><CopyDocument /></el-icon>
+                  <ActionFeedbackButton
+                    type="primary"
+                    :icon="CopyDocument"
+                    :success="urlCopied"
+                    @click="copyShareUrl"
+                  >
                     {{ t('share.link.copy') }}
-                  </el-button>
+                  </ActionFeedbackButton>
                 </template>
               </el-input>
             </div>
@@ -142,11 +151,13 @@ import {
 } from '@element-plus/icons-vue'
 
 import { useConfigStore } from '@/stores/config'
+import ActionFeedbackButton from '@/components/ActionFeedbackButton.vue'
 import AppLogo from '@/components/AppLogo.vue'
 import LanguageSwitch from '@/components/LanguageSwitch.vue'
 import FileUpload from '@/components/upload/FileUpload.vue'
 import TextShare from '@/components/upload/TextShare.vue'
 import GetShare from '@/components/upload/GetShare.vue'
+import { useActionFeedback } from '@/composables/useActionFeedback'
 import { useI18n } from '@/i18n'
 
 const configStore = useConfigStore()
@@ -233,10 +244,19 @@ const handleShareSuccess = async (result: ShareResult) => {
   }
 }
 
+const { active: codeCopied, reset: resetCodeCopied, show: showCodeCopied } = useActionFeedback()
+const { active: urlCopied, reset: resetUrlCopied, show: showUrlCopied } = useActionFeedback()
+
+const resetCopyFeedback = () => {
+  resetCodeCopied()
+  resetUrlCopied()
+}
+
 const copyShareUrl = async () => {
   try {
     await navigator.clipboard.writeText(shareUrl.value)
     ElMessage.success(t('share.link.copied'))
+    showUrlCopied()
   } catch {
     ElMessage.error(t('shareView.copyFailed'))
   }
@@ -246,6 +266,7 @@ const copyShareCode = async () => {
   try {
     await navigator.clipboard.writeText(shareCode.value)
     ElMessage.success(t('share.code.copied'))
+    showCodeCopied()
   } catch {
     ElMessage.error(t('shareView.copyFailed'))
   }
@@ -255,6 +276,11 @@ const focusActiveShareTab = () => {
   document
     .querySelector<HTMLElement>('.function-tabs .el-tabs__item[aria-selected="true"]')
     ?.focus()
+}
+
+const handleDialogClosed = () => {
+  resetCopyFeedback()
+  focusActiveShareTab()
 }
 
 </script>
@@ -407,9 +433,9 @@ const focusActiveShareTab = () => {
   box-sizing: border-box;
   margin: 0 auto 20px;
   padding: 16px 18px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  align-items: stretch;
+  flex-direction: column;
+  gap: 10px;
   border: 1px solid var(--primary-border);
   border-radius: var(--radius-lg);
   background: var(--primary-soft);
@@ -423,6 +449,7 @@ const focusActiveShareTab = () => {
   color: var(--primary-active);
   font-size: 12px;
   font-weight: 700;
+  line-height: 1.4;
   white-space: nowrap;
 }
 
@@ -431,18 +458,26 @@ const focusActiveShareTab = () => {
   min-width: 0;
   flex: 1 1 auto;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 12px;
 }
 
 .code-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--text-primary);
   font-family: var(--font-accent);
   font-size: 26px;
   font-weight: 800;
   letter-spacing: 2px;
   line-height: 1;
-  white-space: nowrap;
+  user-select: all;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.code-text:hover {
+  opacity: 0.88;
 }
 
 .code-body :deep(.el-button) {
@@ -551,7 +586,6 @@ const focusActiveShareTab = () => {
     gap: 5px;
   }
 
-  .share-code-card,
   .code-body {
     align-items: stretch;
     flex-direction: column;
@@ -564,6 +598,10 @@ const focusActiveShareTab = () => {
   .code-header,
   .code-body {
     justify-content: center;
+  }
+
+  .code-text {
+    text-align: center;
   }
 
   .footer-section {

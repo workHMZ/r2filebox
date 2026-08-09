@@ -9,10 +9,16 @@
           <h2>{{ t('files.title') }}</h2>
           <p>{{ t('files.subtitle') }}</p>
         </div>
-        <el-button @click="fetchFiles" :loading="loading" class="refresh-btn">
-          <el-icon><Refresh /></el-icon>
+        <ActionFeedbackButton
+          type="primary"
+          class="refresh-btn"
+          :icon="Refresh"
+          :loading="loading"
+          :success="refreshSucceeded"
+          @click="refreshFiles"
+        >
           {{ t('common.refreshData') }}
-        </el-button>
+        </ActionFeedbackButton>
       </div>
 
       <el-divider />
@@ -98,14 +104,17 @@
 
         <el-table-column :label="t('files.actions')" width="100" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button
+            <ActionFeedbackButton
               type="danger"
               size="small"
+              :icon="Delete"
+              :loading="deletingFileId === row.id"
+              :success="deleteSucceeded && deletedFileId === row.id"
+              :disabled="Boolean(deletingFileId) && deletingFileId !== row.id"
               @click="deleteFile(row)"
             >
-              <el-icon><Delete /></el-icon>
               {{ t('common.delete') }}
-            </el-button>
+            </ActionFeedbackButton>
           </template>
         </el-table-column>
       </el-table>
@@ -136,6 +145,8 @@ import {
 } from '@element-plus/icons-vue'
 import { adminApi } from '@/api/admin'
 import type { AdminShare } from '@/api/admin'
+import ActionFeedbackButton from '@/components/ActionFeedbackButton.vue'
+import { useActionFeedback } from '@/composables/useActionFeedback'
 import { getLocaleTag, useI18n } from '@/i18n'
 import { formatDateTime, formatFileSize } from '@/utils/format'
 
@@ -143,6 +154,14 @@ const loading = ref(false)
 const filesList = ref<AdminShare[]>([])
 const { t, locale } = useI18n()
 let requestVersion = 0
+const deletingFileId = ref('')
+const deletedFileId = ref('')
+const { active: refreshSucceeded, show: showRefreshSucceeded } = useActionFeedback()
+const {
+  active: deleteSucceeded,
+  reset: resetDeleteSucceeded,
+  show: showDeleteSucceeded,
+} = useActionFeedback()
 
 const pagination = reactive({
   page: 1,
@@ -199,7 +218,7 @@ const getFileIconColor = (row: AdminShare) => {
   return colorMap[ext || ''] || '#606266'
 }
 
-const fetchFiles = async () => {
+const fetchFiles = async (): Promise<boolean> => {
   const currentVersion = ++requestVersion
   loading.value = true
   try {
@@ -211,12 +230,19 @@ const fetchFiles = async () => {
     if (currentVersion === requestVersion && res.code === 200) {
       filesList.value = res.data.items
       pagination.total = res.data.total
+      return true
     }
+    return false
   } catch (error) {
     console.error('Failed to load files:', error)
+    return false
   } finally {
     if (currentVersion === requestVersion) loading.value = false
   }
+}
+
+const refreshFiles = async () => {
+  if (await fetchFiles()) showRefreshSucceeded()
 }
 
 const deleteFile = async (file: AdminShare) => {
@@ -231,10 +257,16 @@ const deleteFile = async (file: AdminShare) => {
       }
     )
     
+    deletingFileId.value = file.id
     const res = await adminApi.deleteFile(file.id)
     if (res.code === 200) {
       ElMessage.success(t('files.deleteDone'))
+      deletedFileId.value = file.id
+      showDeleteSucceeded()
+      await new Promise((resolve) => setTimeout(resolve, 450))
       await fetchFiles()
+      resetDeleteSucceeded()
+      deletedFileId.value = ''
     } else {
       ElMessage.error(res.message || t('files.deleteFailed'))
     }
@@ -242,6 +274,8 @@ const deleteFile = async (file: AdminShare) => {
     if (error !== 'cancel') {
       console.error('Failed to delete file:', error)
     }
+  } finally {
+    deletingFileId.value = ''
   }
 }
 
@@ -301,15 +335,6 @@ onMounted(() => {
 .refresh-btn {
   min-height: 38px;
   border-radius: var(--radius-md);
-  background: var(--primary-color);
-  border: 1px solid var(--primary-color);
-  color: #ffffff;
-  transition: background 0.18s ease, border-color 0.18s ease;
-}
-
-.refresh-btn:hover {
-  background: var(--primary-hover);
-  border-color: var(--primary-hover);
 }
 
 .files-table {

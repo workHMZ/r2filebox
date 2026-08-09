@@ -7,9 +7,15 @@
       <template #header>
         <div class="card-header">
           <h3>{{ t('config.title') }}</h3>
-          <el-button type="primary" @click="saveConfig" :loading="saving" :aria-busy="saving">
+          <ActionFeedbackButton
+            type="primary"
+            :icon="DocumentChecked"
+            :loading="saving"
+            :success="saveSucceeded"
+            @click="saveConfig"
+          >
             {{ t('config.save') }}
-          </el-button>
+          </ActionFeedbackButton>
         </div>
       </template>
 
@@ -114,7 +120,10 @@
 import { computed, ref, reactive, onMounted } from 'vue'
 import type { Directive } from 'vue'
 import { ElMessage } from 'element-plus'
+import { DocumentChecked } from '@element-plus/icons-vue'
 import { adminApi } from '@/api/admin'
+import ActionFeedbackButton from '@/components/ActionFeedbackButton.vue'
+import { useActionFeedback } from '@/composables/useActionFeedback'
 import { useConfigStore } from '@/stores/config'
 import { useI18n } from '@/i18n'
 
@@ -123,6 +132,7 @@ const saving = ref(false)
 const activeTab = ref('basic')
 const configStore = useConfigStore()
 const { t } = useI18n()
+const { active: saveSucceeded, show: showSaveSucceeded } = useActionFeedback()
 const BYTES_PER_MB = 1024 * 1024
 
 const connectDescription = (root: HTMLElement, descriptionId: string) => {
@@ -210,10 +220,11 @@ const saveConfig = async () => {
   try {
     const res = await adminApi.updateConfig(configForm)
     if (res.code === 200) {
-      ElMessage.success(t('config.saveDone'))
       // 刷新全局配置
       await configStore.refreshConfig()
       await fetchConfig()
+      showSaveSucceeded()
+      ElMessage.success(t('config.saveDone'))
     } else {
       ElMessage.error(res.message || t('config.saveFailed'))
     }

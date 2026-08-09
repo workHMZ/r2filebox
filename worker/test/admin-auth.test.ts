@@ -99,7 +99,7 @@ describe('administrator cookie session', () => {
       runtime: 'Cloudflare Workers',
       platform: 'V8 isolate',
       storage: 'D1 + R2 + Workers Rate Limiting',
-      version: '2.0',
+      version: '2.1',
       r2_bucket_name: 'r2filebox-files',
       d1_database_name: 'r2filebox-db',
     })
