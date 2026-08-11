@@ -33,14 +33,18 @@
       </div>
     </div>
 
-    <div class="setting-row" role="group" :aria-labelledby="`${idPrefix}-access-label`">
-      <div :id="`${idPrefix}-access-label`" class="setting-title">
+    <div
+      :class="['setting-row', 'setting-row--guide', { 'setting-row--warning': showSecurityTip }]"
+      role="note"
+      :aria-labelledby="`${idPrefix}-guide-label`"
+    >
+      <div :id="`${idPrefix}-guide-label`" class="setting-title">
         <el-icon class="label-icon" aria-hidden="true"><Lock /></el-icon>
-        {{ t('upload.access') }}
+        {{ t(showSecurityTip ? 'upload.securityTipTitle' : 'upload.shareGuideTitle') }}
       </div>
-      <el-tag type="info" effect="plain" class="auth-mode-tag">
-        {{ t('upload.codeAccess') }}
-      </el-tag>
+      <p class="share-guide">
+        {{ t(showSecurityTip ? 'upload.securityTip' : 'upload.shareGuide') }}
+      </p>
     </div>
   </div>
 </template>
@@ -55,6 +59,7 @@ const props = defineProps<{
   idPrefix: string
   maxExpireHours: number
   expireStyles?: string[]
+  showSecurityTip?: boolean
 }>()
 
 const expireValue = defineModel<number>('expireValue', { required: true })
@@ -81,13 +86,13 @@ watch([availableStyles, currentMax], ([styles, maximum]) => {
 
 <style scoped>
 .upload-settings-panel {
-  --settings-control-width: 272px;
+  --settings-control-width: 300px;
   display: grid;
   margin-bottom: 22px;
   padding: 20px 0 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
-  gap: 24px;
+  gap: 10px 24px;
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -97,6 +102,12 @@ watch([availableStyles, currentMax], ([styles, maximum]) => {
   align-content: start;
   gap: 10px;
   text-align: left;
+}
+
+.setting-row--guide {
+  width: min(100%, var(--settings-control-width));
+  max-width: 100%;
+  justify-self: end;
 }
 
 .setting-title {
@@ -114,6 +125,11 @@ watch([availableStyles, currentMax], ([styles, maximum]) => {
 .label-icon {
   flex: 0 0 auto;
   color: var(--primary-color);
+}
+
+.setting-row--warning .setting-title,
+.setting-row--warning .label-icon {
+  color: var(--warning-color);
 }
 
 .expire-inputs {
@@ -136,36 +152,28 @@ watch([availableStyles, currentMax], ([styles, maximum]) => {
   min-height: 40px;
 }
 
-.auth-mode-tag {
-  display: inline-flex;
-  width: min(100%, var(--settings-control-width));
+.share-guide {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
   min-height: 40px;
-  height: auto;
-  box-sizing: border-box;
+  margin: 0;
+  padding: 7px 12px;
   align-items: center;
-  justify-content: center;
-  padding: 8px 16px;
-  border-color: var(--primary-border);
-  border-radius: var(--el-border-radius-base);
-  background: var(--primary-soft);
-  color: var(--primary-active);
-  font-size: 14px;
-  line-height: 22px;
-  text-align: center;
-  white-space: normal;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-page);
+  color: var(--glass-text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+.setting-row--warning .share-guide {
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
+  color: var(--warning-color);
 }
+
 
 @media (max-width: 640px) {
   .upload-settings-panel {
@@ -174,8 +182,13 @@ watch([availableStyles, currentMax], ([styles, maximum]) => {
   }
 
   .expire-inputs,
-  .auth-mode-tag {
+  .share-guide {
     width: 100%;
+  }
+
+  .setting-row--guide {
+    width: 100%;
+    justify-self: stretch;
   }
 
   .expire-inputs {

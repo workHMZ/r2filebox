@@ -1,15 +1,19 @@
 <template>
   <span :class="['app-logo', `app-logo--${size}`]" aria-hidden="true">
-    <img src="/app-icon-192.png" alt="" class="app-logo__img" />
+    <img :src="isDark ? '/app-logo-dark.png' : '/app-icon-192.png'" alt="" class="app-logo__img" />
   </span>
 </template>
 
 <script setup lang="ts">
+import { useTheme } from '@/composables/useTheme'
+
 withDefaults(defineProps<{
   size?: 'small' | 'medium' | 'large'
 }>(), {
   size: 'medium',
 })
+
+const { isDark } = useTheme()
 </script>
 
 <style scoped>
@@ -23,12 +27,12 @@ withDefaults(defineProps<{
   flex: 0 0 var(--logo-size);
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(8, 111, 104, 0.22);
+  border: 1px solid var(--primary-border);
   border-radius: 10px;
-  background: #f3f6f8;
+  background: var(--surface-muted);
   overflow: hidden;
-  color: #14212b;
-  box-shadow: 0 4px 14px rgba(8, 111, 104, 0.12);
+  color: var(--text-primary);
+  box-shadow: var(--glass-shadow);
 }
 
 .app-logo__img {

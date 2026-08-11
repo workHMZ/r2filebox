@@ -9,6 +9,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { locale, useI18n } from '@/i18n'
+import { useTheme } from '@/composables/useTheme'
 
 interface TurnstileApi {
   render: (container: HTMLElement, options: Record<string, unknown>) => string
@@ -33,14 +34,19 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const { isDark } = useTheme()
 const containerRef = ref<HTMLElement | null>(null)
 const widgetId = ref<string | null>(null)
 const loadError = ref(false)
 const statusMessage = ref('')
+const isVerified = ref(false)
 let renderGeneration = 0
+let presentationRefreshPending = false
 
 const renderWidget = async () => {
   const generation = ++renderGeneration
+  presentationRefreshPending = false
+  isVerified.value = false
   emit('verify', '')
   removeWidget()
   loadError.value = false
@@ -61,19 +67,30 @@ const renderWidget = async () => {
       sitekey: props.siteKey,
       action: props.action,
       language: locale.value === 'zh' ? 'zh-CN' : locale.value === 'ja' ? 'ja' : 'en',
-      theme: 'light',
+      theme: isDark.value ? 'dark' : 'light',
       callback: (token: string) => {
         if (generation !== renderGeneration) return
+        isVerified.value = true
         statusMessage.value = t('a11y.turnstileVerified')
         emit('verify', token)
       },
       'expired-callback': () => {
         if (generation !== renderGeneration) return
+        isVerified.value = false
+        if (presentationRefreshPending) {
+          void renderWidget()
+          return
+        }
         statusMessage.value = t('a11y.turnstileExpired')
         emit('verify', '')
       },
       'error-callback': () => {
         if (generation !== renderGeneration) return
+        isVerified.value = false
+        if (presentationRefreshPending) {
+          void renderWidget()
+          return
+        }
         statusMessage.value = t('a11y.turnstileVerificationFailed')
         emit('verify', '')
       },
@@ -81,6 +98,7 @@ const renderWidget = async () => {
     if (generation === renderGeneration) statusMessage.value = ''
   } catch (error) {
     if (generation !== renderGeneration) return
+    isVerified.value = false
     console.error('Turnstile widget failed to load:', error)
     loadError.value = true
     statusMessage.value = ''
@@ -89,6 +107,11 @@ const renderWidget = async () => {
 }
 
 const reset = () => {
+  if (presentationRefreshPending) {
+    void renderWidget()
+    return
+  }
+  isVerified.value = false
   emit('verify', '')
   statusMessage.value = ''
   if (widgetId.value && window.turnstile) {
@@ -104,7 +127,20 @@ const removeWidget = () => {
 }
 
 watch(() => props.siteKey, renderWidget)
-watch(locale, renderWidget)
+watch(locale, () => {
+  if (isVerified.value) {
+    presentationRefreshPending = true
+  } else {
+    void renderWidget()
+  }
+})
+watch(isDark, () => {
+  if (isVerified.value) {
+    presentationRefreshPending = true
+  } else {
+    void renderWidget()
+  }
+})
 onMounted(renderWidget)
 
 onBeforeUnmount(() => {
@@ -155,17 +191,6 @@ function loadTurnstile(): Promise<void> {
   justify-content: center;
 }
 
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
 
 .turnstile-container {
   min-height: 65px;

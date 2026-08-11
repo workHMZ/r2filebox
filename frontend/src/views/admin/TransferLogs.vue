@@ -297,6 +297,10 @@ onMounted(() => {
   text-align: center;
   padding: 14px;
   border-right: 1px solid var(--border-subtle);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .stat-item.upload {

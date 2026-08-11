@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import type { Env } from '../types'
 import { error, success } from '../lib/response'
+import { ErrorCode } from '../types/errors'
 import { getRuntimeConfig, RuntimeConfigUnavailableError } from '../lib/runtime-config'
 import { DB } from '../lib/db'
 
@@ -25,7 +26,7 @@ app.get('/api/config', async (c) => {
   } catch (cause) {
     if (cause instanceof RuntimeConfigUnavailableError) {
       console.error('get public runtime config failed:', cause)
-      return c.json(error('服务配置暂时不可用，请稍后重试', 503), 503)
+      return c.json(error(ErrorCode.SERVICE_UNAVAILABLE, 503, 'Service temporarily unavailable, please try again later'), 503)
     }
     throw cause
   }

@@ -17,7 +17,7 @@
         <div class="admin-logo">
           <AppLogo size="small" />
           <div class="logo-text">
-            <h2>{{ configStore.siteName() }}</h2>
+            <h2>{{ configStore.siteName }}</h2>
             <p>{{ t('admin.subtitle') }}</p>
           </div>
           <el-button
@@ -86,7 +86,7 @@
           </div>
           
           <div class="header-right">
-            <LanguageSwitch inline />
+            <InterfaceControls />
             <button
               class="user-info"
               type="button"
@@ -97,10 +97,10 @@
               @click="confirmLogout"
             >
               <el-avatar :size="32" class="user-avatar">
-                {{ t('common.admin').slice(0, 1) }}
+                {{ adminInitial }}
               </el-avatar>
               <div class="user-details">
-                <span class="user-name">{{ t('common.admin') }}</span>
+                <span class="user-name" :title="adminDisplayName">{{ adminDisplayName }}</span>
                 <span class="user-role">{{ t('admin.role') }}</span>
               </div>
               <el-icon class="logout-icon" :class="{ 'is-loading': loggingOut }">
@@ -146,7 +146,7 @@ import {
 import { useUserStore } from '@/stores/user'
 import { useConfigStore } from '@/stores/config'
 import { useI18n } from '@/i18n'
-import LanguageSwitch from '@/components/LanguageSwitch.vue'
+import InterfaceControls from '@/components/InterfaceControls.vue'
 import AppLogo from '@/components/AppLogo.vue'
 
 const router = useRouter()
@@ -163,6 +163,8 @@ let mobileMediaQuery: MediaQueryList | null = null
 
 const sidebarInactive = computed(() => isMobile.value && !sidebarOpen.value)
 const backgroundInactive = computed(() => isMobile.value && sidebarOpen.value)
+const adminDisplayName = computed(() => userStore.user?.username.trim() || t('common.admin'))
+const adminInitial = computed(() => Array.from(adminDisplayName.value)[0]?.toLocaleUpperCase() || 'A')
 const adminMenuItems = computed(() => [
   { path: '/admin/dashboard', label: t('admin.dashboard'), icon: Monitor },
   { path: '/admin/files', label: t('admin.files'), icon: Folder },
@@ -323,11 +325,11 @@ const confirmLogout = async () => {
 }
 
 .admin-aside {
-  background: #ffffff !important;
+  background: var(--surface-card-solid) !important;
   border-right: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
-  box-shadow: 6px 0 20px rgba(17, 31, 38, 0.025);
+  box-shadow: var(--glass-shadow);
   z-index: 20;
 }
 
@@ -417,7 +419,7 @@ const confirmLogout = async () => {
 
 .user-page-btn {
   width: 100%;
-  background: #ffffff !important;
+  background: var(--surface-card-solid) !important;
   border: 1px solid var(--border-subtle) !important;
   color: var(--text-primary) !important;
   border-radius: var(--radius-md);
@@ -434,7 +436,7 @@ const confirmLogout = async () => {
 }
 
 .admin-header {
-  background: rgba(255, 255, 255, 0.96) !important;
+  background: var(--surface-translucent) !important;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border-subtle);
@@ -494,6 +496,8 @@ const confirmLogout = async () => {
 .user-info {
   appearance: none;
   display: flex;
+  min-width: 0;
+  max-width: min(252px, 30vw);
   align-items: center;
   min-height: 38px;
   gap: 9px;
@@ -518,21 +522,28 @@ const confirmLogout = async () => {
 }
 
 .user-avatar {
+  flex: 0 0 auto;
   background: var(--accent-soft);
-  color: #9a480b;
+  color: var(--warning-color);
   font-weight: 800;
 }
 
 .user-details {
   display: flex;
+  min-width: 0;
+  max-width: 178px;
   flex-direction: column;
   text-align: left;
 }
 
 .user-name {
+  display: block;
+  overflow: hidden;
   font-size: 13px;
   font-weight: 700;
   color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .user-role {
@@ -541,6 +552,7 @@ const confirmLogout = async () => {
 }
 
 .logout-icon {
+  flex: 0 0 auto;
   color: var(--glass-text-secondary);
   font-size: 15px;
   transition: color 0.18s ease, transform 0.18s ease;
@@ -595,7 +607,7 @@ const confirmLogout = async () => {
     height: 100%;
     padding: 0;
     border: 0;
-    background: rgba(24, 34, 41, 0.34);
+    background: var(--overlay-scrim);
   }
 
   .menu-toggle {
@@ -635,13 +647,6 @@ const confirmLogout = async () => {
     gap: 2px;
   }
 
-  .header-right :deep(.language-switch) {
-    width: 126px;
-  }
-
-  .header-right :deep(.language-select) {
-    width: 94px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

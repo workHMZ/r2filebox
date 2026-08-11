@@ -151,24 +151,14 @@ const handleShare = async () => {
   padding: 0;
 }
 
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
 
 .text-input-area {
   margin-bottom: 22px;
 }
 
 .text-area :deep(.el-textarea__inner) {
-  min-height: 230px !important;
+  height: var(--share-content-height, 230px) !important;
+  min-height: var(--share-content-height, 230px) !important;
   padding: 16px !important;
   font-size: 15px !important;
   line-height: 1.7 !important;

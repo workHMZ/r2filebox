@@ -205,17 +205,17 @@ const getFileIconColor = (row: AdminShare) => {
   const ext = filename.split('.').pop()?.toLowerCase()
   
   const colorMap: Record<string, string> = {
-    'jpg': '#409eff',
-    'jpeg': '#409eff',
-    'png': '#409eff',
-    'gif': '#409eff',
-    'mp4': '#67c23a',
-    'mp3': '#e6a23c',
-    'txt': '#909399',
-    'pdf': '#f56c6c'
+    'jpg': 'var(--info-color)',
+    'jpeg': 'var(--info-color)',
+    'png': 'var(--info-color)',
+    'gif': 'var(--info-color)',
+    'mp4': 'var(--success-color)',
+    'mp3': 'var(--warning-color)',
+    'txt': 'var(--text-secondary)',
+    'pdf': 'var(--danger-color)'
   }
   
-  return colorMap[ext || ''] || '#606266'
+  return colorMap[ext || ''] || 'var(--text-regular)'
 }
 
 const fetchFiles = async (): Promise<boolean> => {

@@ -1,7 +1,8 @@
 import { Hono } from 'hono'
 import type { Context, Next } from 'hono'
-import type { Env, Share } from '../types'
+import type { AuditSubject, Env, Share } from '../types'
 import { success, error } from '../lib/response'
+import { ErrorCode } from '../types/errors'
 import { signJWT, verifyJWT } from '../lib/auth'
 import { verifyPassword, verifyPlainPassword } from '../lib/password'
 import { DB } from '../lib/db'
@@ -25,12 +26,6 @@ type AdminSession = JsonRecord & {
   username: string
   role: 'admin'
 }
-type AuditSubject = {
-  type: string
-  name: string | null
-  sizeBytes: number | null
-}
-
 const app = new Hono<{ Bindings: Bindings, Variables: { user: AdminSession } }>()
 const MAX_LOGIN_BODY_BYTES = 8 * 1024
 const MAX_ADMIN_CONFIG_BODY_BYTES = 64 * 1024
@@ -41,13 +36,13 @@ app.post('/admin/login', async (c) => {
   try {
     const origin = c.req.header('Origin')
     if (origin && !isSameOrigin(c)) {
-      return c.json(error('请求来源无效', 403), 403)
+      return c.json(error(ErrorCode.FORBIDDEN, 403, 'Invalid request origin'), 403)
     }
     const body = await readStructuredBody(c.req.raw, MAX_LOGIN_BODY_BYTES)
     const password = String(body.password || '')
     const username = String(body.username || 'admin')
     if (password.length > 4096 || username.length > 256) {
-      return c.json(error('用户名或密码错误', 400), 400)
+      return c.json(error(ErrorCode.INVALID_CREDENTIALS, 400, 'Invalid username or password'), 400)
     }
     const db = new DB(c.env.DB)
     const config = await getRuntimeConfig(c.env, db)
@@ -64,7 +59,7 @@ app.post('/admin/login', async (c) => {
       false,
     )
     if (limited.limited) {
-      return c.json(error('用户名或密码错误', 400), 400)
+      return c.json(error(ErrorCode.INVALID_CREDENTIALS, 400, 'Invalid username or password'), 400)
     }
 
     const adminUser = c.env.ADMIN_USERNAME || 'admin'
@@ -86,7 +81,7 @@ app.post('/admin/login', async (c) => {
       ? await verifyPassword(password, adminHash)
       : await verifyPlainPassword(password, adminPassword || '')
     if (!validUser || !validPassword) {
-      return c.json(error('用户名或密码错误', 400), 400)
+      return c.json(error(ErrorCode.INVALID_CREDENTIALS, 400, 'Invalid username or password'), 400)
     }
 
     const token = await signJWT({
@@ -104,9 +99,9 @@ app.post('/admin/login', async (c) => {
 
     return c.json(success({
       user: adminUserDto(adminUser),
-    }, '登录成功'))
+    }, 'Login successful'))
   } catch (e: unknown) {
-    return adminRouteFailure(c, 'admin login', e, '登录失败')
+    return adminRouteFailure(c, 'admin login', e, 'Login failed')
   }
 })
 
@@ -127,7 +122,7 @@ app.post('/admin/logout', async (c) => {
     console.error('Failed to write admin logout audit log:', error)
   }
   c.header('Set-Cookie', adminSessionCookie('', c.req.url, 0))
-  return c.json(success(null, '退出成功'))
+  return c.json(success(null, 'Logout successful'))
 })
 
 app.get('/admin/stats', async (c) => {
@@ -136,7 +131,7 @@ app.get('/admin/stats', async (c) => {
     const stats = await db.getSystemStats()
     return c.json(success(stats))
   } catch (e: unknown) {
-    return adminRouteFailure(c, 'get admin stats', e, '获取统计信息失败')
+    return adminRouteFailure(c, 'get admin stats', e, 'Could not load statistics')
   }
 })
 
@@ -155,7 +150,7 @@ app.get('/admin/files', async (c) => {
       page_size: pageSize,
     }))
   } catch (e: unknown) {
-    return adminRouteFailure(c, 'get admin files', e, '获取文件列表失败')
+    return adminRouteFailure(c, 'get admin files', e, 'Could not load files')
   }
 })
 
@@ -165,11 +160,11 @@ app.delete('/admin/files/:id', async (c) => {
     const db = new DB(c.env.DB)
     const share = await db.getShareById(id)
     if (!share) {
-      return c.json(error('文件不存在', 404), 404)
+      return c.json(error(ErrorCode.FILE_NOT_FOUND, 404, 'File not found'), 404)
     }
 
     // Delete the object first. R2 deletion is idempotent, so if the following
-    // D1 update fails the administrator can safely retry without leaving an
+    // D1 update fails, the administrator can safely retry without leaving an
     // untracked object in the private bucket.
     const r2 = new R2Storage(c.env.BUCKET)
     await r2.deleteObject(share.r2_key)
@@ -179,9 +174,9 @@ app.delete('/admin/files/:id', async (c) => {
     await audit(db, c, 'admin_delete_share', id, 'success', await hashIp(getClientIp(c), pepper), {
       subject: shareAuditSubject(share),
     })
-    return c.json(success(null, '删除成功'))
+    return c.json(success(null, 'Deleted successfully'))
   } catch (e: unknown) {
-    return adminRouteFailure(c, 'delete admin share', e, '删除失败')
+    return adminRouteFailure(c, 'delete admin share', e, 'Delete failed')
   }
 })
 
@@ -191,7 +186,7 @@ app.get('/admin/config', async (c) => {
     const config = await getRuntimeConfig(c.env, db)
     return c.json(success(adminConfigDto(config)))
   } catch (e: unknown) {
-    return adminRouteFailure(c, 'get admin config', e, '获取配置失败')
+    return adminRouteFailure(c, 'get admin config', e, 'Could not load configuration')
   }
 })
 
@@ -200,7 +195,7 @@ app.put('/admin/config', async (c) => {
     const body = await readStructuredBody(c.req.raw, MAX_ADMIN_CONFIG_BODY_BYTES)
     const configBody = body.config || body
     if (typeof configBody !== 'object' || configBody === null || Array.isArray(configBody)) {
-      return c.json(error('配置格式无效', 400), 400)
+      return c.json(error(ErrorCode.INVALID_CONFIG, 400, 'Invalid configuration format'), 400)
     }
     const configRecord = configBody as JsonRecord
     const security = asRecord(configRecord.security)
@@ -217,7 +212,7 @@ app.put('/admin/config', async (c) => {
         c.env.TURNSTILE_SECRET_KEY.length < 16
       )
     ) {
-      return c.json(error('启用 Turnstile 前必须配置 Site Key 和 TURNSTILE_SECRET_KEY', 400), 400)
+      return c.json(error(ErrorCode.TURNSTILE_CONFIG_MISSING, 400, 'Turnstile Site Key and TURNSTILE_SECRET_KEY are required'), 400)
     }
     const db = new DB(c.env.DB)
     const previousConfig = await getRuntimeConfig(c.env, db)
@@ -239,9 +234,9 @@ app.put('/admin/config', async (c) => {
         subject: { type: 'system', name: 'global-config', sizeBytes: null },
       },
     )
-    return c.json(success(adminConfigDto(config), '配置已保存'))
+    return c.json(success(adminConfigDto(config), 'Configuration saved'))
   } catch (e: unknown) {
-    return adminRouteFailure(c, 'save admin config', e, '保存配置失败')
+    return adminRouteFailure(c, 'save admin config', e, 'Could not save configuration')
   }
 })
 
@@ -252,7 +247,7 @@ app.get('/admin/stats/trend', async (c) => {
     const trend = await db.getUploadTrend(days)
     return c.json(success(trend))
   } catch (e: unknown) {
-    return adminRouteFailure(c, 'get upload trend', e, '获取趋势数据失败')
+    return adminRouteFailure(c, 'get upload trend', e, 'Could not load upload trend')
   }
 })
 
@@ -262,7 +257,7 @@ app.get('/admin/stats/file-types', async (c) => {
     const distribution = await db.getFileTypeDistribution()
     return c.json(success(distribution))
   } catch (e: unknown) {
-    return adminRouteFailure(c, 'get file type distribution', e, '获取文件类型分布失败')
+    return adminRouteFailure(c, 'get file type distribution', e, 'Could not load file type distribution')
   }
 })
 
@@ -293,7 +288,7 @@ app.get('/admin/logs/audit', async (c) => {
       stats,
     }))
   } catch (e: unknown) {
-    return adminRouteFailure(c, 'get audit logs', e, '获取日志失败')
+    return adminRouteFailure(c, 'get audit logs', e, 'Could not load audit logs')
   }
 })
 
@@ -302,7 +297,7 @@ app.get('/admin/maintenance/system-info', (c) => {
     runtime: 'Cloudflare Workers',
     platform: 'V8 isolate',
     storage: 'D1 + R2 + Workers Rate Limiting',
-    version: c.env.APP_VERSION || '2.1',
+    version: c.env.APP_VERSION || '2.2',
     r2_bucket_name: c.env.R2_BUCKET_NAME || null,
     d1_database_name: c.env.D1_DATABASE_NAME || null,
   }))
@@ -327,9 +322,9 @@ app.post('/admin/maintenance/clean-expired', async (c) => {
       purged_audit_logs: result.purgedAuditLogs,
       purged_shares: result.purgedShares,
       failures: result.failures,
-    }, '清理成功'))
+    }, 'Cleanup completed'))
   } catch (e: unknown) {
-    return adminRouteFailure(c, 'cleanup expired shares', e, '清理失败')
+    return adminRouteFailure(c, 'cleanup expired shares', e, 'Cleanup failed')
   }
 })
 
@@ -340,10 +335,10 @@ async function adminAuth(c: Context<{ Bindings: Bindings, Variables: { user: Adm
 
   const cookieToken = getCookie(c.req.header('Cookie') || '', 'admin_session')
   if (cookieToken && !isSafeMethod(c.req.method) && !isSameOrigin(c)) {
-    return c.json(error('请求来源无效', 403), 403)
+    return c.json(error(ErrorCode.FORBIDDEN, 403, 'Invalid request origin'), 403)
   }
   if (!cookieToken) {
-    return c.json(error('未授权', 401), 401)
+    return c.json(error(ErrorCode.UNAUTHORIZED, 401, 'Unauthorized or session expired'), 401)
   }
 
   const payload = await verifyJWT(cookieToken, getRequiredSecret(c.env, 'SESSION_SECRET'))
@@ -353,7 +348,7 @@ async function adminAuth(c: Context<{ Bindings: Bindings, Variables: { user: Adm
     payload.role !== 'admin' ||
     typeof payload.username !== 'string'
   ) {
-    return c.json(error('未授权或凭证无效', 401), 401)
+    return c.json(error(ErrorCode.UNAUTHORIZED, 401, 'Unauthorized or invalid credentials'), 401)
   }
 
   c.set('user', payload as AdminSession)
@@ -379,7 +374,7 @@ function adminUserDto(username: string) {
   return {
     id: 'admin',
     username,
-    nickname: '管理员',
+    nickname: 'Admin',
     role: 'admin' as const,
   }
 }
@@ -433,6 +428,9 @@ function adminConfigDto(config: RuntimeConfig) {
     transfer: {
       max_count: config.defaultMaxDownloads,
       expire_default: config.defaultExpireHours,
+      max_expire_hours: config.maxExpireHours,
+      enable_text_share: config.enableTextShare ? 1 : 0,
+      enable_file_share: config.enableFileShare ? 1 : 0,
       upload: {
         openupload: config.enablePublicUpload ? 1 : 0,
         uploadsize: config.maxUploadBytes,
@@ -470,6 +468,9 @@ function settingsFromAdminConfig(config: JsonRecord): Record<string, string> {
   if (transfer) {
     setNumber(settings, 'DEFAULT_MAX_DOWNLOADS', transfer.max_count)
     setNumber(settings, 'DEFAULT_EXPIRE_HOURS', transfer.expire_default)
+    setNumber(settings, 'MAX_EXPIRE_HOURS', transfer.max_expire_hours)
+    setBoolean(settings, 'ENABLE_TEXT_SHARE', transfer.enable_text_share)
+    setBoolean(settings, 'ENABLE_FILE_SHARE', transfer.enable_file_share)
     const upload = asRecord(transfer.upload)
     if (upload) {
       setBoolean(settings, 'ENABLE_PUBLIC_UPLOAD', upload.openupload)
@@ -515,19 +516,19 @@ function setBoolean(settings: Record<string, string>, key: string, value: unknow
   settings[key] = value === true || value === 1 || value === '1' || value === 'true' ? 'true' : 'false'
 }
 
-function adminRouteFailure(c: Context, operation: string, cause: unknown, message: string) {
+function adminRouteFailure(c: Context, operation: string, cause: unknown, defaultMessage: string) {
   if (cause instanceof BodyTooLargeError) {
-    return c.json(error('请求内容过大', 413), 413)
+    return c.json(error(ErrorCode.PAYLOAD_TOO_LARGE, 413, 'Payload too large'), 413)
   }
   if (cause instanceof InvalidBodyError) {
-    return c.json(error('请求格式无效', 400), 400)
+    return c.json(error(ErrorCode.INVALID_FORMAT, 400, 'Invalid request format'), 400)
   }
   if (cause instanceof RuntimeConfigUnavailableError) {
     console.error(`${operation} failed:`, cause)
-    return c.json(error('服务配置暂时不可用，请稍后重试', 503), 503)
+    return c.json(error(ErrorCode.SERVICE_UNAVAILABLE, 503, 'Service temporarily unavailable, please try again later'), 503)
   }
   console.error(`${operation} failed:`, cause)
-  return c.json(error(message, 500), 500)
+  return c.json(error(ErrorCode.INTERNAL_SERVER_ERROR, 500, defaultMessage), 500)
 }
 
 async function audit(

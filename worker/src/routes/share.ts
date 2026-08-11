@@ -1,7 +1,8 @@
 import { Hono } from 'hono'
 import type { Context } from 'hono'
-import type { Env, Share, UploadSession } from '../types'
+import type { AuditSubject, Env, Share, UploadSession } from '../types'
 import { success, error } from '../lib/response'
+import { ErrorCode } from '../types/errors'
 import { generateCode, hashCode, hashIp } from '../lib/code'
 import {
   calculateExpireAt,
@@ -45,12 +46,6 @@ interface UploadTokenPayload extends Record<string, unknown> {
   r2_key: string
 }
 
-interface AuditSubject {
-  type: string
-  name: string | null
-  sizeBytes: number | null
-}
-
 app.post('/api/share/text', createTextShare)
 app.post('/api/share/file/init', initMultipartFileShare)
 app.put('/api/share/file/part', uploadMultipartPart)
@@ -64,13 +59,13 @@ async function createTextShare(c: Context<{ Bindings: Bindings }>) {
     const db = new DB(c.env.DB)
     const config = await getRuntimeConfig(c.env, db)
     if (!config.enablePublicUpload || !config.enableTextShare) {
-      return c.json(error('文本分享已关闭', 403), 403)
+      return c.json(error(ErrorCode.TEXT_SHARE_DISABLED, 403, 'Text sharing is disabled by administrator'), 403)
     }
 
     const maxUploadBytes = Math.min(config.maxUploadBytes, MAX_TEXT_BYTES)
     const contentLength = getContentLength(c)
     if (contentLength && contentLength > MAX_TEXT_REQUEST_BYTES) {
-      return c.json(error('内容过大', 413), 413)
+      return c.json(error(ErrorCode.PAYLOAD_TOO_LARGE, 413, 'Payload too large'), 413)
     }
 
     const pepper = getRequiredSecret(c.env, 'CODE_HASH_PEPPER')
@@ -91,16 +86,16 @@ async function createTextShare(c: Context<{ Bindings: Bindings }>) {
 
     const body = await readStructuredBody(c.req.raw, MAX_TEXT_REQUEST_BYTES)
     if (!await verifyTurnstileIfRequired(c, body, config, 'text-share')) {
-      return c.json(error('人机验证失败', 403), 403)
+      return c.json(error(ErrorCode.TURNSTILE_FAILED, 403, 'Turnstile verification failed'), 403)
     }
     const text = typeof body.text === 'string' ? body.text : ''
     if (!text.trim()) {
-      return c.json(error('文本内容不能为空', 400), 400)
+      return c.json(error(ErrorCode.TEXT_CONTENT_EMPTY, 400, 'Text content cannot be empty'), 400)
     }
 
     const textBytes = new TextEncoder().encode(text)
     if (textBytes.length > maxUploadBytes) {
-      return c.json(error('内容过大', 413), 413)
+      return c.json(error(ErrorCode.PAYLOAD_TOO_LARGE, 413, 'Payload too large'), 413)
     }
 
     const codeLength = config.codeLength
@@ -123,7 +118,7 @@ async function createTextShare(c: Context<{ Bindings: Bindings }>) {
       },
     )
     if (!uploaded) {
-      return c.json(error('存储写入失败', 500), 500)
+      return c.json(error(ErrorCode.STORAGE_WRITE_FAILED, 500, 'Failed to write to storage'), 500)
     }
 
     const now = new Date().toISOString()
@@ -136,7 +131,7 @@ async function createTextShare(c: Context<{ Bindings: Bindings }>) {
         display_name: 'text.txt',
         mime_type: 'text/plain; charset=utf-8',
         size_bytes: textBytes.length,
-        title: typeof body.title === 'string' ? body.title.slice(0, 200) : '未命名文本',
+        title: typeof body.title === 'string' ? body.title.slice(0, 200) : 'Untitled text',
         created_at: now,
         expire_at: expireAt,
         deleted_at: null,
@@ -149,7 +144,7 @@ async function createTextShare(c: Context<{ Bindings: Bindings }>) {
       }, config.maxTotalStorageBytes)
       if (!created) {
         await Promise.allSettled([r2.deleteObject(r2Key)])
-        return c.json(error('存储空间已达软限制', 403), 403)
+        return c.json(error(ErrorCode.STORAGE_LIMIT_REACHED, 403, 'Storage soft limit reached'), 403)
       }
     } catch (error) {
       await Promise.allSettled([r2.deleteObject(r2Key)])
@@ -175,9 +170,9 @@ async function createTextShare(c: Context<{ Bindings: Bindings }>) {
       qr_code_data: url,
       expire_at: expireAt,
       max_downloads: maxDownloads,
-    }, '分享成功'))
+    }, 'Share created'))
   } catch (e: unknown) {
-    return routeFailure(c, 'create text share', e, '分享失败')
+    return routeFailure(c, 'create text share', e, 'Could not create share')
   }
 }
 
@@ -186,17 +181,18 @@ async function initMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
     const db = new DB(c.env.DB)
     const config = await getRuntimeConfig(c.env, db)
     if (!config.enablePublicUpload || !config.enableFileShare) {
-      return c.json(error('文件分享已关闭', 403), 403)
+      return c.json(error(ErrorCode.FILE_SHARE_DISABLED, 403, 'File sharing is disabled by administrator'), 403)
     }
 
     const maxUploadBytes = config.maxUploadBytes
     const body = await readStructuredBody(c.req.raw, MAX_INIT_BODY_BYTES)
     const sizeBytes = Number.parseInt(String(body.size || '0'), 10)
     if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
-      return c.json(error('文件大小无效', 400), 400)
+      return c.json(error(ErrorCode.INVALID_FILE_SIZE, 400, 'Invalid file size'), 400)
     }
+    const maxMb = Math.floor(maxUploadBytes / 1024 / 1024)
     if (sizeBytes > maxUploadBytes) {
-      return c.json(error(`文件过大，最大允许 ${Math.floor(maxUploadBytes / 1024 / 1024)}MB`, 413), 413)
+      return c.json(error(ErrorCode.FILE_TOO_LARGE, 413, `File is too large, maximum allowed is ${maxMb}MB`, { max: maxMb }), 413)
     }
     
     const pepper = getRequiredSecret(c.env, 'CODE_HASH_PEPPER')
@@ -215,7 +211,7 @@ async function initMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
       return rateLimited(c, limited.resetAt)
     }
     if (!await verifyTurnstileIfRequired(c, body, config, 'file-share')) {
-      return c.json(error('人机验证失败', 403), 403)
+      return c.json(error(ErrorCode.TURNSTILE_FAILED, 403, 'Turnstile verification failed'), 403)
     }
 
     const maxStorage = config.maxTotalStorageBytes
@@ -264,7 +260,7 @@ async function initMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
     }
     if (!reserved) {
       await Promise.allSettled([multipart.abort()])
-      return c.json(error('存储空间已达软限制', 403), 403)
+      return c.json(error(ErrorCode.STORAGE_LIMIT_REACHED, 403, 'Storage soft limit reached'), 403)
     }
 
     const uploadToken = await signUploadToken(c.env, session)
@@ -279,36 +275,37 @@ async function initMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
       code: rawCode,
       partSize: MULTIPART_PART_SIZE,
       partCount,
-    }, '上传会话已创建'))
+    }, 'Upload session created'))
   } catch (e: unknown) {
-    return routeFailure(c, 'initialize multipart upload', e, '初始化上传失败')
+    return routeFailure(c, 'initialize multipart upload', e, 'Could not initialize upload')
   }
 }
 
 async function uploadMultipartPart(c: Context<{ Bindings: Bindings }>) {
   try {
-    const payload = await verifyUploadToken(c)
+    const uploadToken = c.req.header('X-Upload-Token')
+    if (!uploadToken) {
+      return c.json(error(ErrorCode.INVALID_UPLOAD_SESSION, 401, 'Invalid upload session'), 401)
+    }
+    const rawPartNumber = c.req.header('X-Part-Number')
+    const partNumber = Number.parseInt(rawPartNumber || '', 10)
+    if (!Number.isInteger(partNumber) || partNumber < 1 || partNumber > MAX_MULTIPART_PARTS) {
+      return c.json(error(ErrorCode.INVALID_PART_NUMBER, 400, 'Invalid part number'), 400)
+    }
+    const payload = await verifyUploadToken(c, uploadToken)
     if (!payload) {
-      return c.json(error('上传会话无效', 401), 401)
+      return c.json(error(ErrorCode.INVALID_UPLOAD_SESSION, 401, 'Invalid upload session'), 401)
     }
 
-    const partNumber = Number.parseInt(c.req.header('X-Part-Number') || c.req.query('partNumber') || '', 10)
-    if (!Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10000) {
-      return c.json(error('分片编号无效', 400), 400)
-    }
-    if (!c.req.raw.body) {
-      return c.json(error('缺少分片内容', 400), 400)
-    }
-
-    const db = new DB(c.env.DB)
-    const config = await getRuntimeConfig(c.env, db)
     const pepper = getRequiredSecret(c.env, 'CODE_HASH_PEPPER')
     const ipHash = await hashIp(getClientIp(c), pepper)
+    const db = new DB(c.env.DB)
+    const config = await getRuntimeConfig(c.env, db)
     const limited = await checkRateLimit(
       c.env,
       db,
       'upload_part',
-      ipHash || payload.session_id,
+      ipHash,
       60,
       config.rateLimitUploadPartPerMinute,
       config.enableNativeRateLimit,
@@ -318,7 +315,7 @@ async function uploadMultipartPart(c: Context<{ Bindings: Bindings }>) {
     }
 
     // R2 resumeMultipartUpload() deliberately does not validate the upload ID.
-    // Keep the D1 session read so cancellation, cleanup and configured expiry
+    // Maintain the D1 session read so that cancellation, cleanup, and configured expiry
     // take effect before accepting another paid R2 part operation.
     const session = await db.getUploadSession(payload.session_id)
     if (
@@ -328,24 +325,35 @@ async function uploadMultipartPart(c: Context<{ Bindings: Bindings }>) {
       session.r2_key !== payload.r2_key ||
       session.code_hash !== payload.code_hash
     ) {
-      return c.json(error('上传会话不存在', 404), 404)
+      return c.json(error(ErrorCode.UPLOAD_SESSION_NOT_FOUND, 404, 'Upload session not found'), 404)
     }
     const r2 = new R2Storage(c.env.BUCKET)
     if (isExpiredIso(session.expire_at)) {
       await abortUploadSession(r2, db, session)
-      return c.json(error('上传会话已过期，请重新上传', 410), 410)
+      return c.json(error(ErrorCode.UPLOAD_SESSION_EXPIRED, 410, 'Upload session expired, please upload again'), 410)
     }
 
     const partCount = Math.ceil(session.size_bytes / MULTIPART_PART_SIZE)
     if (partNumber > partCount) {
-      return c.json(error('分片编号无效', 400), 400)
+      return c.json(error(ErrorCode.INVALID_PART_NUMBER, 400, 'Invalid part number'), 400)
     }
     const expectedBytes = partNumber === partCount
       ? session.size_bytes - ((partCount - 1) * MULTIPART_PART_SIZE)
       : MULTIPART_PART_SIZE
     const contentLength = getContentLength(c)
     if (contentLength !== null && contentLength !== expectedBytes) {
-      return c.json(error(contentLength > expectedBytes ? '分片过大' : '分片大小不完整', contentLength > expectedBytes ? 413 : 400), contentLength > expectedBytes ? 413 : 400)
+      return c.json(
+        error(
+          contentLength > expectedBytes ? ErrorCode.PART_TOO_LARGE : ErrorCode.PART_INCOMPLETE_RETRY,
+          contentLength > expectedBytes ? 413 : 400,
+          contentLength > expectedBytes ? 'Part is too large' : 'Incomplete part size'
+        ),
+        contentLength > expectedBytes ? 413 : 400
+      )
+    }
+
+    if (!c.req.raw.body) {
+      return c.json(error(ErrorCode.MISSING_PART_CONTENT, 400, 'Missing part content'), 400)
     }
 
     const guarded = fixedLengthPartStream(c.req.raw.body, expectedBytes)
@@ -359,13 +367,13 @@ async function uploadMultipartPart(c: Context<{ Bindings: Bindings }>) {
     }
     if (guarded.sourceCompleted() && guarded.bytesRead() < expectedBytes) {
       await abortUploadSession(r2, db, session)
-      return c.json(error('分片大小不完整，请重新上传', 400), 400)
+      return c.json(error(ErrorCode.PART_INCOMPLETE_RETRY, 400, 'Incomplete part size, please upload again'), 400)
     }
     if (uploadResult.status === 'rejected') throw uploadResult.reason
     if (pipeResult.status === 'rejected') throw pipeResult.reason
     return c.json(success(uploadResult.value))
   } catch (e: unknown) {
-    return routeFailure(c, 'upload multipart part', e, '上传分片失败')
+    return routeFailure(c, 'upload multipart part', e, 'Could not upload part')
   }
 }
 
@@ -373,22 +381,22 @@ async function completeMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
   try {
     const payload = await verifyUploadToken(c)
     if (!payload) {
-      return c.json(error('上传会话无效', 401), 401)
+      return c.json(error(ErrorCode.INVALID_UPLOAD_SESSION, 401, 'Invalid upload session'), 401)
     }
     const body = await readStructuredBody(c.req.raw, MAX_COMPLETE_BODY_BYTES)
     const code = String(body.code || '')
     if (!Array.isArray(body.parts) || body.parts.length > MAX_MULTIPART_PARTS) {
-      return c.json(error('分片完成信息无效', 400), 400)
+      return c.json(error(ErrorCode.INVALID_COMPLETE_INFO, 400, 'Invalid completion info'), 400)
     }
     const parts = normalizeUploadedParts(body.parts)
     if (!parts.length) {
-      return c.json(error('缺少分片完成信息', 400), 400)
+      return c.json(error(ErrorCode.MISSING_COMPLETE_INFO, 400, 'Missing completion info'), 400)
     }
 
     const pepper = getRequiredSecret(c.env, 'CODE_HASH_PEPPER')
     const requestIpHash = await hashIp(getClientIp(c), pepper)
     if (await hashCode(code, pepper) !== payload.code_hash) {
-      return c.json(error('上传会话无效', 401), 401)
+      return c.json(error(ErrorCode.INVALID_UPLOAD_SESSION, 401, 'Invalid upload session token'), 401)
     }
 
     const db = new DB(c.env.DB)
@@ -402,7 +410,7 @@ async function completeMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
       ) {
         return completedUploadResponse(c, code, completedShare)
       }
-      return c.json(error('上传会话不存在', 404), 404)
+      return c.json(error(ErrorCode.UPLOAD_SESSION_NOT_FOUND, 404, 'Upload session not found'), 404)
     }
     if (
       session.share_id !== payload.share_id ||
@@ -410,13 +418,13 @@ async function completeMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
       session.r2_key !== payload.r2_key ||
       session.code_hash !== payload.code_hash
     ) {
-      return c.json(error('上传会话不存在', 404), 404)
+      return c.json(error(ErrorCode.UPLOAD_SESSION_NOT_FOUND, 404, 'Upload session not found'), 404)
     }
 
     const r2 = new R2Storage(c.env.BUCKET)
     if (isExpiredIso(session.expire_at)) {
       await abortUploadSession(r2, db, session)
-      return c.json(error('上传会话已过期，请重新上传', 410), 410)
+      return c.json(error(ErrorCode.UPLOAD_SESSION_EXPIRED, 410, 'Upload session expired, please upload again'), 410)
     }
 
     const expectedPartCount = Math.ceil(session.size_bytes / MULTIPART_PART_SIZE)
@@ -424,7 +432,7 @@ async function completeMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
       parts.length !== expectedPartCount ||
       parts.some((part, index) => part.partNumber !== index + 1)
     ) {
-      return c.json(error('分片完成信息不完整', 400), 400)
+      return c.json(error(ErrorCode.INCOMPLETE_COMPLETE_INFO, 400, 'Incomplete multipart upload completion info'), 400)
     }
 
     const multipart = r2.resumeMultipartUpload(session.r2_key, session.upload_id)
@@ -444,7 +452,7 @@ async function completeMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
       await audit(db, c, 'multipart_file_size_mismatch', session.share_id, 'failed', requestIpHash, {
         subject: { type: 'file', name: session.display_name, sizeBytes: session.size_bytes },
       })
-      return c.json(error('文件大小校验失败，请重新上传', 400), 400)
+      return c.json(error(ErrorCode.SIZE_MISMATCH, 400, 'File size mismatch validation failed'), 400)
     }
 
     const now = new Date().toISOString()
@@ -467,8 +475,6 @@ async function completeMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
       object_etag: uploaded.etag,
       object_uploaded_at: now,
     }
-    // D1 batch is transactional: the active share and reservation cannot be
-    // left double-counted if the isolate stops between two statements.
     let persistedShare = completedShare
     let newlyPersisted = true
     try {
@@ -497,7 +503,7 @@ async function completeMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
     }
     return completedUploadResponse(c, code, persistedShare)
   } catch (e: unknown) {
-    return routeFailure(c, 'complete multipart upload', e, '完成上传失败')
+    return routeFailure(c, 'complete multipart upload', e, 'Could not complete upload')
   }
 }
 
@@ -505,18 +511,18 @@ async function abortMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
   try {
     const payload = await verifyUploadToken(c)
     if (!payload) {
-      return c.json(error('上传会话无效', 401), 401)
+      return c.json(error(ErrorCode.INVALID_UPLOAD_SESSION, 401, 'Invalid upload session'), 401)
     }
     const db = new DB(c.env.DB)
     const session = await db.getUploadSession(payload.session_id)
     if (!session) {
-      return c.json(success(null, '上传会话已结束'))
+      return c.json(success(null, 'Upload session already ended'))
     }
     const r2 = new R2Storage(c.env.BUCKET)
     await abortUploadSession(r2, db, session)
-    return c.json(success(null, '上传已取消'))
+    return c.json(success(null, 'Upload cancelled'))
   } catch (e: unknown) {
-    return routeFailure(c, 'abort multipart upload', e, '取消上传失败')
+    return routeFailure(c, 'abort multipart upload', e, 'Could not cancel upload')
   }
 }
 
@@ -533,7 +539,7 @@ function completedUploadResponse(c: Context, code: string, share: Share) {
     size_bytes: share.size_bytes,
     expire_at: share.expire_at,
     max_downloads: share.max_downloads,
-  }, '文件上传成功'))
+  }, 'File uploaded'))
 }
 
 async function resolveShareFromBody(c: Context<{ Bindings: Bindings }>) {
@@ -541,14 +547,14 @@ async function resolveShareFromBody(c: Context<{ Bindings: Bindings }>) {
     const body = await readStructuredBody(c.req.raw, MAX_RESOLVE_BODY_BYTES)
     return resolveShare(c, typeof body.code === 'string' ? body.code : undefined)
   } catch (e) {
-    return routeFailure(c, 'parse share resolve request', e, '请求格式无效')
+    return routeFailure(c, 'parse share resolve request', e, 'Invalid request format')
   }
 }
 
 async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string | undefined) {
   try {
     if (!rawCode || rawCode.length > 128 || !/^[23456789A-HJ-NP-Za-km-z]+$/.test(rawCode)) {
-      return c.json(error('提取码无效或文件已不可用', 404), 404)
+      return c.json(error(ErrorCode.SHARE_NOT_FOUND, 404, 'Share not found or expired'), 404)
     }
 
     const pepper = getRequiredSecret(c.env, 'CODE_HASH_PEPPER')
@@ -572,7 +578,7 @@ async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string 
     const share = await db.getShareByCodeHash(codeHash)
 
     if (!isShareAvailable(share)) {
-      return c.json(error('提取码无效或文件已不可用', 404), 404)
+      return c.json(error(ErrorCode.SHARE_NOT_FOUND, 404, 'Share not found or expired'), 404)
     }
 
     if (share.type === 'text') {
@@ -580,12 +586,12 @@ async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string 
       // concurrent request that loses the final download slot must not read
       // text content that it is no longer allowed to return.
       if (!await db.consumeShareDownload(share.id)) {
-        return c.json(error('提取码无效或文件已不可用', 404), 404)
+        return c.json(error(ErrorCode.SHARE_NOT_FOUND, 404, 'Share not found or expired'), 404)
       }
       const r2 = new R2Storage(c.env.BUCKET)
       const obj = await r2.getObject(share.r2_key)
       if (!obj) {
-        return c.json(error('提取码无效或文件已不可用', 404), 404)
+        return c.json(error(ErrorCode.SHARE_NOT_FOUND, 404, 'Share not found or expired'), 404)
       }
       const text = await obj.text()
       await audit(db, c, 'share_resolve_text', share.id, 'success', ipHash, {
@@ -623,11 +629,11 @@ async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string 
     const r2 = new R2Storage(c.env.BUCKET)
     const storedObject = await r2.headObject(share.r2_key)
     if (!storedObject) {
-      return c.json(error('提取码无效或文件已不可用', 404), 404)
+      return c.json(error(ErrorCode.SHARE_NOT_FOUND, 404, 'Share not found or expired'), 404)
     }
     const sessionSecret = getRequiredSecret(c.env, 'SESSION_SECRET')
     if (!await db.consumeShareDownload(share.id)) {
-      return c.json(error('提取码无效或文件已不可用', 404), 404)
+      return c.json(error(ErrorCode.SHARE_NOT_FOUND, 404, 'Share not found or expired'), 404)
     }
     const token = await signJWT({
       purpose: 'download',
@@ -665,7 +671,7 @@ async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string 
       download_url: downloadUrl,
     }))
   } catch (e: unknown) {
-    return routeFailure(c, 'resolve share', e, '获取分享失败')
+    return routeFailure(c, 'resolve share', e, 'Could not retrieve share')
   }
 }
 
@@ -674,7 +680,7 @@ async function downloadWithSession(c: Context<{ Bindings: Bindings }>) {
     const shareId = c.req.param('shareId')
     const token = getCookieValue(c.req.header('Cookie') || '', 'download_session')
     if (!shareId || !token || !/^[0-9a-f-]{36}$/i.test(shareId)) {
-      return new Response('提取码无效或文件已不可用', { status: 404 })
+      return new Response('Share code invalid or file unavailable', { status: 404 })
     }
     const payload = await verifyJWT(token, getRequiredSecret(c.env, 'SESSION_SECRET'))
     if (
@@ -683,13 +689,13 @@ async function downloadWithSession(c: Context<{ Bindings: Bindings }>) {
       typeof payload.share_id !== 'string' ||
       payload.share_id !== shareId
     ) {
-      return new Response('提取码无效或文件已不可用', { status: 404 })
+      return new Response('Share code invalid or file unavailable', { status: 404 })
     }
 
     const db = new DB(c.env.DB)
     const share = await db.getShareById(shareId)
     if (!isDownloadSessionShareAvailable(share) || share.type !== 'file') {
-      return new Response('提取码无效或文件已不可用', { status: 404 })
+      return new Response('Share code invalid or file unavailable', { status: 404 })
     }
 
     const ifNoneMatch = c.req.header('If-None-Match')
@@ -712,7 +718,7 @@ async function downloadWithSession(c: Context<{ Bindings: Bindings }>) {
     const r2 = new R2Storage(c.env.BUCKET)
     const obj = await r2.getObject(share.r2_key, r2Options)
     if (!obj) {
-      return new Response('提取码无效或文件已不可用', { status: 404 })
+      return new Response('Share code invalid or file unavailable', { status: 404 })
     }
 
     const headers = new Headers()
@@ -755,13 +761,13 @@ async function downloadWithSession(c: Context<{ Bindings: Bindings }>) {
   } catch (e: unknown) {
     if (e instanceof RuntimeConfigUnavailableError) {
       console.error('download share failed:', e)
-      return new Response('服务配置暂时不可用，请稍后重试', {
+      return new Response('Service temporarily unavailable, please try again later', {
         status: 503,
         headers: { 'Cache-Control': 'no-store' },
       })
     }
     console.error('download share failed:', e)
-    return new Response('下载失败', { status: 500 })
+    return new Response('Download failed', { status: 500 })
   }
 }
 
@@ -831,8 +837,8 @@ async function signUploadToken(env: Env, session: UploadSession): Promise<string
   }, getRequiredSecret(env, 'SESSION_SECRET'))
 }
 
-async function verifyUploadToken(c: Context<{ Bindings: Bindings }>): Promise<UploadTokenPayload | null> {
-  const token = c.req.header('X-Upload-Token') || ''
+async function verifyUploadToken(c: Context<{ Bindings: Bindings }>, tokenOverride?: string): Promise<UploadTokenPayload | null> {
+  const token = tokenOverride || c.req.header('X-Upload-Token') || ''
   if (!token) return null
 
   const payload = await verifyJWT(token, getRequiredSecret(c.env, 'SESSION_SECRET'))
@@ -961,7 +967,7 @@ async function abortUploadSession(r2: R2Storage, db: DB, session: UploadSession)
 function rateLimited(c: Context, resetAt: string) {
   c.header('Retry-After', '60')
   c.header('X-RateLimit-Reset', resetAt)
-  return c.json(error('请求过于频繁，请稍后再试', 429), 429)
+  return c.json(error(ErrorCode.RATE_LIMIT_EXCEEDED, 429, 'Too many requests, please try again later'), 429)
 }
 
 function isShareAvailable(share: Share | null): share is Share {
@@ -980,17 +986,17 @@ function isDownloadSessionShareAvailable(share: Share | null): share is Share {
 
 function routeFailure(c: Context, operation: string, cause: unknown, message: string) {
   if (cause instanceof BodyTooLargeError) {
-    return c.json(error('请求内容过大', 413), 413)
+    return c.json(error(ErrorCode.PAYLOAD_TOO_LARGE, 413, 'Payload too large'), 413)
   }
   if (cause instanceof InvalidBodyError) {
-    return c.json(error('请求格式无效', 400), 400)
+    return c.json(error(ErrorCode.INVALID_FORMAT, 400, 'Invalid request format'), 400)
   }
   if (cause instanceof RuntimeConfigUnavailableError) {
     console.error(`${operation} failed:`, cause)
-    return c.json(error('服务配置暂时不可用，请稍后重试', 503), 503)
+    return c.json(error(ErrorCode.SERVICE_UNAVAILABLE, 503, 'Service temporarily unavailable, please try again later'), 503)
   }
   console.error(`${operation} failed:`, cause)
-  return c.json(error(message, 500), 500)
+  return c.json(error(ErrorCode.INTERNAL_SERVER_ERROR, 500, message), 500)
 }
 
 function shareAuditSubject(share: Share): AuditSubject {

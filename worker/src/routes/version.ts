@@ -5,12 +5,12 @@ import { success } from '../lib/response'
 const app = new Hono<{ Bindings: Env }>()
 
 app.get('/api/version', (c) => {
-  const version = c.env.APP_VERSION || '2.1'
+  const version = c.env.APP_VERSION || '2.2'
   const configuredCommitHash = c.env.GIT_COMMIT_HASH?.trim()
   const commitHash = configuredCommitHash && configuredCommitHash !== 'unknown'
     ? configuredCommitHash
     : 'dev'
-  const buildTime = c.env.BUILD_TIMESTAMP?.trim() || null
+  const buildTime = c.env.VERSION_METADATA?.timestamp || null
 
   return c.json(
     success({

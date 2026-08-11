@@ -1,9 +1,11 @@
+import { Buffer } from 'node:buffer'
+
 const ITERATIONS = 100000
 const HASH_BYTES = 32
 const SALT_BYTES = 16
 
 /**
- * Verify a password against a hash
+ * Verify a password against a hash.
  */
 export async function verifyPassword(password: string, hashString: string): Promise<boolean> {
   try {
@@ -63,10 +65,5 @@ function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 function decodeBase64(value: string): Uint8Array {
-  const decoded = atob(value)
-  const bytes = new Uint8Array(decoded.length)
-  for (let i = 0; i < decoded.length; i++) {
-    bytes[i] = decoded.charCodeAt(i)
-  }
-  return bytes
+  return Buffer.from(value, 'base64')
 }

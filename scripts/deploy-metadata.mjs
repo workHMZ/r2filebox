@@ -1,14 +1,11 @@
 import { spawnSync } from 'node:child_process'
 
 export function getDeployVarsArgs(root, options = {}) {
-  const commitHash = options.commitHash ?? readCommitHash(root)
-  const buildTime = options.buildTime ?? new Date().toISOString()
+  const commitHash = options.commitHash ?? process.env.WORKERS_CI_COMMIT_SHA ?? readCommitHash(root)
 
   return [
     '--var',
     `GIT_COMMIT_HASH:${normalizeCommitHash(commitHash)}`,
-    '--var',
-    `BUILD_TIMESTAMP:${normalizeBuildTime(buildTime)}`,
   ]
 }
 
@@ -23,9 +20,4 @@ function readCommitHash(root) {
 function normalizeCommitHash(value) {
   const normalized = String(value).trim()
   return /^[a-f0-9]{7,64}$/i.test(normalized) ? normalized : 'unknown'
-}
-
-function normalizeBuildTime(value) {
-  const normalized = String(value).trim()
-  return Number.isNaN(Date.parse(normalized)) ? '' : normalized
 }

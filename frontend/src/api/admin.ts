@@ -47,6 +47,9 @@ export interface AdminConfig {
   transfer: {
     max_count: number
     expire_default: number
+    max_expire_hours: number
+    enable_text_share: number
+    enable_file_share: number
     upload: {
       openupload: number
       uploadsize: number

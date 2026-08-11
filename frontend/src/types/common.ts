@@ -1,6 +1,8 @@
 export interface ApiResponse<T = unknown> {
   code: number
-  data: T
+  error_code?: string
   message: string
+  params?: Record<string, string | number>
+  data: T
   success: boolean
 }

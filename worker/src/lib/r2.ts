@@ -2,14 +2,14 @@ export class R2Storage {
   constructor(private bucket: R2Bucket) {}
 
   /**
-   * Upload a file to R2
+   * Upload a file to R2.
    */
   async uploadFile(key: string, file: File | Blob, options?: R2PutOptions): Promise<R2Object | null> {
     return await this.bucket.put(key, file, options)
   }
 
   /**
-   * Get an object from R2
+   * Get an object from R2.
    */
   async getObject(key: string, options?: R2GetOptions): Promise<R2ObjectBody | null> {
     return await this.bucket.get(key, options)
@@ -20,7 +20,7 @@ export class R2Storage {
   }
 
   /**
-   * Delete an object from R2
+   * Delete an object from R2.
    */
   async deleteObject(key: string): Promise<void> {
     await this.bucket.delete(key)

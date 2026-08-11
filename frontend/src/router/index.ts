@@ -37,12 +37,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: '',
         name: 'AdminDashboard',
-        component: () => import('@/views/admin/Dashboard.vue'),
-        meta: { titleKey: 'admin.dashboard' },
-      },
-      {
-        path: 'dashboard',
-        name: 'AdminDashboardAlias',
+        alias: 'dashboard',
         component: () => import('@/views/admin/Dashboard.vue'),
         meta: { titleKey: 'admin.dashboard' },
       },

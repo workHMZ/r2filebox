@@ -8,23 +8,41 @@ import {
 import type { Env } from '../src/types'
 
 describe('runtime configuration', () => {
-  it('uses deployment defaults when the settings table is readable but empty', async () => {
+  it('uses application defaults when the settings table is readable but empty', async () => {
     const db = {
       getSettings: vi.fn().mockResolvedValue({}),
     } as unknown as DB
 
-    const config = await getRuntimeConfig({
-      APP_NAME: 'Deployment Name',
-      MAX_UPLOAD_BYTES: '52428800',
-      ENABLE_PUBLIC_UPLOAD: 'true',
-      REQUIRE_TURNSTILE: 'false',
-    } as unknown as Env, db)
+    const config = await getRuntimeConfig({} as Env, db)
 
     expect(config).toMatchObject({
-      appName: 'Deployment Name',
+      appName: 'R2FileBox',
+      appDescription: 'Private code-based file sharing on Cloudflare R2',
       maxUploadBytes: 52428800,
       enablePublicUpload: true,
       requireTurnstile: false,
+    })
+  })
+
+  it('uses D1 settings instead of deployment variables for administrator configuration', async () => {
+    const db = {
+      getSettings: vi.fn().mockResolvedValue({
+        APP_NAME: 'Configured Name',
+        MAX_UPLOAD_BYTES: String(64 * 1024 * 1024),
+        MAX_EXPIRE_HOURS: '720',
+        ENABLE_TEXT_SHARE: 'false',
+        RATE_LIMIT_DOWNLOAD_PER_MINUTE: '42',
+      }),
+    } as unknown as DB
+
+    const config = await getRuntimeConfig({} as Env, db)
+
+    expect(config).toMatchObject({
+      appName: 'Configured Name',
+      maxUploadBytes: 64 * 1024 * 1024,
+      maxExpireHours: 720,
+      enableTextShare: false,
+      rateLimitDownloadPerMinute: 42,
     })
   })
 
