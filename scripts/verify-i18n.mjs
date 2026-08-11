@@ -75,12 +75,28 @@ for (const key of usedKeys) {
   if (!reference.has(key)) failures.push(`Code uses missing translation key: ${key}`)
 }
 
+const errorCodeSource = readFileSync(resolve(root, 'worker/src/types/errors.ts'), 'utf8')
+const errorCodeKeys = new Set(
+  [...errorCodeSource.matchAll(/:\s*'(api\.[^']+)'/g)].map((match) => match[1]),
+)
+for (const key of errorCodeKeys) {
+  for (const locale of expectedLocales) {
+    if (!messages.get(locale)?.has(key)) failures.push(`Worker error code is missing ${locale} translation: ${key}`)
+  }
+}
+
+for (const file of sourceFiles(resolve(root, 'worker/src'))) {
+  const content = readFileSync(file, 'utf8')
+  const workerSource = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  visitRuntimeStrings(workerSource, file)
+}
+
 if (failures.length) {
   console.error('i18n verification failed:')
   failures.forEach((failure) => console.error(`- ${failure}`))
   process.exitCode = 1
 } else {
-  console.log(`i18n verification passed: ${expectedLocales.length} locales, ${reference.size} keys, ${usedKeys.size} statically used keys.`)
+  console.log(`i18n verification passed: ${expectedLocales.length} locales, ${reference.size} keys, ${usedKeys.size} frontend keys, ${errorCodeKeys.size} API error keys.`)
 }
 
 function visit(node) {
@@ -96,6 +112,14 @@ function propertyName(node) {
 
 function placeholders(value = '') {
   return [...new Set([...value.matchAll(/\{(\w+)\}/g)].map((match) => match[1]))].sort()
+}
+
+function visitRuntimeStrings(node, file) {
+  if (ts.isStringLiteralLike(node) && /[\u3400-\u9fff\u3040-\u30ff]/u.test(node.text)) {
+    const position = node.getSourceFile().getLineAndCharacterOfPosition(node.getStart())
+    failures.push(`Worker runtime strings must default to English: ${file}:${position.line + 1}`)
+  }
+  ts.forEachChild(node, (child) => visitRuntimeStrings(child, file))
 }
 
 function sourceFiles(directory) {

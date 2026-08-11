@@ -1,27 +1,15 @@
-// A lightweight JWT implementation using the Web Crypto API, without Node
-// crypto dependencies or compatibility polyfills.
+import { Buffer } from 'node:buffer'
+
+// A lightweight JWT implementation using Web Crypto for signing and the
+// Workers-native Buffer API for binary-to-text encoding.
 
 function base64UrlEncode(buffer: ArrayBuffer | Uint8Array): string {
-  const bytes = new Uint8Array(buffer)
-  let binary = ''
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i])
-  }
-  return btoa(binary)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '')
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer)
+  return Buffer.from(bytes).toString('base64url')
 }
 
 function base64UrlDecode(str: string): Uint8Array {
-  const base64 = str.replace(/-/g, '+').replace(/_/g, '/')
-  const padding = '='.repeat((4 - (base64.length % 4)) % 4)
-  const binary = atob(base64 + padding)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i)
-  }
-  return bytes
+  return Buffer.from(str, 'base64url')
 }
 
 export async function signJWT(payload: Record<string, unknown>, secret: string): Promise<string> {

@@ -99,7 +99,7 @@ describe('administrator cookie session', () => {
       runtime: 'Cloudflare Workers',
       platform: 'V8 isolate',
       storage: 'D1 + R2 + Workers Rate Limiting',
-      version: '2.1',
+      version: '2.2',
       r2_bucket_name: 'r2filebox-files',
       d1_database_name: 'r2filebox-db',
     })
@@ -119,6 +119,76 @@ describe('administrator cookie session', () => {
     })
 
     expect(response.status).toBe(403)
+  })
+
+  it('stores application settings in D1 instead of deployment variables', async () => {
+    const login = await loginAt('https://example.test')
+    const settings = {
+      base: { name: 'Configured R2FileBox', description: 'Configured in D1' },
+      storage: { max_total_storage_bytes: 12 * 1024 * 1024 * 1024 },
+      transfer: {
+        max_count: 25,
+        expire_default: 48,
+        max_expire_hours: 720,
+        enable_text_share: 0,
+        enable_file_share: 1,
+        upload: { openupload: 1, uploadsize: 64 * 1024 * 1024 },
+        rate_limit: {
+          enabled: 1,
+          upload_per_minute: 11,
+          upload_part_per_minute: 81,
+          resolve_per_minute: 121,
+          download_per_minute: 122,
+          auth_per_15_min: 21,
+        },
+      },
+      security: {
+        enable_audit_log: 1,
+        enable_access_log: 0,
+        require_turnstile: 0,
+        turnstile_site_key: '',
+      },
+    }
+
+    try {
+      const response = await SELF.fetch('https://example.test/admin/config', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookiePair(login.headers.get('set-cookie') || ''),
+          Origin: 'https://example.test',
+        },
+        body: JSON.stringify(settings),
+      })
+
+      expect(response.status).toBe(200)
+      await expect(response.json()).resolves.toMatchObject({
+        data: {
+          storage: { max_total_storage_bytes: settings.storage.max_total_storage_bytes },
+          transfer: {
+            max_count: 25,
+            expire_default: 48,
+            max_expire_hours: 720,
+            enable_text_share: 0,
+            enable_file_share: 1,
+            upload: { uploadsize: 64 * 1024 * 1024 },
+          },
+        },
+      })
+
+      const rows = await env.DB.prepare(`
+        SELECT key, value FROM settings
+        WHERE key IN ('MAX_TOTAL_STORAGE_BYTES', 'MAX_EXPIRE_HOURS', 'ENABLE_TEXT_SHARE')
+        ORDER BY key
+      `).all<{ key: string, value: string }>()
+      expect(rows.results).toEqual([
+        { key: 'ENABLE_TEXT_SHARE', value: 'false' },
+        { key: 'MAX_EXPIRE_HOURS', value: '720' },
+        { key: 'MAX_TOTAL_STORAGE_BYTES', value: String(settings.storage.max_total_storage_bytes) },
+      ])
+    } finally {
+      await env.DB.prepare('DELETE FROM settings').run()
+    }
   })
 
   it('allows local HTTP development without weakening production cookies', async () => {

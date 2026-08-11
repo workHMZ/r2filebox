@@ -7,11 +7,11 @@
         <div class="logo-section">
           <AppLogo />
           <div class="logo-text">
-            <h1>{{ configStore.siteName() }}</h1>
-            <p>{{ configStore.siteDescription() }}</p>
+            <h1>{{ configStore.siteName }}</h1>
+            <p>{{ configStore.siteDescription }}</p>
           </div>
         </div>
-        <LanguageSwitch inline />
+        <InterfaceControls />
       </header>
 
       <main
@@ -153,7 +153,7 @@ import {
 import { useConfigStore } from '@/stores/config'
 import ActionFeedbackButton from '@/components/ActionFeedbackButton.vue'
 import AppLogo from '@/components/AppLogo.vue'
-import LanguageSwitch from '@/components/LanguageSwitch.vue'
+import InterfaceControls from '@/components/InterfaceControls.vue'
 import FileUpload from '@/components/upload/FileUpload.vue'
 import TextShare from '@/components/upload/TextShare.vue'
 import GetShare from '@/components/upload/GetShare.vue'
@@ -409,9 +409,9 @@ const handleDialogClosed = () => {
 }
 
 .function-tabs :deep(.el-tabs__item.is-active) {
-  background: #ffffff;
+  background: var(--surface-card-solid);
   color: var(--primary-color) !important;
-  box-shadow: 0 1px 3px rgba(17, 31, 38, 0.08);
+  box-shadow: var(--glass-shadow);
 }
 
 .tab-label {
@@ -523,7 +523,7 @@ const handleDialogClosed = () => {
 .footer-section :deep(.el-alert) {
   flex: 1;
   padding: 9px 12px !important;
-  background: rgba(255, 255, 255, 0.72) !important;
+  background: var(--surface-translucent) !important;
 }
 
 .footer-section p {
@@ -621,14 +621,6 @@ const handleDialogClosed = () => {
 
   .logo-text h1 {
     max-width: 100px;
-  }
-
-  .top-nav :deep(.language-switch) {
-    width: 126px;
-  }
-
-  .top-nav :deep(.language-select) {
-    width: 94px;
   }
 
   .tab-label .el-icon {

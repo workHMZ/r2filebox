@@ -13,7 +13,6 @@ describe('scheduled cleanup reporting', () => {
 
   it('propagates an unexpected cleanup rejection to the scheduler', async () => {
     const failingEnv = {
-      CLEANUP_BATCH_SIZE: '100',
       BUCKET: env.BUCKET,
       DB: {
         prepare() {

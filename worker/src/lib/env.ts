@@ -1,7 +1,5 @@
 import type { Env } from '../types'
 
-const MAX_HARD_UPLOAD_BYTES = 95 * 1024 * 1024
-
 export function boolEnv(value: string | undefined, fallback = false): boolean {
   if (value === undefined || value === '') return fallback
   return value.toLowerCase() === 'true' || value === '1'
@@ -10,10 +8,6 @@ export function boolEnv(value: string | undefined, fallback = false): boolean {
 export function intEnv(value: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(value || '', 10)
   return Number.isFinite(parsed) ? parsed : fallback
-}
-
-export function getMaxUploadBytes(env: Env): number {
-  return Math.max(1, Math.min(intEnv(env.MAX_UPLOAD_BYTES, 50 * 1024 * 1024), MAX_HARD_UPLOAD_BYTES))
 }
 
 export function getRequiredSecret(env: Env, key: keyof Env): string {

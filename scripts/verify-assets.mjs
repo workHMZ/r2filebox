@@ -15,6 +15,7 @@ const expectedIcons = new Map([
 ])
 
 checkPng('/favicon-32.png', 32, 32, 20_000)
+checkPng('/app-logo-dark.png', 192, 192, 120_000)
 
 for (const icon of manifest.icons || []) {
   const expected = expectedIcons.get(icon.src)
@@ -39,6 +40,14 @@ if (manifest.share_target?.action !== '/#/share-target' || manifest.share_target
 if (manifest.share_target?.params?.files) failures.push('The manifest must not claim unsupported file share targets')
 if (manifest.background_color !== '#f3f6f8') failures.push('The PWA splash background must stay light')
 if (existsSync(resolve(publicDir, 'icon.png'))) failures.push('The 1024px source icon must not be served as a public UI asset')
+
+const themeInitPath = resolve(publicDir, 'theme-init.js')
+if (!existsSync(themeInitPath)) failures.push('Missing pre-render theme initializer: /theme-init.js')
+
+const indexHtml = readFileSync(resolve(root, 'frontend/index.html'), 'utf8')
+if (!indexHtml.includes('<script src="/theme-init.js"></script>')) {
+  failures.push('The theme initializer must run before the Vue module script')
+}
 
 if (failures.length) {
   console.error('Asset verification failed:')

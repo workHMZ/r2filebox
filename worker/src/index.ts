@@ -8,7 +8,10 @@ import version from './routes/version'
 import share from './routes/share'
 import admin from './routes/admin'
 import { cleanupExpiredShares } from './lib/cleanup'
+import { DEFAULT_CLEANUP_BATCH_SIZE } from './lib/runtime-config'
+import { error } from './lib/response'
 import { securityHeaders } from './lib/security'
+import { ErrorCode } from './types/errors'
 
 const app = new Hono<{ Bindings: Env }>()
 
@@ -21,12 +24,13 @@ app.route('', version)
 app.route('', share)
 app.route('', admin)
 
-// SPA Fallback for frontend — only needed for unmatched API-like paths.
-// Static asset routing and SPA index.html fallback are handled by the
-// Workers Static Assets layer (not_found_handling = "single-page-application"
-// in wrangler.toml), so the worker only sees paths listed in run_worker_first.
-app.all('*', (c) => {
-  return c.json({ code: 404, message: 'Not Found', data: null }, 404)
+app.notFound((c) => {
+  return c.json(error(ErrorCode.NOT_FOUND, 404, 'Not Found'), 404)
+})
+
+app.onError((cause, c) => {
+  console.error('Unhandled Worker request error:', cause)
+  return c.json(error(ErrorCode.INTERNAL_SERVER_ERROR, 500, 'Internal server error'), 500)
 })
 
 export default {
@@ -34,10 +38,9 @@ export default {
 
   // Scheduled Cron Trigger for Cleanup
   async scheduled(_controller: ScheduledController, env: Env) {
-    const batchSize = parseInt(env.CLEANUP_BATCH_SIZE || '100')
     // Let a rejection propagate so Cloudflare records the Cron invocation as
     // failed in Past Events instead of silently reporting success.
-    requireSuccessfulCleanup(await cleanupExpiredShares(env.DB, env.BUCKET, batchSize))
+    requireSuccessfulCleanup(await cleanupExpiredShares(env.DB, env.BUCKET, DEFAULT_CLEANUP_BATCH_SIZE))
   },
 } satisfies ExportedHandler<Env>
 

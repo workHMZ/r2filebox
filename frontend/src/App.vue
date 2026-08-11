@@ -23,7 +23,7 @@ const elementPlusLocale = computed(() => {
   if (locale.value === 'ja') return ja
   return en
 })
-const siteName = computed(() => configStore.siteName())
+const siteName = computed(() => configStore.siteName)
 
 void configStore.fetchConfig()
 

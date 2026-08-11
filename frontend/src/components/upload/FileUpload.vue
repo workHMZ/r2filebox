@@ -59,6 +59,7 @@
       v-model:expire-style="form.expire_style"
       :max-expire-hours="maxExpireHours"
       :expire-styles="configStore.config?.expireStyle"
+      show-security-tip
     />
 
     <TurnstileWidget
@@ -119,7 +120,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { shareApi, UploadPartError } from '@/api/share'
-import { isAxiosError } from 'axios'
+import { isTerminalUploadError } from '@/utils/upload-error'
 import { ElMessage } from 'element-plus'
 import { UploadFilled, Document, InfoFilled, Close, Upload } from '@element-plus/icons-vue'
 import type { UploadFile, UploadInstance } from 'element-plus'
@@ -448,15 +449,6 @@ const shouldRetryPart = (error: unknown) => {
   return error instanceof TypeError
 }
 
-const isTerminalUploadError = (error: unknown) => {
-  const status = error instanceof UploadPartError
-    ? error.status
-    : isAxiosError(error)
-      ? error.response?.status
-      : undefined
-  return status !== undefined && [400, 401, 404, 410, 413].includes(status)
-}
-
 const isAbortError = (error: unknown) => error instanceof DOMException && error.name === 'AbortError'
 
 const getFileFingerprint = async (file: File): Promise<string> => {
@@ -527,6 +519,7 @@ const verifySavedParts = async (state: UploadState, file: File): Promise<boolean
     const start = (part.partNumber - 1) * state.partSize
     const end = Math.min(start + state.partSize, file.size)
     if (await sha256Blob(file.slice(start, end)) !== part.sha256) return false
+    await new Promise((resolve) => setTimeout(resolve, 0))
   }
   return true
 }
@@ -587,23 +580,17 @@ onBeforeUnmount(cancelUpload)
   padding: 0;
 }
 
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
 
 .upload-dragger {
   margin-bottom: 22px;
 }
 
 .upload-dragger :deep(.el-upload-dragger) {
+  display: flex;
+  height: var(--share-content-height, 230px);
+  min-height: var(--share-content-height, 230px);
+  align-items: center;
+  justify-content: center;
   border: 1px dashed var(--control-border) !important;
   border-radius: var(--radius-lg) !important;
   background: var(--surface-raised) !important;
@@ -731,7 +718,7 @@ onBeforeUnmount(cancelUpload)
 }
 
 .file-type-badge {
-  background: #f8fafc;
+  background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
   border-radius: 4px;
   padding: 1px 6px;
@@ -741,14 +728,14 @@ onBeforeUnmount(cancelUpload)
 }
 
 .clear-file-btn {
-  background: #ffffff !important;
-  border: 1px solid #e7b8b8 !important;
+  background: var(--surface-card-solid) !important;
+  border: 1px solid var(--danger-border) !important;
   color: var(--danger-color) !important;
   box-shadow: none !important;
 }
 
 .clear-file-btn:hover {
-  background: #fff1f1 !important;
+  background: var(--danger-soft) !important;
   border-color: var(--danger-color) !important;
 }
 

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { publicApi, type PublicConfig } from '@/api/public'
 import { t } from '@/i18n'
 
@@ -54,14 +54,14 @@ export const useConfigStore = defineStore('config', () => {
   const refreshConfig = () => fetchConfig(true)
 
   // 获取站点名称
-  const siteName = () => {
+  const siteName = computed(() => {
     return config.value?.name || 'R2FileBox'
-  }
+  })
 
   // 获取站点描述
-  const siteDescription = () => {
+  const siteDescription = computed(() => {
     return config.value?.description || t('app.description')
-  }
+  })
 
   return {
     config,

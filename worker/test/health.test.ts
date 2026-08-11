@@ -20,8 +20,10 @@ describe('health routes', () => {
     expect(response.status).toBe(404)
     await expect(response.json()).resolves.toEqual({
       code: 404,
+      error_code: 'api.common.notFound',
       message: 'Not Found',
       data: null,
+      success: false,
     })
   })
 

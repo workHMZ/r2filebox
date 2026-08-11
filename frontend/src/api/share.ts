@@ -1,6 +1,7 @@
 import { request } from '@/utils/request'
 import type { ApiResponse } from '@/types/common'
 import { t } from '@/i18n'
+import { formatApiError } from '@/utils/error'
 
 export class UploadPartError extends Error {
   readonly status: number
@@ -100,8 +101,9 @@ export const shareApi = {
     if (!res.ok || data?.code !== 200) {
       const retryAfter = res.headers.get('Retry-After')
       const seconds = retryAfter === null ? Number.NaN : Number(retryAfter)
+      const errorMessage = data ? formatApiError(data, 'upload.failed') : t('upload.failed')
       throw new UploadPartError(
-        data?.message || t('upload.failed'),
+        errorMessage,
         res.status,
         Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : null,
       )

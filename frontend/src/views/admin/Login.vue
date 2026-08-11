@@ -8,13 +8,13 @@
     <div class="bg-decoration" aria-hidden="true"></div>
 
     <div class="login-toolbar">
-      <LanguageSwitch inline />
+      <InterfaceControls />
     </div>
 
     <div class="login-card glass-card">
       <div class="login-header">
         <AppLogo size="large" />
-        <h1 id="admin-login-title">{{ configStore.siteName() }}</h1>
+        <h1 id="admin-login-title">{{ configStore.siteName }}</h1>
         <p>{{ t('admin.login.subtitle') }}</p>
       </div>
 
@@ -126,7 +126,7 @@ import { useUserStore } from '@/stores/user'
 import { useConfigStore } from '@/stores/config'
 import { useI18n } from '@/i18n'
 import AppLogo from '@/components/AppLogo.vue'
-import LanguageSwitch from '@/components/LanguageSwitch.vue'
+import InterfaceControls from '@/components/InterfaceControls.vue'
 
 const router = useRouter()
 const userStore = useUserStore()

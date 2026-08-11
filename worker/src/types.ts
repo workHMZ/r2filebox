@@ -9,7 +9,11 @@ interface SecretBindings {
   TURNSTILE_SECRET_KEY?: string
 }
 
-export type Env = CloudflareBindings & SecretBindings
+interface DeploymentMetadataBindings {
+  GIT_COMMIT_HASH?: string
+}
+
+export type Env = CloudflareBindings & SecretBindings & DeploymentMetadataBindings
 
 export interface Share {
   id: string
@@ -65,4 +69,10 @@ export interface AuditLog {
   user_agent_hash: string | null
   status: string
   created_at: string
+}
+
+export interface AuditSubject {
+  type: string
+  name: string | null
+  sizeBytes: number | null
 }

@@ -9,7 +9,7 @@
       :aria-label="t('nav.share')"
     >
       <div class="page-toolbar">
-        <LanguageSwitch inline />
+        <InterfaceControls />
       </div>
       <div class="glass-card">
         <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
@@ -160,7 +160,7 @@ import type { ResolvedShare } from '@/api/share'
 import ActionFeedbackButton from '@/components/ActionFeedbackButton.vue'
 import { getLocaleTag, useI18n } from '@/i18n'
 import AppLogo from '@/components/AppLogo.vue'
-import LanguageSwitch from '@/components/LanguageSwitch.vue'
+import InterfaceControls from '@/components/InterfaceControls.vue'
 import { useActionFeedback } from '@/composables/useActionFeedback'
 import { formatDateTime, formatFileSize } from '@/utils/format'
 
@@ -366,7 +366,7 @@ watch(() => route.params.code, (value) => {
 }
 
 .home-btn {
-  background: #ffffff !important;
+  background: var(--surface-card-solid) !important;
   border: 1px solid var(--border-subtle) !important;
   color: var(--text-primary) !important;
   border-radius: var(--radius-md);
@@ -431,7 +431,7 @@ watch(() => route.params.code, (value) => {
   margin-bottom: 24px;
   border-radius: var(--radius-lg);
   overflow: hidden;
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--media-preview-bg);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -534,7 +534,7 @@ watch(() => route.params.code, (value) => {
 }
 
 .info-table-card {
-  background: #ffffff;
+  background: var(--surface-card-solid);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   display: flex;
@@ -547,7 +547,7 @@ watch(() => route.params.code, (value) => {
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
-  border-bottom: 1px solid #eef2f7;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .info-row:last-child {

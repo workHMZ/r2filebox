@@ -29,14 +29,50 @@ if (frontendPackageJson.version !== packageJson.version) {
 }
 
 expectMatch(/^compatibility_date = "2026-07-20"$/m, 'compatibility_date must be 2026-07-20')
+expectMatch(
+  /\[triggers\][\s\S]*?^crons\s*=\s*\[\s*"0 0 \* \* \*"\s*\]/m,
+  'scheduled cleanup must run every day at 00:00 UTC',
+)
 if (/\[\[kv_namespaces\]\]/.test(wrangler) || /binding = "RATE_LIMIT"/.test(wrangler)) {
   failures.push('The obsolete KV rate-limit binding must not be configured')
 }
 if (/^ENABLE_KV_RATE_LIMIT\s*=/m.test(wrangler)) {
   failures.push('The obsolete ENABLE_KV_RATE_LIMIT variable must not be configured')
 }
-expectMatch(/^GIT_COMMIT_HASH = "unknown"$/m, 'GIT_COMMIT_HASH must have a safe local fallback')
-expectMatch(/^BUILD_TIMESTAMP = ""$/m, 'BUILD_TIMESTAMP must have a safe local fallback')
+expectMatch(
+  /\[version_metadata\][\s\S]*?^binding = "VERSION_METADATA"$/m,
+  'VERSION_METADATA must use the Cloudflare version metadata binding',
+)
+
+const applicationDefaultVars = [
+  'APP_NAME',
+  'APP_DESCRIPTION',
+  'CODE_LENGTH',
+  'MAX_UPLOAD_BYTES',
+  'MAX_TOTAL_STORAGE_BYTES',
+  'DEFAULT_EXPIRE_HOURS',
+  'MAX_EXPIRE_HOURS',
+  'DEFAULT_MAX_DOWNLOADS',
+  'CLEANUP_BATCH_SIZE',
+  'ENABLE_TEXT_SHARE',
+  'ENABLE_FILE_SHARE',
+  'ENABLE_PUBLIC_UPLOAD',
+  'ENABLE_AUDIT_LOG',
+  'ENABLE_ACCESS_LOG',
+  'ENABLE_NATIVE_RATE_LIMIT',
+  'RATE_LIMIT_UPLOAD_PER_MINUTE',
+  'RATE_LIMIT_UPLOAD_PART_PER_MINUTE',
+  'RATE_LIMIT_RESOLVE_PER_MINUTE',
+  'RATE_LIMIT_DOWNLOAD_PER_MINUTE',
+  'RATE_LIMIT_AUTH_PER_15_MIN',
+  'GIT_COMMIT_HASH',
+  'BUILD_TIMESTAMP',
+]
+for (const name of applicationDefaultVars) {
+  if (new RegExp(`^${name}\\s*=`, 'm').test(wrangler)) {
+    failures.push(`${name} must not be exposed as a static deployment variable`)
+  }
+}
 
 const expectedRateLimits = new Map([
   ['UPLOAD_RATE_LIMITER', 600],
@@ -63,8 +99,8 @@ for (const name of expectedRateLimits.keys()) failures.push(`Missing native rate
 for (const binding of ['UPLOAD_RATE_LIMITER', 'UPLOAD_PART_RATE_LIMITER', 'RESOLVE_RATE_LIMITER', 'DOWNLOAD_RATE_LIMITER']) {
   if (!generatedBindings.includes(`\t${binding}: RateLimit;`)) failures.push(`Generated bindings are stale: ${binding} is missing`)
 }
-for (const binding of ['GIT_COMMIT_HASH', 'BUILD_TIMESTAMP']) {
-  if (!generatedBindings.includes(`\t${binding}: `)) failures.push(`Generated bindings are stale: ${binding} is missing`)
+if (!generatedBindings.includes('\tVERSION_METADATA: WorkerVersionMetadata;')) {
+  failures.push('Generated bindings are stale: VERSION_METADATA is missing')
 }
 
 if (process.env.REQUIRE_PLACEHOLDER_BINDINGS === '1') {

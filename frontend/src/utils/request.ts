@@ -2,6 +2,8 @@ import axios from 'axios'
 import type { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios'
 import { ElMessage } from 'element-plus'
 import { t } from '@/i18n'
+import type { ApiResponse } from '@/types/common'
+import { ApiError, formatApiError } from '@/utils/error'
 
 export interface RequestConfig extends AxiosRequestConfig {
   suppressErrorMessage?: boolean
@@ -22,44 +24,54 @@ let authRedirecting = false
 instance.interceptors.response.use(
   (response) => {
     if (isAdminApi(response.config.url)) authRedirecting = false
+    // 针对 HTTP 200 响应中包含的业务失败格式化 message
+    if (
+      response.data &&
+      typeof response.data === 'object' &&
+      (response.data as ApiResponse).success === false
+    ) {
+      const res = response.data as ApiResponse
+      res.message = formatApiError(res)
+    }
     return response
   },
-  (error: AxiosError<{ message?: string }>) => {
+  (error: AxiosError<ApiResponse>) => {
     const config = (error.config || {}) as RequestConfig
-    const responseMessage = error.response?.data?.message
-    if (responseMessage) error.message = responseMessage
+    const responseData = error.response?.data
+
+    const apiError = new ApiError(
+      responseData?.message || error.message || t('request.failed'),
+      error.response?.status || 500,
+      responseData?.error_code,
+      responseData?.params,
+    )
+
+    const userFriendlyMessage = error.response
+      ? formatApiError(apiError)
+      : t('request.network')
+
+    // 更新 ApiError 对象的 message 属性为本地化文案
+    apiError.message = userFriendlyMessage
 
     if (error.response) {
-      switch (error.response.status) {
-        case 401:
-          showErrorOnce(responseMessage || t('request.unauthorized'), config)
-          if (
-            isAdminApi(error.config?.url) &&
-            error.config?.url !== '/admin/login' &&
-            !config.suppressAuthRedirect &&
-            !authRedirecting
-          ) {
-            authRedirecting = true
-            window.location.replace('/#/admin/login')
-          }
-          break
-        case 403:
-          showErrorOnce(responseMessage || t('request.forbidden'), config)
-          break
-        case 404:
-          showErrorOnce(responseMessage || t('request.notFound'), config)
-          break
-        case 500:
-          showErrorOnce(responseMessage || t('request.server'), config)
-          break
-        default:
-          showErrorOnce(responseMessage || t('request.failed'), config)
+      showErrorOnce(userFriendlyMessage, config)
+
+      if (
+        error.response.status === 401 &&
+        isAdminApi(error.config?.url) &&
+        error.config?.url !== '/admin/login' &&
+        !config.suppressAuthRedirect &&
+        !authRedirecting
+      ) {
+        authRedirecting = true
+        window.location.replace(`${window.location.pathname}${window.location.search}#/admin/login`)
       }
     } else {
-      showErrorOnce(t('request.network'), config)
+      showErrorOnce(userFriendlyMessage, config)
     }
-    return Promise.reject(error)
-  }
+
+    return Promise.reject(apiError)
+  },
 )
 
 export const request = <T = unknown>(config: RequestConfig): Promise<T> => {

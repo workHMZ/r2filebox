@@ -35,26 +35,89 @@
 
         <!-- 上传配置 -->
         <el-tab-pane :label="t('config.upload')" name="upload">
-          <el-form :model="configForm.transfer.upload" label-width="140px" class="config-form">
+          <el-form :model="configForm" label-width="160px" class="config-form config-form--wide">
+            <el-form-item :label="t('config.fileShare')">
+              <el-switch v-model="configForm.transfer.enable_file_share" :active-value="1" :inactive-value="0" />
+            </el-form-item>
+
+            <el-form-item :label="t('config.textShare')">
+              <el-switch v-model="configForm.transfer.enable_text_share" :active-value="1" :inactive-value="0" />
+            </el-form-item>
+
             <el-form-item :label="t('config.openUpload')">
               <el-switch v-model="configForm.transfer.upload.openupload" :active-value="1" :inactive-value="0" />
             </el-form-item>
 
             <el-form-item :label="t('config.uploadSize')">
-              <div class="upload-size-field">
-                <div class="upload-size-input">
+              <div class="config-number-field">
+                <div class="config-number-control">
                   <el-input-number
                     v-describedby="'config-upload-size-hint'"
                     v-model="uploadSizeMb"
                     :min="1"
+                    :max="95"
                     :step="1"
                     controls-position="right"
                   />
-                  <span class="upload-size-unit">MB</span>
+                  <span class="config-number-unit">MB</span>
                 </div>
                 <span id="config-upload-size-hint" class="field-hint">
                   {{ t('config.uploadSizeHint') }}
                 </span>
+              </div>
+            </el-form-item>
+
+            <el-form-item :label="t('config.totalStorage')">
+              <div class="config-number-field">
+                <div class="config-number-control">
+                  <el-input-number
+                    v-describedby="'config-total-storage-hint'"
+                    v-model="totalStorageGiB"
+                    :min="1"
+                    :step="1"
+                    controls-position="right"
+                  />
+                  <span class="config-number-unit">GiB</span>
+                </div>
+                <span id="config-total-storage-hint" class="field-hint">
+                  {{ t('config.totalStorageHint') }}
+                </span>
+              </div>
+            </el-form-item>
+
+            <el-form-item :label="t('config.defaultExpire')">
+              <div class="config-number-control">
+                <el-input-number
+                  v-model="configForm.transfer.expire_default"
+                  :min="1"
+                  :max="8760"
+                  controls-position="right"
+                />
+                <span class="config-number-unit">h</span>
+              </div>
+            </el-form-item>
+
+            <el-form-item :label="t('config.maxExpire')">
+              <div class="config-number-control">
+                <el-input-number
+                  v-model="configForm.transfer.max_expire_hours"
+                  :min="1"
+                  :max="8760"
+                  controls-position="right"
+                />
+                <span class="config-number-unit">h</span>
+              </div>
+            </el-form-item>
+
+            <el-form-item :label="t('config.maxDownloads')">
+              <div class="config-number-control">
+                <el-input-number
+                  v-model="configForm.transfer.max_count"
+                  :min="1"
+                  :max="1000000"
+                  controls-position="right"
+                />
+                <span class="config-number-unit" aria-hidden="true"></span>
               </div>
             </el-form-item>
           </el-form>
@@ -134,6 +197,7 @@ const configStore = useConfigStore()
 const { t } = useI18n()
 const { active: saveSucceeded, show: showSaveSucceeded } = useActionFeedback()
 const BYTES_PER_MB = 1024 * 1024
+const BYTES_PER_GIB = 1024 * 1024 * 1024
 
 const connectDescription = (root: HTMLElement, descriptionId: string) => {
   const control = root.matches('input, textarea, select, [role="switch"], [role="spinbutton"]')
@@ -162,10 +226,20 @@ const configForm = reactive({
     name: '',
     description: ''
   },
+  storage: {
+    type: 'r2',
+    max_size: 50,
+    max_total_storage_bytes: 8 * BYTES_PER_GIB
+  },
   transfer: {
+    max_count: 10,
+    expire_default: 24,
+    max_expire_hours: 168,
+    enable_text_share: 1,
+    enable_file_share: 1,
     upload: {
       openupload: 1,
-      uploadsize: 10485760
+      uploadsize: 50 * BYTES_PER_MB
     },
     rate_limit: {
       enabled: 1,
@@ -192,6 +266,14 @@ const uploadSizeMb = computed({
   }
 })
 
+const totalStorageGiB = computed({
+  get: () => Math.round((configForm.storage.max_total_storage_bytes / BYTES_PER_GIB) * 100) / 100,
+  set: (value: number | undefined) => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return
+    configForm.storage.max_total_storage_bytes = Math.round(value * BYTES_PER_GIB)
+  }
+})
+
 const fetchConfig = async () => {
   loading.value = true
   try {
@@ -200,6 +282,9 @@ const fetchConfig = async () => {
       // 映射配置数据
       if (res.data.base) {
         Object.assign(configForm.base, res.data.base)
+      }
+      if (res.data.storage) {
+        Object.assign(configForm.storage, res.data.storage)
       }
       if (res.data.transfer) {
         Object.assign(configForm.transfer, res.data.transfer)
@@ -272,36 +357,49 @@ onMounted(() => {
   font-size: 12px;
 }
 
-.upload-size-field {
+.config-number-field {
   display: flex;
+  width: 100%;
   min-width: 0;
   flex-direction: column;
   align-items: flex-start;
   gap: 7px;
 }
 
-.upload-size-input {
-  display: flex;
+.config-number-control {
+  display: grid;
+  width: min(100%, 232px);
+  min-width: 0;
+  grid-template-columns: minmax(0, 190px) 32px;
+  column-gap: 10px;
   align-items: center;
-  gap: 10px;
 }
 
-.upload-size-input :deep(.el-input-number) {
-  width: 180px;
+.config-number-control :deep(.el-input-number) {
+  width: 100%;
+  height: 38px;
 }
 
-.upload-size-unit {
+.config-number-control :deep(.el-input__wrapper) {
+  min-height: 38px;
+}
+
+.config-number-unit {
+  display: block;
+  width: 32px;
   color: var(--text-secondary);
   font-size: 14px;
   font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
 }
 
-.upload-size-field .field-hint {
+.config-number-field .field-hint {
   margin-left: 0;
   line-height: 1.5;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .card-header {
     align-items: stretch;
     flex-direction: column;
@@ -329,12 +427,19 @@ onMounted(() => {
     margin: 7px 0 0;
   }
 
-  .upload-size-field {
+  .config-number-field {
     width: 100%;
   }
 
-  .upload-size-field .field-hint {
+  .config-number-field .field-hint {
     margin-top: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .config-number-control {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr) 32px;
   }
 }
 </style>

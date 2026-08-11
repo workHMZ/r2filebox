@@ -173,7 +173,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onBeforeUnmount, onMounted, watch } from 'vue'
+import { computed, nextTick, ref, reactive, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { 
   Folder, Coin, TrendCharts, ArrowRight, Document, Monitor, Delete 
@@ -192,6 +192,7 @@ import {
   Filler
 } from 'chart.js'
 import { Line, Doughnut } from 'vue-chartjs'
+import { useTheme } from '@/composables/useTheme'
 import { getLocaleTag, useI18n } from '@/i18n'
 import { formatDateTime, formatFileSize } from '@/utils/format'
 
@@ -209,6 +210,7 @@ ChartJS.register(
 
 const loading = ref(false)
 const { t, locale } = useI18n()
+const { isDark } = useTheme()
 const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
 let animationFrame: number | null = null
 
@@ -252,16 +254,76 @@ interface TypeDataPoint {
 const trendAccessibleData = ref<TrendDataPoint[]>([])
 const typeAccessibleData = ref<TypeDataPoint[]>([])
 
+interface ChartThemeColors {
+  primary: string
+  areaFill: string
+  pointBackground: string
+  grid: string
+  textPrimary: string
+  textRegular: string
+  textSecondary: string
+  border: string
+  tooltipBackground: string
+  series: string[]
+}
+
+const fallbackChartTheme = (dark: boolean): ChartThemeColors => ({
+  primary: dark ? '#55d1c8' : '#086f68',
+  areaFill: dark ? 'rgba(85, 209, 200, 0.18)' : 'rgba(8, 111, 104, 0.12)',
+  pointBackground: dark ? '#162128' : '#ffffff',
+  grid: dark ? 'rgba(213, 228, 231, 0.1)' : 'rgba(0, 0, 0, 0.05)',
+  textPrimary: dark ? '#edf5f6' : '#182229',
+  textRegular: dark ? '#d3e0e3' : '#34434d',
+  textSecondary: dark ? '#a7b8bf' : '#5f7079',
+  border: dark ? '#2a3941' : '#dce4e8',
+  tooltipBackground: dark ? '#1b272e' : '#ffffff',
+  series: dark
+    ? ['#55d1c8', '#75a7ff', '#f7b267', '#62d58b', '#a7b8bf', '#ff8181']
+    : ['#086f68', '#2563eb', '#f6821f', '#20824a', '#64748b', '#c33a3a'],
+})
+
+const chartTheme = ref<ChartThemeColors>(fallbackChartTheme(isDark.value))
+
+const readThemeColor = (styles: CSSStyleDeclaration, name: string, fallback: string) => {
+  return styles.getPropertyValue(name).trim() || fallback
+}
+
+const readChartTheme = (): ChartThemeColors => {
+  const fallback = fallbackChartTheme(isDark.value)
+  if (typeof window === 'undefined') return fallback
+
+  const styles = window.getComputedStyle(document.documentElement)
+  return {
+    primary: readThemeColor(styles, '--primary-color', fallback.primary),
+    areaFill: readThemeColor(styles, '--chart-area-fill', fallback.areaFill),
+    pointBackground: readThemeColor(styles, '--surface-card-solid', fallback.pointBackground),
+    grid: readThemeColor(styles, '--chart-grid', fallback.grid),
+    textPrimary: readThemeColor(styles, '--text-primary', fallback.textPrimary),
+    textRegular: readThemeColor(styles, '--text-regular', fallback.textRegular),
+    textSecondary: readThemeColor(styles, '--text-secondary', fallback.textSecondary),
+    border: readThemeColor(styles, '--border-subtle', fallback.border),
+    tooltipBackground: readThemeColor(styles, '--surface-overlay', fallback.tooltipBackground),
+    series: [
+      readThemeColor(styles, '--primary-color', fallback.series[0]!),
+      readThemeColor(styles, '--info-color', fallback.series[1]!),
+      readThemeColor(styles, '--accent-color', fallback.series[2]!),
+      readThemeColor(styles, '--success-color', fallback.series[3]!),
+      readThemeColor(styles, '--text-secondary', fallback.series[4]!),
+      readThemeColor(styles, '--danger-color', fallback.series[5]!),
+    ],
+  }
+}
+
 // Chart Data
 const trendData = reactive({
   labels: [] as string[],
   datasets: [
     {
       label: t('dashboard.uploads'),
-      backgroundColor: 'rgba(8, 111, 104, 0.12)',
-      borderColor: '#086f68',
-      pointBackgroundColor: '#ffffff',
-      pointBorderColor: '#086f68',
+      backgroundColor: chartTheme.value.areaFill,
+      borderColor: chartTheme.value.primary,
+      pointBackgroundColor: chartTheme.value.pointBackground,
+      pointBorderColor: chartTheme.value.primary,
       borderWidth: 2,
       fill: true,
       tension: 0.4,
@@ -270,7 +332,7 @@ const trendData = reactive({
   ]
 })
 
-const trendOptions = {
+const trendOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
@@ -280,41 +342,51 @@ const trendOptions = {
     tooltip: {
       mode: 'index' as const,
       intersect: false,
+      backgroundColor: chartTheme.value.tooltipBackground,
+      titleColor: chartTheme.value.textPrimary,
+      bodyColor: chartTheme.value.textRegular,
+      borderColor: chartTheme.value.border,
+      borderWidth: 1,
     }
   },
   scales: {
     y: {
       beginAtZero: true,
+      ticks: {
+        color: chartTheme.value.textSecondary,
+      },
       grid: {
-        color: 'rgba(0, 0, 0, 0.05)',
-      }
+        color: chartTheme.value.grid,
+      },
+      border: {
+        color: chartTheme.value.border,
+      },
     },
     x: {
+      ticks: {
+        color: chartTheme.value.textSecondary,
+      },
       grid: {
         display: false
-      }
+      },
+      border: {
+        color: chartTheme.value.border,
+      },
     }
   }
-}
+}))
 
 const typeData = reactive({
   labels: [] as string[],
   datasets: [
     {
-      backgroundColor: [
-        '#086f68',
-        '#2563eb',
-        '#f6821f',
-        '#20824a',
-        '#64748b',
-        '#c33a3a'
-      ],
+      backgroundColor: [...chartTheme.value.series],
       data: [] as number[]
     }
   ]
 })
 
-const typeOptions = {
+const typeOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
@@ -322,12 +394,36 @@ const typeOptions = {
       position: 'right' as const,
       labels: {
         usePointStyle: true,
-        padding: 20
+        padding: 20,
+        color: chartTheme.value.textSecondary,
       }
+    },
+    tooltip: {
+      backgroundColor: chartTheme.value.tooltipBackground,
+      titleColor: chartTheme.value.textPrimary,
+      bodyColor: chartTheme.value.textRegular,
+      borderColor: chartTheme.value.border,
+      borderWidth: 1,
     }
   },
   cutout: '65%'
+}))
+
+const applyChartTheme = () => {
+  chartTheme.value = readChartTheme()
+  const colors = chartTheme.value
+  const trendDataset = trendData.datasets[0]!
+  trendDataset.backgroundColor = colors.areaFill
+  trendDataset.borderColor = colors.primary
+  trendDataset.pointBackgroundColor = colors.pointBackground
+  trendDataset.pointBorderColor = colors.primary
+  typeData.datasets[0]!.backgroundColor = [...colors.series]
 }
+
+watch(isDark, async () => {
+  await nextTick()
+  applyChartTheme()
+}, { immediate: true, flush: 'post' })
 
 const formatDate = (dateStr: string): string => {
   return formatDateTime(dateStr, getLocaleTag(locale.value))
@@ -481,15 +577,15 @@ onBeforeUnmount(() => {
   gap: 15px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xl);
-  background: #ffffff;
+  background: var(--surface-card-solid);
   color: var(--text-primary);
-  box-shadow: 0 1px 2px rgba(17, 31, 38, 0.03), 0 8px 22px rgba(17, 31, 38, 0.04);
+  box-shadow: var(--glass-shadow);
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .stat-card:hover {
   border-color: var(--border-strong);
-  box-shadow: 0 2px 4px rgba(17, 31, 38, 0.04), 0 12px 28px rgba(17, 31, 38, 0.06);
+  box-shadow: var(--glass-shadow-lg);
 }
 
 .stat-icon {
@@ -504,11 +600,11 @@ onBeforeUnmount(() => {
 }
 
 .stat-card--teal .stat-icon { background: var(--primary-soft); color: var(--primary-color); }
-.stat-card--blue .stat-icon { background: #edf4ff; color: #2563eb; }
-.stat-card--slate .stat-icon { background: #eef2f4; color: #526570; }
-.stat-card--green .stat-icon { background: #edf8f1; color: var(--success-color); }
-.stat-card--orange .stat-icon { background: var(--accent-soft); color: #c45c0c; }
-.stat-card--red .stat-icon { background: #fff0f0; color: var(--danger-color); }
+.stat-card--blue .stat-icon { background: var(--info-soft); color: var(--info-color); }
+.stat-card--slate .stat-icon { background: var(--primary-soft); color: var(--primary-active); }
+.stat-card--green .stat-icon { background: var(--success-soft); color: var(--success-color); }
+.stat-card--orange .stat-icon { background: var(--warning-soft); color: var(--warning-color); }
+.stat-card--red .stat-icon { background: var(--danger-soft); color: var(--danger-color); }
 
 .stat-content { min-width: 0; }
 
@@ -534,6 +630,10 @@ onBeforeUnmount(() => {
 
 .chart-card {
   height: 100%;
+  border-color: var(--border-subtle) !important;
+  background: var(--surface-card-solid) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--glass-shadow) !important;
 }
 
 .card-header {
@@ -556,6 +656,7 @@ onBeforeUnmount(() => {
   position: relative;
   height: 280px;
   width: 100%;
+  color: var(--text-regular);
 }
 
 .visual-chart {
@@ -563,17 +664,6 @@ onBeforeUnmount(() => {
   height: 100%;
 }
 
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
 
 .doughnut-container {
   display: flex;
@@ -587,6 +677,23 @@ onBeforeUnmount(() => {
 
 .recent-card {
   overflow: hidden;
+  border-color: var(--border-subtle) !important;
+  background: var(--surface-card-solid) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--glass-shadow) !important;
+}
+
+.chart-card :deep(.el-card__header),
+.chart-card :deep(.el-card__body),
+.recent-card :deep(.el-card__header),
+.recent-card :deep(.el-card__body) {
+  background: transparent;
+  color: inherit;
+}
+
+.recent-card :deep(.el-table) {
+  background: transparent !important;
+  color: var(--text-regular) !important;
 }
 
 :deep(.el-card__header) {

@@ -91,17 +91,6 @@ const handleGetShare = () => {
   padding: 8px 0 0;
 }
 
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
 
 .input-section {
   margin: 8px 0 36px;
@@ -121,8 +110,9 @@ const handleGetShare = () => {
 }
 
 .code-input :deep(.el-input__wrapper) {
+  height: 50px !important;
   min-height: 50px !important;
-  padding: 10px 16px !important;
+  padding: 5px 16px !important;
   font-size: 16px !important;
 }
 

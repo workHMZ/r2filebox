@@ -72,7 +72,7 @@ export async function cleanupExpiredShares(
         // A completed multipart upload cannot be aborted. Deleting its final key
         // also makes a lost R2-complete/D1-commit window safe to clean up. If
         // the upload is still incomplete, R2 automatically expires it after
-        // seven days by default even though deleting the final key is a no-op.
+        // seven days by default, even though deleting the final key is a no-op.
         try {
           await r2Client.deleteObject(session.r2_key)
           return { id: session.id, aborted: false, deletedObject: true }

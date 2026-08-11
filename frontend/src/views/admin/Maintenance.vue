@@ -209,7 +209,7 @@ const { locale, t } = useI18n()
 const { active: cleanupSucceeded, show: showCleanupSucceeded } = useActionFeedback()
 
 const versionInfo = ref<VersionInfo>({
-  version: '2.1',
+  version: '2.2',
   commit_hash: 'dev',
   short_hash: 'dev',
   build_time: null,
@@ -335,9 +335,9 @@ onMounted(() => {
   font-size: 22px;
 }
 
-.status-icon--success { background: #edf8f1; color: var(--success-color); }
-.status-icon--warning { background: var(--accent-soft); color: #c45c0c; }
-.status-icon--danger { background: #fff0f0; color: var(--danger-color); }
+.status-icon--success { background: var(--success-soft); color: var(--success-color); }
+.status-icon--warning { background: var(--warning-soft); color: var(--warning-color); }
+.status-icon--danger { background: var(--danger-soft); color: var(--danger-color); }
 
 .status-info h4 {
   margin: 0 0 5px;
@@ -464,7 +464,7 @@ onMounted(() => {
 
 .architecture-card--r2 .architecture-icon {
   color: var(--success-color);
-  background: #edf8f1;
+  background: var(--success-soft);
 }
 
 .architecture-card--d1 .architecture-icon {
@@ -473,13 +473,13 @@ onMounted(() => {
 }
 
 .architecture-card--worker .architecture-icon {
-  color: #c45c0c;
-  background: var(--accent-soft);
+  color: var(--warning-color);
+  background: var(--warning-soft);
 }
 
 .architecture-card--analytics .architecture-icon {
   color: var(--info-color);
-  background: #edf4ff;
+  background: var(--info-soft);
 }
 
 .architecture-title {

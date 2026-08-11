@@ -46,7 +46,7 @@ export const calculateExpireAt = (
   hoursToAdd = Math.min(hoursToAdd, Math.max(maxHours, 1))
 
   const expireDate = new Date()
-  // hoursToAdd can be fractional (e.g. for minutes)
+  // hoursToAdd can be fractional (e.g., for minutes).
   expireDate.setTime(expireDate.getTime() + hoursToAdd * 60 * 60 * 1000)
   
   return expireDate.toISOString()
@@ -62,7 +62,7 @@ export const contentDispositionInline = (filename: string): string => {
 
 const contentDisposition = (disposition: 'attachment' | 'inline', filename: string): string => {
   const safe = sanitizeFilename(filename).replace(/"/g, '')
-  // ASCII-only fallback for clients that don't support RFC 5987 filename*
+  // ASCII-only fallback for clients that don't support the RFC 5987 filename* parameter.
   const asciiFallback = safe.replace(/[^\x20-\x7E]/g, '_') || 'download'
   return `${disposition}; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(safe)}`
 }
