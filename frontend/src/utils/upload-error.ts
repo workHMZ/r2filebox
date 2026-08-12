@@ -1,6 +1,16 @@
 const TERMINAL_UPLOAD_STATUSES = new Set([400, 401, 404, 410, 413])
 
 export function isTerminalUploadError(error: unknown): boolean {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'name' in error &&
+    error.name === 'UploadPartError' &&
+    'errorCode' in error &&
+    error.errorCode === 'api.share.partIncompleteRetry'
+  ) {
+    return false
+  }
   const status = readStatus(error)
   return status !== undefined && TERMINAL_UPLOAD_STATUSES.has(status)
 }

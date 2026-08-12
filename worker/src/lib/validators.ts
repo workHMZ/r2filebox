@@ -64,5 +64,7 @@ const contentDisposition = (disposition: 'attachment' | 'inline', filename: stri
   const safe = sanitizeFilename(filename).replace(/"/g, '')
   // ASCII-only fallback for clients that don't support the RFC 5987 filename* parameter.
   const asciiFallback = safe.replace(/[^\x20-\x7E]/g, '_') || 'download'
-  return `${disposition}; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(safe)}`
+  const encodedFilename = encodeURIComponent(safe)
+    .replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
+  return `${disposition}; filename="${asciiFallback}"; filename*=UTF-8''${encodedFilename}`
 }

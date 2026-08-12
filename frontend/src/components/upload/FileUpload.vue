@@ -293,9 +293,13 @@ const handleUpload = async () => {
   const controller = new AbortController()
   uploadController = controller
 
+  let completedCount = 0
+  let fatalUploadError: unknown = null
+
   try {
     if (state) {
       uploadStatusText.value = t('upload.resume')
+      completedCount = state.parts.length
     } else {
       const initRes = await shareApi.initFileUpload({
         filename: file.name,
@@ -325,31 +329,72 @@ const handleUpload = async () => {
       resumableState.value = state
     }
 
+    const uploadOnePart = async (index: number) => {
+      const partNumber = index + 1
+      const start = index * state!.partSize
+      const end = Math.min(start + state!.partSize, file.size)
+      const chunk = file.slice(start, end)
+
+      uploadStatusText.value = t('upload.part', { current: completedCount + 1, total: state!.partCount })
+
+      try {
+        const [part, sha256] = await Promise.all([
+          uploadPartWithRetry(
+            state!.uploadToken,
+            partNumber,
+            chunk,
+            controller.signal,
+          ),
+          sha256Blob(chunk),
+        ])
+
+        state!.parts.push({ ...part, sha256 })
+        state!.parts.sort((a, b) => a.partNumber - b.partNumber)
+        saveUploadState(state!)
+        resumableState.value = state
+        completedCount++
+        updateProgress(state!)
+      } catch (error) {
+        if (!fatalUploadError && !isAbortError(error)) {
+          fatalUploadError = error
+          controller.abort()
+        }
+        throw error
+      }
+    }
+
+    const pendingIndices: number[] = []
     for (let index = 0; index < state.partCount; index++) {
       const partNumber = index + 1
-      if (state.parts.some((part) => part.partNumber === partNumber)) {
+      if (!state.parts.some((part) => part.partNumber === partNumber)) {
+        pendingIndices.push(index)
+      } else {
         updateProgress(state)
-        continue
+      }
+    }
+
+    const worker = async () => {
+      while (true) {
+        if (controller.signal.aborted) return
+        const index = pendingIndices.shift()
+        if (index === undefined) return
+        await uploadOnePart(index)
+      }
+    }
+
+    const concurrency = Math.min(3, pendingIndices.length)
+    if (concurrency > 0) {
+      const workers = Array.from({ length: concurrency }, () => worker())
+      const results = await Promise.allSettled(workers)
+
+      if (fatalUploadError) {
+        throw fatalUploadError
       }
 
-      const start = index * state.partSize
-      const end = Math.min(start + state.partSize, file.size)
-      uploadStatusText.value = t('upload.part', { current: partNumber, total: state.partCount })
-      const chunk = file.slice(start, end)
-      const [part, sha256] = await Promise.all([
-        uploadPartWithRetry(
-          state.uploadToken,
-          partNumber,
-          chunk,
-          controller.signal,
-        ),
-        sha256Blob(chunk),
-      ])
-      state.parts.push({ ...part, sha256 })
-      state.parts.sort((a, b) => a.partNumber - b.partNumber)
-      saveUploadState(state)
-      resumableState.value = state
-      updateProgress(state)
+      const rejected = results.find((result) => result.status === 'rejected')
+      if (rejected?.status === 'rejected') {
+        throw rejected.reason
+      }
     }
 
     uploadStatusText.value = t('upload.complete')
@@ -385,6 +430,19 @@ const handleUpload = async () => {
     uploadProgress.value = 0
   } catch (error: unknown) {
     turnstileRef.value?.reset()
+
+    if (fatalUploadError) {
+      const actualError = fatalUploadError
+      if (state && isTerminalUploadError(actualError)) {
+        removeUploadState(state.fingerprint)
+        resumableState.value = null
+      }
+      const errorMessage = actualError instanceof Error ? actualError.message : t('upload.failed')
+      ElMessage.error(errorMessage)
+      uploading.value = false
+      return
+    }
+
     if (controller.signal.aborted || isAbortError(error)) {
       uploadStatusText.value = t('upload.cancelled')
       uploadAnnouncement.value = t('upload.cancelled')
@@ -392,6 +450,7 @@ const handleUpload = async () => {
       uploading.value = false
       return
     }
+
     if (state && isTerminalUploadError(error)) {
       removeUploadState(state.fingerprint)
       resumableState.value = null
@@ -419,10 +478,11 @@ const uploadPartWithRetry = async (
       lastError = error
       if (signal.aborted || !shouldRetryPart(error) || attempt === 3) break
       uploadStatusText.value = t('upload.retry', { part: partNumber, attempt })
-      const delay = error instanceof UploadPartError && error.retryAfterMs !== null
+      const baseDelay = error instanceof UploadPartError && error.retryAfterMs !== null
         ? error.retryAfterMs
-        : 500 * attempt
-      await sleep(delay, signal)
+        : 500 * Math.pow(2, attempt - 1)
+      const jitter = Math.random() * 200
+      await sleep(baseDelay + jitter, signal)
     }
   }
   throw lastError instanceof Error ? lastError : new Error(t('upload.failed'))
@@ -445,8 +505,13 @@ const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((resolve, r
 })
 
 const shouldRetryPart = (error: unknown) => {
-  if (error instanceof UploadPartError) return error.status === 429 || error.status >= 500
-  return error instanceof TypeError
+  if (!(error instanceof UploadPartError)) {
+    return error instanceof TypeError
+  }
+  if (error.errorCode === 'api.share.partIncompleteRetry') {
+    return true
+  }
+  return error.status === 429 || error.status >= 500
 }
 
 const isAbortError = (error: unknown) => error instanceof DOMException && error.name === 'AbortError'

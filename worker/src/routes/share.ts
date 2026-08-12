@@ -366,7 +366,6 @@ async function uploadMultipartPart(c: Context<{ Bindings: Bindings }>) {
       throw new BodyTooLargeError()
     }
     if (guarded.sourceCompleted() && guarded.bytesRead() < expectedBytes) {
-      await abortUploadSession(r2, db, session)
       return c.json(error(ErrorCode.PART_INCOMPLETE_RETRY, 400, 'Incomplete part size, please upload again'), 400)
     }
     if (uploadResult.status === 'rejected') throw uploadResult.reason

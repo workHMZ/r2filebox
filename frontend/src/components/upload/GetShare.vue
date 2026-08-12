@@ -47,6 +47,7 @@
           <li>{{ t('get.tips.one') }}</li>
           <li>{{ t('get.tips.two') }}</li>
           <li>{{ t('get.tips.three') }}</li>
+          <li>{{ t('get.tips.four') }}</li>
         </ul>
       </div>
     </div>

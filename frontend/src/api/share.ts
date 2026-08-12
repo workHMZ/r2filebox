@@ -5,16 +5,19 @@ import { formatApiError } from '@/utils/error'
 
 export class UploadPartError extends Error {
   readonly status: number
+  readonly errorCode: string | null
   readonly retryAfterMs: number | null
 
   constructor(
     message: string,
     status: number,
+    errorCode: string | null,
     retryAfterMs: number | null,
   ) {
     super(message)
     this.name = 'UploadPartError'
     this.status = status
+    this.errorCode = errorCode
     this.retryAfterMs = retryAfterMs
   }
 }
@@ -105,6 +108,7 @@ export const shareApi = {
       throw new UploadPartError(
         errorMessage,
         res.status,
+        data?.error_code ?? null,
         Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : null,
       )
     }

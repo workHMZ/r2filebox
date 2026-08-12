@@ -304,6 +304,63 @@ describe('share download accounting', () => {
     })
     expect(part.status).toBe(404)
   })
+
+  it('does not abort the upload session when a part is uploaded incompletely', async () => {
+    const init = await SELF.fetch('https://example.test/api/share/file/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: 'incomplete.bin', mimeType: 'application/octet-stream', size: 100 }),
+    })
+    expect(init.status).toBe(200)
+    const body = await init.json<{ data: { uploadToken: string } }>()
+
+    const request = new Request('https://example.test/api/share/file/part', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'X-Part-Number': '1',
+        'X-Upload-Token': body.data.uploadToken,
+      },
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(50))
+          controller.close()
+        }
+      })
+    })
+
+    expect(request.headers.get('Content-Length')).toBeNull()
+
+    const part = await SELF.fetch(request)
+    expect(part.status).toBe(400)
+    const partBody = await part.json<{ error_code: string }>()
+    expect(partBody.error_code).toBe('api.share.partIncompleteRetry')
+
+    // Verify session still exists in D1
+    const session = await env.DB
+      .prepare(`
+        SELECT id
+        FROM upload_sessions
+        WHERE display_name = ?
+      `)
+      .bind('incomplete.bin')
+      .first()
+
+    expect(session).not.toBeNull()
+
+    // Retry same part with correct size
+    const partRetry = await SELF.fetch('https://example.test/api/share/file/part', {
+      method: 'PUT',
+      headers: {
+        'Content-Length': '100',
+        'Content-Type': 'application/octet-stream',
+        'X-Part-Number': '1',
+        'X-Upload-Token': body.data.uploadToken,
+      },
+      body: new Uint8Array(100),
+    })
+    expect(partRetry.status).toBe(200)
+  })
 })
 
 function cookiePair(setCookie: string): string {
