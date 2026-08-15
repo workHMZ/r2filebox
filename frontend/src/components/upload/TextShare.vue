@@ -160,7 +160,7 @@ const handleShare = async () => {
   height: var(--share-content-height, 230px) !important;
   min-height: var(--share-content-height, 230px) !important;
   padding: 16px !important;
-  font-size: 15px !important;
+  font-size: 16px !important;
   line-height: 1.7 !important;
 }
 
