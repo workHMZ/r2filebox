@@ -200,10 +200,12 @@ const handleLogin = async () => {
 .login-container {
   position: relative;
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .sr-only {
@@ -228,7 +230,7 @@ const handleLogin = async () => {
 .login-card {
   width: 100%;
   max-width: 420px;
-  margin: 20px;
+  margin: auto 20px;
   padding: 42px 34px 30px;
   border-top: 3px solid var(--primary-color);
 }

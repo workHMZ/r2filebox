@@ -190,6 +190,7 @@ html,
 body,
 #app {
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--surface-canvas);
   color: var(--text-primary);
 }
@@ -852,5 +853,20 @@ a:focus-visible,
   [role='button']:focus-visible,
   .el-scrollbar__wrap[tabindex='0']:focus-visible {
     outline-color: Highlight;
+  }
+}
+
+/*
+ * Prevent touch browsers such as iOS Safari from auto-zooming
+ * focused form controls whose computed font size is below 16px.
+ *
+ * Keep this rule at the native control level so Element Plus
+ * defaults and future form components cannot reintroduce the issue.
+ */
+@media (any-pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
   }
 }

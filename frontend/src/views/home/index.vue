@@ -294,6 +294,7 @@ const handleDialogClosed = () => {
 .home-container {
   position: relative;
   min-height: 100vh;
+  min-height: 100dvh;
   overflow-x: hidden;
 }
 
@@ -303,6 +304,7 @@ const handleDialogClosed = () => {
   display: flex;
   width: min(100% - 40px, 960px);
   min-height: 100vh;
+  min-height: 100dvh;
   margin: 0 auto;
   padding: 28px 0 24px;
   flex-direction: column;

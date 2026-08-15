@@ -306,6 +306,7 @@ const confirmLogout = async () => {
 <style scoped>
 .admin-layout {
   height: 100vh;
+  height: 100dvh;
   position: relative;
   overflow: hidden;
   background: var(--surface-canvas);
@@ -573,8 +574,9 @@ const confirmLogout = async () => {
 
 /* 内容区 */
 .admin-main {
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 22px;
-  height: calc(100vh - 64px);
   overflow-y: auto;
 }
 

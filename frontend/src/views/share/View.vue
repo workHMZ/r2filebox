@@ -272,6 +272,7 @@ watch(() => route.params.code, (value) => {
 .share-view-container {
   position: relative;
   min-height: 100vh;
+  min-height: 100dvh;
   overflow-x: hidden;
 }
 
@@ -283,6 +284,7 @@ watch(() => route.params.code, (value) => {
   margin: 0 auto;
   padding: 28px 0;
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   gap: 14px;
