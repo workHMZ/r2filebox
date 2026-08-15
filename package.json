@@ -1,6 +1,6 @@
 {
   "name": "r2filebox",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "private": true,
   "license": "LGPL-3.0-or-later",
   "engines": {
@@ -32,9 +32,9 @@
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.20.3",
-    "@cloudflare/workers-types": "5.20260808.1",
+    "@cloudflare/workers-types": "5.20260810.1",
     "@types/node": "^26.2.0",
-    "sharp": "0.35.2",
+    "sharp": "0.35.3",
     "typescript": "~5.9.3",
     "vitest": "4.1.10",
     "wrangler": "4.120.0"

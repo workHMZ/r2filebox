@@ -113,9 +113,7 @@ npm run deploy:cf
 
 #### Deploy to Cloudflare
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/workHMZ/r2filebox)
-
-点击按钮，并设置：
+点击 [页面顶部的 Deploy to Cloudflare 按钮](#r2filebox) 进行部署，并设置：
 
 ```text
 Build command:  npm run build
@@ -241,9 +239,7 @@ A fully automatic interactive deploy helper: it provisions or reuses R2/D1, writ
 
 #### Deploy to Cloudflare
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/workHMZ/r2filebox)
-
-Use the button at the top and set:
+Click the [Deploy to Cloudflare button at the top of this page](#r2filebox) and set:
 
 ```text
 Build command:  npm run build
