@@ -206,6 +206,10 @@ interface ShareResult {
   qr_code_data: string
 }
 
+const triggerShareSuccessHaptic = () => {
+  if (typeof navigator.vibrate === 'function') navigator.vibrate(35)
+}
+
 const handleShareSuccess = async (result: ShareResult) => {
   const version = ++qrGenerationVersion
   let url = result.full_share_url || result.share_url
@@ -225,6 +229,7 @@ const handleShareSuccess = async (result: ShareResult) => {
   shareCode.value = result.code
   qrCodeDataUrl.value = ''
   showShareDialog.value = true
+  triggerShareSuccessHaptic()
 
   try {
     const { default: QRCode } = await import('qrcode')
