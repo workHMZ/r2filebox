@@ -76,22 +76,50 @@
           <div v-else class="file-share-content">
             <div class="file-card">
               <!-- 音视频/图片流式在线预览区 -->
-              <div v-if="downloadUrl && (isMediaVideo || isMediaAudio || isMediaImage)" class="media-preview-box">
+              <div v-if="downloadUrl && (isMediaVideo || isMediaAudio || isMediaImage) && !mediaPreviewFailed" class="media-preview-box">
                 <div v-if="isMediaVideo" class="video-preview-wrapper">
-                  <video :src="previewUrl" controls preload="metadata" class="preview-video"></video>
+                  <video
+                    :src="previewUrl"
+                    controls
+                    preload="metadata"
+                    class="preview-video"
+                    @error="handleMediaPreviewError"
+                  ></video>
                 </div>
                 <div v-else-if="isMediaAudio" class="audio-preview-wrapper">
-                  <audio :src="previewUrl" controls preload="metadata" class="preview-audio"></audio>
+                  <audio
+                    :src="previewUrl"
+                    controls
+                    preload="metadata"
+                    class="preview-audio"
+                    @error="handleMediaPreviewError"
+                  ></audio>
                 </div>
                 <div v-else-if="isMediaImage" class="image-preview-wrapper">
-                  <el-image :src="previewUrl" :preview-src-list="[previewUrl]" fit="contain" class="preview-image" loading="lazy" />
+                  <el-image
+                    :src="previewUrl"
+                    :preview-src-list="[previewUrl]"
+                    fit="contain"
+                    class="preview-image"
+                    loading="lazy"
+                    @error="handleMediaPreviewError"
+                  />
                 </div>
               </div>
 
               <div v-else class="file-icon">
                 <div class="icon-glow-ring">
-                  <el-icon :size="36"><Folder /></el-icon>
+                  <el-icon :size="36" aria-hidden="true"><Folder /></el-icon>
                 </div>
+                <p
+                  v-if="mediaPreviewFailed"
+                  class="preview-fallback-status"
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"
+                >
+                  {{ t('shareView.previewFailed') }}
+                </p>
               </div>
               <div class="file-info">
                 <h3 class="file-name">{{ shareData.file_name }}</h3>
@@ -171,6 +199,7 @@ const shareCode = ref('')
 const loading = ref(false)
 const error = ref('')
 const shareData = ref<ResolvedShare | null>(null)
+const mediaPreviewFailed = ref(false)
 let requestVersion = 0
 const shareStatus = computed(() => {
   if (loading.value) return t('shareView.loading')
@@ -200,6 +229,7 @@ const fetchShare = async (code: string, version: number) => {
   loading.value = true
   error.value = ''
   shareData.value = null
+  mediaPreviewFailed.value = false
 
   try {
     const res = await shareApi.getShare(code)
@@ -243,6 +273,10 @@ const downloadFile = () => {
   }
   window.open(withDisposition(url, 'attachment'), '_blank', 'noopener,noreferrer')
   showDownloadStarted()
+}
+
+const handleMediaPreviewError = () => {
+  mediaPreviewFailed.value = true
 }
 
 const withDisposition = (url: string, disposition: 'inline' | 'attachment') => {
@@ -485,6 +519,9 @@ watch(() => route.params.code, (value) => {
 
 .file-icon {
   margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .icon-glow-ring {
@@ -497,6 +534,14 @@ watch(() => route.params.code, (value) => {
   align-items: center;
   justify-content: center;
   color: var(--primary-color);
+}
+
+.preview-fallback-status {
+  margin: 12px 0 0;
+  color: var(--glass-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
 }
 
 .file-info {

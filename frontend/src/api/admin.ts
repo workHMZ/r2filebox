@@ -27,6 +27,7 @@ export interface AdminShare {
   id: string
   type: 'text' | 'file'
   display_name: string | null
+  mime_type: string | null
   size_bytes: number
   download_count: number
   max_downloads: number | null

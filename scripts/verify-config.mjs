@@ -20,7 +20,7 @@ const expectMatch = (pattern, message) => {
 }
 
 const appVersion = wrangler.match(/^APP_VERSION = "([^"]+)"$/m)?.[1]
-const packageVersion = String(packageJson.version).replace(/\.0$/, '')
+const packageVersion = String(packageJson.version)
 if (appVersion !== packageVersion) {
   failures.push(`APP_VERSION (${appVersion || 'missing'}) must match package version (${packageJson.version})`)
 }

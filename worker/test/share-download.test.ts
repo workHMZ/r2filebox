@@ -157,6 +157,99 @@ describe('share download accounting', () => {
     expect(exhausted.status).toBe(404)
   })
 
+  it.each([
+    {
+      label: 'MOV',
+      code: 'CDEF2345GHJK',
+      filename: 'legacy.MOV',
+      expectedMimeType: 'video/quicktime',
+    },
+    {
+      label: 'HEIC',
+      code: 'MNPQ3456RSTU',
+      filename: 'legacy.HEIC',
+      expectedMimeType: 'image/heic',
+    },
+  ])('restores effective MIME for an old generic $label share', async ({
+    code,
+    filename,
+    expectedMimeType,
+  }) => {
+    const content = `legacy content for ${filename}`
+    await createFileShare(code, filename, 'application/octet-stream', content)
+
+    const metricWrites: Parameters<AnalyticsEngineDataset['writeDataPoint']>[0][] = []
+    const instrumentedEnv = new Proxy(env, {
+      get(target, property, receiver) {
+        if (property === 'ANALYTICS') {
+          return {
+            writeDataPoint(data: Parameters<AnalyticsEngineDataset['writeDataPoint']>[0]) {
+              metricWrites.push(data)
+            },
+          }
+        }
+        return Reflect.get(target, property, receiver)
+      },
+    })
+    const resolveResponse = await worker.fetch(new Request('https://example.test/api/share/resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    }), instrumentedEnv, createExecutionContext())
+    expect(resolveResponse.status).toBe(200)
+    const body = await resolveResponse.json<{
+      data: { mime_type: string, download_url: string }
+    }>()
+    expect(body.data.mime_type).toBe(expectedMimeType)
+    expect(metricWrites).toHaveLength(1)
+    expect(metricWrites[0]?.blobs).toEqual([
+      'download_file',
+      'success',
+      'file',
+      expectedMimeType,
+    ])
+
+    const download = await SELF.fetch(
+      `https://example.test${body.data.download_url}?disposition=inline`,
+      { headers: { Cookie: cookiePair(resolveResponse.headers.get('set-cookie') || '') } },
+    )
+    expect(download.status).toBe(200)
+    expect(download.headers.get('content-type')).toBe(expectedMimeType)
+    expect(download.headers.get('content-disposition')).toMatch(/^inline;/)
+    expect(download.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(new TextDecoder().decode(await download.arrayBuffer())).toBe(content)
+  })
+
+  it('keeps an inferred SVG response as an attachment', async () => {
+    const code = 'VWXY4567ZABC'
+    await createFileShare(
+      code,
+      'legacy.SVG',
+      'application/octet-stream',
+      '<svg xmlns="http://www.w3.org/2000/svg"><script /></svg>',
+    )
+
+    const resolveResponse = await SELF.fetch('https://example.test/api/share/resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    })
+    expect(resolveResponse.status).toBe(200)
+    const body = await resolveResponse.json<{
+      data: { mime_type: string, download_url: string }
+    }>()
+    expect(body.data.mime_type).toBe('image/svg+xml')
+
+    const download = await SELF.fetch(
+      `https://example.test${body.data.download_url}?disposition=inline`,
+      { headers: { Cookie: cookiePair(resolveResponse.headers.get('set-cookie') || '') } },
+    )
+    expect(download.status).toBe(200)
+    expect(download.headers.get('content-type')).toBe('image/svg+xml')
+    expect(download.headers.get('content-disposition')).toMatch(/^attachment;/)
+    expect(download.headers.get('x-content-type-options')).toBe('nosniff')
+  })
+
   it('consumes a text extraction before reading its R2 body', async () => {
     const code = 'JKLM2345NPQR'
     const content = 'text body must only be read after authorization'
@@ -305,6 +398,43 @@ describe('share download accounting', () => {
     expect(part.status).toBe(404)
   })
 
+  it.each([
+    ['C:\\fakepath\\UPLOAD.MOV', 'UPLOAD.MOV', 'video/quicktime'],
+    ['/private/tmp/UPLOAD.HEIC', 'UPLOAD.HEIC', 'image/heic'],
+  ])('sanitizes %s before resolving its upload MIME', async (
+    requestedFilename,
+    storedFilename,
+    expectedMimeType,
+  ) => {
+    const init = await SELF.fetch('https://example.test/api/share/file/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename: requestedFilename,
+        mimeType: 'application/octet-stream',
+        size: 1,
+      }),
+    })
+    expect(init.status).toBe(200)
+    const body = await init.json<{ data: { uploadToken: string } }>()
+
+    const session = await env.DB.prepare(`
+      SELECT display_name, mime_type
+      FROM upload_sessions
+      WHERE display_name = ?
+    `).bind(storedFilename).first<{ display_name: string, mime_type: string }>()
+    expect(session).toEqual({
+      display_name: storedFilename,
+      mime_type: expectedMimeType,
+    })
+
+    const abort = await SELF.fetch('https://example.test/api/share/file/abort', {
+      method: 'POST',
+      headers: { 'X-Upload-Token': body.data.uploadToken },
+    })
+    expect(abort.status).toBe(200)
+  })
+
   it('does not abort the upload session when a part is uploaded incompletely', async () => {
     const init = await SELF.fetch('https://example.test/api/share/file/init', {
       method: 'POST',
@@ -431,6 +561,41 @@ async function createTextShare(code: string, content: string): Promise<{ shareId
     shareId,
     await hashCode(code, pepper),
     key,
+    content.length,
+    now,
+    new Date(Date.now() + 60_000).toISOString(),
+    uploaded.etag,
+    now,
+  ).run()
+  return { shareId }
+}
+
+async function createFileShare(
+  code: string,
+  displayName: string,
+  mimeType: string,
+  content: string,
+): Promise<{ shareId: string }> {
+  const shareId = crypto.randomUUID()
+  const key = `file/${shareId}`
+  const uploaded = await env.BUCKET.put(key, content, {
+    httpMetadata: { contentType: mimeType },
+  })
+  const now = new Date().toISOString()
+  await env.DB.prepare(`
+    INSERT INTO shares (
+      id, code_hash, type, r2_key, display_name, mime_type, size_bytes,
+      title, created_at, expire_at, deleted_at, max_downloads,
+      download_count, created_ip_hash, last_access_at, object_etag,
+      object_uploaded_at
+    ) VALUES (?, ?, 'file', ?, ?, ?, ?, NULL, ?, ?,
+      NULL, 10, 0, NULL, NULL, ?, ?)
+  `).bind(
+    shareId,
+    await hashCode(code, pepper),
+    key,
+    displayName,
+    mimeType,
     content.length,
     now,
     new Date(Date.now() + 60_000).toISOString(),

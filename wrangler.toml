@@ -72,7 +72,7 @@ invocation_logs = true
 binding = "VERSION_METADATA"
 
 [vars]
-APP_VERSION = "2.3.2"
+APP_VERSION = "2.4.0"
 
 R2_BUCKET_NAME = "r2filebox-files"
 D1_DATABASE_NAME = "r2filebox-db"

@@ -8,8 +8,8 @@ import {
   calculateExpireAt,
   contentDispositionAttachment,
   contentDispositionInline,
+  resolveMimeType,
   sanitizeFilename,
-  sanitizeMimeType,
 } from '../lib/validators'
 import { DB } from '../lib/db'
 import { R2Storage, generateR2Key } from '../lib/r2'
@@ -217,7 +217,7 @@ async function initMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
     const maxStorage = config.maxTotalStorageBytes
 
     const safeFilename = sanitizeFilename(String(body.filename || 'upload.bin'))
-    const mimeType = sanitizeMimeType(String(body.mimeType || 'application/octet-stream'))
+    const mimeType = resolveMimeType(safeFilename, String(body.mimeType || ''))
     const codeLength = config.codeLength
     const rawCode = generateCode(codeLength)
     const codeHash = await hashCode(rawCode, pepper)
@@ -651,11 +651,12 @@ async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string 
       config,
       subject: shareAuditSubject(share),
     })
+    const effectiveMimeType = resolveMimeType(share.display_name || '', share.mime_type)
     recordMetric(c.env, {
       event: 'download_file',
       status: 'success',
       subjectType: 'file',
-      mimeType: share.mime_type || undefined,
+      mimeType: effectiveMimeType,
       sizeBytes: share.size_bytes,
     })
     return c.json(success({
@@ -663,7 +664,7 @@ async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string 
       type: 'file',
       file_name: share.display_name || undefined,
       size_bytes: share.size_bytes,
-      mime_type: share.mime_type,
+      mime_type: effectiveMimeType,
       expire_at: share.expire_at,
       download_count: share.download_count + 1,
       max_downloads: share.max_downloads,
@@ -722,8 +723,9 @@ async function downloadWithSession(c: Context<{ Bindings: Bindings }>) {
 
     const headers = new Headers()
     obj.writeHttpMetadata(headers)
-    headers.set('Content-Type', share.mime_type || 'application/octet-stream')
-    const disposition = c.req.query('disposition') === 'inline' && isSafeInlinePreviewMime(share.mime_type)
+    const effectiveMimeType = resolveMimeType(share.display_name || '', share.mime_type)
+    headers.set('Content-Type', effectiveMimeType)
+    const disposition = c.req.query('disposition') === 'inline' && isSafeInlinePreviewMime(effectiveMimeType)
       ? 'inline'
       : 'attachment'
     headers.set(
@@ -948,7 +950,7 @@ function toHttpEtag(value: string): string {
 }
 
 export function isSafeInlinePreviewMime(mimeType: string | null): boolean {
-  const normalized = mimeType?.trim().toLowerCase() || ''
+  const normalized = mimeType?.split(';', 1)[0]?.trim().toLowerCase() || ''
   if (normalized.startsWith('audio/') || normalized.startsWith('video/')) return true
   return normalized.startsWith('image/') && normalized !== 'image/svg+xml'
 }

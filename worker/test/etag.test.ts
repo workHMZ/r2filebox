@@ -20,6 +20,7 @@ describe('inline preview MIME policy', () => {
     expect(isSafeInlinePreviewMime('audio/mpeg')).toBe(true)
     expect(isSafeInlinePreviewMime('image/png')).toBe(true)
     expect(isSafeInlinePreviewMime('image/svg+xml')).toBe(false)
+    expect(isSafeInlinePreviewMime(' Image/SVG+XML; charset=utf-8 ')).toBe(false)
     expect(isSafeInlinePreviewMime('text/html')).toBe(false)
     expect(isSafeInlinePreviewMime('application/pdf')).toBe(false)
     expect(isSafeInlinePreviewMime(null)).toBe(false)

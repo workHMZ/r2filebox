@@ -28,13 +28,15 @@
       <div v-if="selectedFile" class="selected-file">
         <div class="file-preview-card">
           <div class="file-icon-box">
-            <el-icon size="32" aria-hidden="true"><Document /></el-icon>
+            <el-icon size="32" :color="selectedFileIconColor" aria-hidden="true">
+              <component :is="selectedFileIcon" />
+            </el-icon>
           </div>
           <div class="file-info-details">
             <div class="file-name">{{ selectedFile.name }}</div>
             <div class="file-meta">
               <span class="file-size">{{ formatFileSize(selectedFile.size, getLocaleTag(locale)) }}</span>
-              <span class="file-type-badge">{{ getFileType(selectedFile.name) }}</span>
+              <span class="file-type-badge">{{ t(selectedFileTypeKey) }}</span>
             </div>
           </div>
           <el-button 
@@ -119,10 +121,21 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
+import type { Component } from 'vue'
 import { shareApi, UploadPartError } from '@/api/share'
 import { isTerminalUploadError } from '@/utils/upload-error'
 import { ElMessage } from 'element-plus'
-import { UploadFilled, Document, InfoFilled, Close, Upload } from '@element-plus/icons-vue'
+import {
+  UploadFilled,
+  Document,
+  InfoFilled,
+  Close,
+  Upload,
+  Picture,
+  VideoPlay,
+  Headset,
+  Files as ArchiveIcon,
+} from '@element-plus/icons-vue'
 import type { UploadFile, UploadInstance } from 'element-plus'
 import { getLocaleTag, useI18n } from '@/i18n'
 import { useConfigStore } from '@/stores/config'
@@ -130,6 +143,7 @@ import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import ShareSettings from '@/components/upload/ShareSettings.vue'
 import { expireSelectionFromHours, type ExpireStyle } from '@/utils/expiration'
 import { formatFileSize } from '@/utils/format'
+import { classifyFile, inferMimeType, type FileCategory } from '@/utils/file-type'
 
 const emit = defineEmits<{
   success: [result: { code: string; share_url: string; full_share_url: string; qr_code_data: string }]
@@ -175,6 +189,38 @@ const turnstileToken = ref('')
 const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
 let selectionVersion = 0
 let uploadController: AbortController | null = null
+
+const fileIconByCategory: Record<FileCategory, Component> = {
+  image: Picture,
+  video: VideoPlay,
+  audio: Headset,
+  document: Document,
+  archive: ArchiveIcon,
+  other: Document,
+}
+const fileIconColorByCategory: Record<FileCategory, string> = {
+  image: 'var(--info-color)',
+  video: 'var(--success-color)',
+  audio: 'var(--warning-color)',
+  document: 'var(--text-secondary)',
+  archive: 'var(--warning-color)',
+  other: 'var(--text-regular)',
+}
+const fileTypeKeyByCategory: Record<FileCategory, string> = {
+  image: 'fileType.image',
+  video: 'fileType.video',
+  audio: 'fileType.audio',
+  document: 'fileType.document',
+  archive: 'fileType.archive',
+  other: 'fileType.unknown',
+}
+const selectedFileCategory = computed<FileCategory>(() => {
+  const file = selectedFile.value
+  return file ? classifyFile(file.name, file.type) : 'other'
+})
+const selectedFileIcon = computed(() => fileIconByCategory[selectedFileCategory.value])
+const selectedFileIconColor = computed(() => fileIconColorByCategory[selectedFileCategory.value])
+const selectedFileTypeKey = computed(() => fileTypeKeyByCategory[selectedFileCategory.value])
 
 const requiresTurnstile = computed(() => configStore.config?.requireTurnstile === true)
 const turnstileSiteKey = computed(() => configStore.config?.turnstileSiteKey || '')
@@ -250,26 +296,6 @@ const clearFile = () => {
   uploadAnnouncement.value = t('a11y.fileCleared')
 }
 
-const getFileType = (filename: string) => {
-  const ext = filename.split('.').pop()?.toLowerCase() || ''
-  const typeMap: Record<string, string> = {
-    'jpg': t('fileType.image'),
-    'jpeg': t('fileType.image'),
-    'png': t('fileType.image'),
-    'gif': t('fileType.image'),
-    'pdf': t('fileType.pdf'),
-    'doc': t('fileType.word'),
-    'docx': t('fileType.word'),
-    'xls': t('fileType.excel'),
-    'xlsx': t('fileType.excel'),
-    'zip': t('fileType.archive'),
-    'rar': t('fileType.archive'),
-    'mp4': t('fileType.video'),
-    'mp3': t('fileType.audio')
-  }
-  return typeMap[ext] || t('fileType.unknown')
-}
-
 const handleUpload = async () => {
   const file = selectedFile.value
   if (!file) {
@@ -303,7 +329,7 @@ const handleUpload = async () => {
     } else {
       const initRes = await shareApi.initFileUpload({
         filename: file.name,
-        mimeType: file.type || 'application/octet-stream',
+        mimeType: inferMimeType(file.name, file.type),
         size: file.size,
         turnstileToken: turnstileToken.value || undefined,
         ...form.value,

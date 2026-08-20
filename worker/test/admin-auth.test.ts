@@ -99,7 +99,7 @@ describe('administrator cookie session', () => {
       runtime: 'Cloudflare Workers',
       platform: 'V8 isolate',
       storage: 'D1 + R2 + Workers Rate Limiting',
-      version: '2.3.2',
+      version: '2.4.0',
       r2_bucket_name: 'r2filebox-files',
       d1_database_name: 'r2filebox-db',
     })
@@ -229,6 +229,7 @@ describe('administrator cookie session', () => {
     const body = await response.json<{ data: { items: Array<Record<string, unknown>> } }>()
     const item = body.data.items.find((candidate) => candidate.id === id)
     expect(item).toBeDefined()
+    expect(item?.mime_type).toBe('text/plain')
     expect(Object.keys(item || {}).sort()).toEqual([
       'created_at',
       'display_name',
@@ -236,6 +237,7 @@ describe('administrator cookie session', () => {
       'expire_at',
       'id',
       'max_downloads',
+      'mime_type',
       'size_bytes',
       'type',
     ])

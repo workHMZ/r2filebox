@@ -297,7 +297,7 @@ app.get('/admin/maintenance/system-info', (c) => {
     runtime: 'Cloudflare Workers',
     platform: 'V8 isolate',
     storage: 'D1 + R2 + Workers Rate Limiting',
-    version: c.env.APP_VERSION || '2.3.2',
+    version: c.env.APP_VERSION || '2.4.0',
     r2_bucket_name: c.env.R2_BUCKET_NAME || null,
     d1_database_name: c.env.D1_DATABASE_NAME || null,
   }))
@@ -398,6 +398,7 @@ function adminShareDto(share: Share) {
     id: share.id,
     type: share.type,
     display_name: share.display_name,
+    mime_type: share.mime_type,
     size_bytes: share.size_bytes,
     download_count: share.download_count,
     max_downloads: share.max_downloads,

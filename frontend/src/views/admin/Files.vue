@@ -139,9 +139,9 @@
 import { ref, reactive, onMounted } from 'vue'
 import type { Component } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { 
+import {
   Refresh, Document, Picture, Download, Delete,
-  VideoPlay, Headset, Reading
+  VideoPlay, Headset, Files as ArchiveIcon
 } from '@element-plus/icons-vue'
 import { adminApi } from '@/api/admin'
 import type { AdminShare } from '@/api/admin'
@@ -149,6 +149,7 @@ import ActionFeedbackButton from '@/components/ActionFeedbackButton.vue'
 import { useActionFeedback } from '@/composables/useActionFeedback'
 import { getLocaleTag, useI18n } from '@/i18n'
 import { formatDateTime, formatFileSize } from '@/utils/format'
+import { classifyFile, type FileCategory } from '@/utils/file-type'
 
 const loading = ref(false)
 const filesList = ref<AdminShare[]>([])
@@ -182,41 +183,27 @@ const isExpired = (dateStr: string): boolean => {
   }
 }
 
-const getFileIcon = (row: AdminShare) => {
-  const filename = row.display_name || ''
-  const ext = filename.split('.').pop()?.toLowerCase()
-  
-  const iconMap: Record<string, Component> = {
-    'jpg': Picture,
-    'jpeg': Picture,
-    'png': Picture,
-    'gif': Picture,
-    'mp4': VideoPlay,
-    'mp3': Headset,
-    'txt': Reading,
-    'pdf': Document
-  }
-  
-  return iconMap[ext || ''] || Document
+const iconByCategory: Record<FileCategory, Component> = {
+  image: Picture,
+  video: VideoPlay,
+  audio: Headset,
+  document: Document,
+  archive: ArchiveIcon,
+  other: Document,
 }
-
-const getFileIconColor = (row: AdminShare) => {
-  const filename = row.display_name || ''
-  const ext = filename.split('.').pop()?.toLowerCase()
-  
-  const colorMap: Record<string, string> = {
-    'jpg': 'var(--info-color)',
-    'jpeg': 'var(--info-color)',
-    'png': 'var(--info-color)',
-    'gif': 'var(--info-color)',
-    'mp4': 'var(--success-color)',
-    'mp3': 'var(--warning-color)',
-    'txt': 'var(--text-secondary)',
-    'pdf': 'var(--danger-color)'
-  }
-  
-  return colorMap[ext || ''] || 'var(--text-regular)'
+const colorByCategory: Record<FileCategory, string> = {
+  image: 'var(--info-color)',
+  video: 'var(--success-color)',
+  audio: 'var(--warning-color)',
+  document: 'var(--text-secondary)',
+  archive: 'var(--warning-color)',
+  other: 'var(--text-regular)',
 }
+const getFileCategory = (row: AdminShare): FileCategory => (
+  classifyFile(row.display_name || '', row.mime_type)
+)
+const getFileIcon = (row: AdminShare) => iconByCategory[getFileCategory(row)]
+const getFileIconColor = (row: AdminShare) => colorByCategory[getFileCategory(row)]
 
 const fetchFiles = async (): Promise<boolean> => {
   const currentVersion = ++requestVersion

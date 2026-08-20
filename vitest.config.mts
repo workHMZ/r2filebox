@@ -17,7 +17,7 @@ export default defineConfig({
           ADMIN_PASSWORD: 'local-test-password',
           CODE_HASH_PEPPER: '1111111111111111111111111111111111111111111111111111111111111111',
           SESSION_SECRET: '2222222222222222222222222222222222222222222222222222222222222222',
-          APP_VERSION: '2.3.2',
+          APP_VERSION: '2.4.0',
           R2_BUCKET_NAME: 'r2filebox-files',
           D1_DATABASE_NAME: 'r2filebox-db',
         },
