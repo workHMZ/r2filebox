@@ -39,8 +39,44 @@ describe('administrator cookie session', () => {
         created_at TEXT NOT NULL, expire_at TEXT NOT NULL, deleted_at TEXT,
         max_downloads INTEGER, download_count INTEGER NOT NULL,
         created_ip_hash TEXT, last_access_at TEXT, object_etag TEXT,
-        object_uploaded_at TEXT
+        object_uploaded_at TEXT, blob_id TEXT
       )`),
+      env.DB.prepare(`CREATE TABLE IF NOT EXISTS file_blobs (
+        id TEXT PRIMARY KEY,
+        fingerprint_algorithm TEXT,
+        content_fingerprint TEXT,
+        r2_key TEXT NOT NULL UNIQUE,
+        size_bytes INTEGER NOT NULL,
+        object_etag TEXT,
+        object_uploaded_at TEXT,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        orphaned_at TEXT
+      )`),
+      env.DB.prepare(`CREATE TABLE IF NOT EXISTS upload_cleanup_jobs (
+        id TEXT PRIMARY KEY,
+        upload_id TEXT NOT NULL,
+        r2_key TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        claimed_at TEXT NOT NULL
+      )`),
+      env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS test_file_blobs_orphan_after_share_soft_delete
+        AFTER UPDATE OF deleted_at ON shares
+        WHEN OLD.type = 'file'
+          AND OLD.deleted_at IS NULL
+          AND NEW.deleted_at IS NOT NULL
+          AND OLD.blob_id IS NOT NULL
+        BEGIN
+          UPDATE file_blobs
+          SET status = 'orphaned', orphaned_at = NEW.deleted_at
+          WHERE id = OLD.blob_id
+            AND status = 'active'
+            AND NOT EXISTS (
+              SELECT 1 FROM shares
+              WHERE shares.blob_id = OLD.blob_id
+                AND shares.deleted_at IS NULL
+            );
+        END`),
     ])
   })
 
@@ -99,7 +135,7 @@ describe('administrator cookie session', () => {
       runtime: 'Cloudflare Workers',
       platform: 'V8 isolate',
       storage: 'D1 + R2 + Workers Rate Limiting',
-      version: '2.4.0',
+      version: '2.5.0',
       r2_bucket_name: 'r2filebox-files',
       d1_database_name: 'r2filebox-db',
     })
@@ -243,7 +279,7 @@ describe('administrator cookie session', () => {
     ])
   })
 
-  it('removes the R2 object before soft-deleting its D1 share', async () => {
+  it('removes a legacy direct R2 object before soft-deleting its D1 share', async () => {
     const id = crypto.randomUUID()
     const key = `admin-delete/${id}`
     const now = new Date().toISOString()
@@ -282,7 +318,93 @@ describe('administrator cookie session', () => {
     expect(stored?.deleted_at).not.toBeNull()
   })
 
-  it('keeps the D1 share active when R2 deletion fails', async () => {
+  it('keeps a shared R2 object until the final managed share is deleted', async () => {
+    const blobId = crypto.randomUUID()
+    const key = `admin-shared-delete/${blobId}`
+    const firstId = crypto.randomUUID()
+    const secondId = crypto.randomUUID()
+    await env.BUCKET.put(key, 'shared object')
+    await insertFileBlob(blobId, key, 13)
+    await insertManagedShare(firstId, blobId, key, 13)
+    await insertManagedShare(secondId, blobId, key, 13)
+
+    const login = await loginAt('https://example.test')
+    const headers = {
+      Cookie: cookiePair(login.headers.get('set-cookie') || ''),
+      Origin: 'https://example.test',
+    }
+    const firstDelete = await SELF.fetch(`https://example.test/admin/files/${firstId}`, {
+      method: 'DELETE',
+      headers,
+    })
+
+    expect(firstDelete.status).toBe(200)
+    expect(await env.BUCKET.head(key)).not.toBeNull()
+    await expect(env.DB.prepare('SELECT status FROM file_blobs WHERE id = ?')
+      .bind(blobId)
+      .first<{ status: string }>()).resolves.toEqual({ status: 'active' })
+
+    const secondDelete = await SELF.fetch(`https://example.test/admin/files/${secondId}`, {
+      method: 'DELETE',
+      headers,
+    })
+    expect(secondDelete.status).toBe(200)
+    expect(await env.BUCKET.head(key)).toBeNull()
+    await expect(env.DB.prepare('SELECT id FROM file_blobs WHERE id = ?')
+      .bind(blobId)
+      .first()).resolves.toBeNull()
+  })
+
+  it('keeps an orphan outbox row when managed R2 deletion fails', async () => {
+    const blobId = crypto.randomUUID()
+    const id = crypto.randomUUID()
+    const key = `admin-managed-delete-failure/${blobId}`
+    await env.BUCKET.put(key, 'retry me')
+    await insertFileBlob(blobId, key, 8)
+    await insertManagedShare(id, blobId, key, 8)
+
+    const sessionSecret = '2222222222222222222222222222222222222222222222222222222222222222'
+    const token = await signJWT({
+      sub: 'admin',
+      username: 'admin',
+      role: 'admin',
+      exp: Math.floor(Date.now() / 1000) + 60,
+    }, sessionSecret)
+    const failingEnv = {
+      DB: env.DB,
+      SESSION_SECRET: sessionSecret,
+      CODE_HASH_PEPPER: '1111111111111111111111111111111111111111111111111111111111111111',
+      BUCKET: {
+        async delete() {
+          throw new Error('R2 unavailable')
+        },
+      },
+    } as unknown as Env
+    const response = await worker.fetch(
+      new Request(`https://example.test/admin/files/${id}`, {
+        method: 'DELETE',
+        headers: {
+          Cookie: `admin_session=${encodeURIComponent(token)}`,
+          Origin: 'https://example.test',
+        },
+      }),
+      failingEnv,
+      createExecutionContext(),
+    )
+
+    expect(response.status).toBe(200)
+    expect(await env.BUCKET.head(key)).not.toBeNull()
+    await expect(env.DB.prepare('SELECT deleted_at FROM shares WHERE id = ?')
+      .bind(id)
+      .first<{ deleted_at: string | null }>()).resolves.toMatchObject({
+      deleted_at: expect.any(String),
+    })
+    await expect(env.DB.prepare('SELECT status FROM file_blobs WHERE id = ?')
+      .bind(blobId)
+      .first<{ status: string }>()).resolves.toEqual({ status: 'orphaned' })
+  })
+
+  it('keeps a legacy D1 share active when direct R2 deletion fails', async () => {
     const id = crypto.randomUUID()
     const now = new Date().toISOString()
     await env.DB.prepare(`
@@ -354,4 +476,41 @@ function loginAt(origin: string): Promise<Response> {
 
 function cookiePair(setCookie: string): string {
   return setCookie.split(';', 1)[0]
+}
+
+async function insertFileBlob(id: string, r2Key: string, sizeBytes: number): Promise<void> {
+  const now = new Date().toISOString()
+  await env.DB.prepare(`
+    INSERT INTO file_blobs (
+      id, fingerprint_algorithm, content_fingerprint, r2_key, size_bytes,
+      object_etag, object_uploaded_at, status, created_at, orphaned_at
+    ) VALUES (?, 'sha256-tree-v1', ?, ?, ?, NULL, ?, 'active', ?, NULL)
+  `).bind(id, crypto.randomUUID(), r2Key, sizeBytes, now, now).run()
+}
+
+async function insertManagedShare(
+  id: string,
+  blobId: string,
+  r2Key: string,
+  sizeBytes: number,
+): Promise<void> {
+  const now = new Date().toISOString()
+  await env.DB.prepare(`
+    INSERT INTO shares (
+      id, code_hash, type, r2_key, display_name, mime_type, size_bytes,
+      title, created_at, expire_at, deleted_at, max_downloads,
+      download_count, created_ip_hash, last_access_at, object_etag,
+      object_uploaded_at, blob_id
+    ) VALUES (?, ?, 'file', ?, 'shared.bin', 'application/octet-stream', ?,
+      NULL, ?, ?, NULL, 10, 0, NULL, NULL, NULL, ?, ?)
+  `).bind(
+    id,
+    crypto.randomUUID(),
+    r2Key,
+    sizeBytes,
+    now,
+    new Date(Date.now() + 60_000).toISOString(),
+    now,
+    blobId,
+  ).run()
 }

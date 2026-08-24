@@ -163,12 +163,34 @@ app.delete('/admin/files/:id', async (c) => {
       return c.json(error(ErrorCode.FILE_NOT_FOUND, 404, 'File not found'), 404)
     }
 
-    // Delete the object first. R2 deletion is idempotent, so if the following
-    // D1 update fails, the administrator can safely retry without leaving an
-    // untracked object in the private bucket.
     const r2 = new R2Storage(c.env.BUCKET)
-    await r2.deleteObject(share.r2_key)
-    await db.deleteShareById(id)
+    if (share.type === 'file' && share.blob_id) {
+      // Managed file shares may reference the same physical object. Delete the
+      // logical share first; the D1 trigger only orphans the final reference.
+      // R2/D1 cleanup is best-effort here because the orphan row is a durable
+      // outbox entry that the scheduled cleanup retries.
+      await db.deleteShareById(id)
+      try {
+        const orphanedAt = new Date().toISOString()
+        await db.orphanUnreferencedFileBlobs([share.blob_id], orphanedAt)
+        const blob = await db.getFileBlobById(share.blob_id)
+        if (blob?.status === 'orphaned') {
+          await r2.deleteObject(blob.r2_key)
+          const removed = await db.deleteOrphanedFileBlob(blob.id)
+          if (!removed && await db.getFileBlobById(blob.id)) {
+            throw new Error('Orphaned blob row was retained after R2 deletion')
+          }
+        }
+      } catch (cleanupError) {
+        console.error(`Deferred cleanup for orphaned file blob ${share.blob_id}:`, cleanupError)
+      }
+    } else {
+      // Text shares and pre-migration file rows still own their R2 key directly.
+      // Keep the delete-first behavior so an R2 failure leaves the share active
+      // and retryable instead of producing an untracked direct object.
+      await r2.deleteObject(share.r2_key)
+      await db.deleteShareById(id)
+    }
 
     const pepper = getRequiredSecret(c.env, 'CODE_HASH_PEPPER')
     await audit(db, c, 'admin_delete_share', id, 'success', await hashIp(getClientIp(c), pepper), {
@@ -297,7 +319,7 @@ app.get('/admin/maintenance/system-info', (c) => {
     runtime: 'Cloudflare Workers',
     platform: 'V8 isolate',
     storage: 'D1 + R2 + Workers Rate Limiting',
-    version: c.env.APP_VERSION || '2.4.0',
+    version: c.env.APP_VERSION || '2.5.0',
     r2_bucket_name: c.env.R2_BUCKET_NAME || null,
     d1_database_name: c.env.D1_DATABASE_NAME || null,
   }))

@@ -3,9 +3,22 @@ import test from 'node:test'
 
 import {
   classifyFile,
+  FILE_TYPE_BY_EXTENSION,
   getFileExtension,
   inferMimeType,
 } from '../frontend/src/utils/file-type.ts'
+import { MIME_BY_EXTENSION } from '../worker/src/lib/validators.ts'
+
+test('keeps frontend and Worker extension MIME maps in parity', () => {
+  const frontendMimeByExtension = Object.fromEntries(
+    Object.entries(FILE_TYPE_BY_EXTENSION).map(([extension, definition]) => [
+      extension,
+      definition.mimeType,
+    ]),
+  )
+
+  assert.deepEqual(frontendMimeByExtension, MIME_BY_EXTENSION)
+})
 
 test('extracts a normalized extension from a filename', () => {
   assert.equal(getFileExtension('IMG_8400.MOV'), 'mov')

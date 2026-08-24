@@ -65,7 +65,7 @@
         <el-table-column :label="t('files.uploadType')" width="120" align="center">
           <template #default="{ row }">
             <el-tag :type="row.type === 'text' ? 'success' : 'primary'" effect="light">
-              <el-icon><component :is="row.type === 'text' ? Document : Picture" /></el-icon>
+              <el-icon><component :is="row.type === 'text' ? Document : Files" /></el-icon>
               {{ row.type === 'text' ? t('common.text') : t('common.file') }}
             </el-tag>
           </template>
@@ -141,7 +141,7 @@ import type { Component } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Refresh, Document, Picture, Download, Delete,
-  VideoPlay, Headset, Files as ArchiveIcon
+  VideoPlay, Headset, Files
 } from '@element-plus/icons-vue'
 import { adminApi } from '@/api/admin'
 import type { AdminShare } from '@/api/admin'
@@ -188,7 +188,7 @@ const iconByCategory: Record<FileCategory, Component> = {
   video: VideoPlay,
   audio: Headset,
   document: Document,
-  archive: ArchiveIcon,
+  archive: Files,
   other: Document,
 }
 const colorByCategory: Record<FileCategory, string> = {

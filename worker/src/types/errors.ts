@@ -30,6 +30,7 @@ export const ErrorCode = {
   MISSING_COMPLETE_INFO: 'api.share.missingCompleteInfo',
   INCOMPLETE_COMPLETE_INFO: 'api.share.incompleteCompleteInfo',
   SIZE_MISMATCH: 'api.share.sizeMismatch',
+  CONTENT_FINGERPRINT_MISMATCH: 'api.share.contentFingerprintMismatch',
 
   // Admin errors (api.admin.*)
   INVALID_CREDENTIALS: 'api.admin.invalidCredentials',

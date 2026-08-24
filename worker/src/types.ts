@@ -33,6 +33,7 @@ export interface Share {
   last_access_at: string | null
   object_etag: string | null
   object_uploaded_at: string | null
+  blob_id?: string | null
 }
 
 export interface UploadSession {
@@ -50,6 +51,29 @@ export interface UploadSession {
   created_ip_hash: string | null
   created_at: string
   updated_at: string
+  fingerprint_algorithm?: string | null
+  content_fingerprint?: string | null
+}
+
+export interface FileBlob {
+  id: string
+  fingerprint_algorithm: string | null
+  content_fingerprint: string | null
+  r2_key: string
+  size_bytes: number
+  object_etag: string | null
+  object_uploaded_at: string | null
+  status: 'pending' | 'active' | 'orphaned'
+  created_at: string
+  orphaned_at: string | null
+}
+
+export interface UploadCleanupJob {
+  id: string
+  upload_id: string
+  r2_key: string
+  size_bytes: number
+  claimed_at: string
 }
 
 export interface Setting {

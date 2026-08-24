@@ -209,7 +209,7 @@ const { locale, t } = useI18n()
 const { active: cleanupSucceeded, show: showCleanupSucceeded } = useActionFeedback()
 
 const versionInfo = ref<VersionInfo>({
-  version: '2.3',
+  version: '2.5.0',
   commit_hash: 'dev',
   short_hash: 'dev',
   build_time: null,

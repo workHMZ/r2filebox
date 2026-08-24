@@ -1,6 +1,6 @@
 const DEFAULT_MIME_TYPE = 'application/octet-stream'
 
-const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
+export const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
   // Images
   jpg: 'image/jpeg',
   jpeg: 'image/jpeg',
@@ -69,8 +69,12 @@ export const sanitizeFilename = (filename: string): string => {
 }
 
 export const sanitizeMimeType = (mimeType: string): string => {
-  const value = mimeType.trim().slice(0, 128)
-  return /^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$/.test(value)
+  const value = mimeType
+    .split(';', 1)[0]
+    .trim()
+    .toLowerCase()
+    .slice(0, 128)
+  return /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/.test(value)
     ? value
     : DEFAULT_MIME_TYPE
 }
@@ -79,7 +83,7 @@ export const resolveMimeType = (
   filename: string,
   providedMimeType?: string | null,
 ): string => {
-  const provided = sanitizeMimeType(providedMimeType || '').toLowerCase()
+  const provided = sanitizeMimeType(providedMimeType || '')
   if (!isGenericMimeType(provided)) return provided
 
   const basename = filename.replace(/^.*[\\\/]/, '')

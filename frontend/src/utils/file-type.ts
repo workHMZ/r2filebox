@@ -11,7 +11,7 @@ type FileTypeDefinition = {
   category: Exclude<FileCategory, 'other'>
 }
 
-const FILE_TYPE_BY_EXTENSION: Record<string, FileTypeDefinition> = {
+export const FILE_TYPE_BY_EXTENSION: Readonly<Record<string, FileTypeDefinition>> = {
   jpg: { mimeType: 'image/jpeg', category: 'image' },
   jpeg: { mimeType: 'image/jpeg', category: 'image' },
   png: { mimeType: 'image/png', category: 'image' },

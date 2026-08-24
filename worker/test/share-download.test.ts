@@ -40,7 +40,7 @@ describe('share download accounting', () => {
         created_at TEXT NOT NULL, expire_at TEXT NOT NULL, deleted_at TEXT,
         max_downloads INTEGER, download_count INTEGER NOT NULL,
         created_ip_hash TEXT, last_access_at TEXT, object_etag TEXT,
-        object_uploaded_at TEXT
+        object_uploaded_at TEXT, blob_id TEXT
       )`),
       env.DB.prepare(`CREATE TABLE IF NOT EXISTS upload_sessions (
         id TEXT PRIMARY KEY,
@@ -56,18 +56,133 @@ describe('share download accounting', () => {
         max_downloads INTEGER,
         created_ip_hash TEXT,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        fingerprint_algorithm TEXT,
+        content_fingerprint TEXT
+      )`),
+      env.DB.prepare(`CREATE TABLE IF NOT EXISTS file_blobs (
+        id TEXT PRIMARY KEY,
+        fingerprint_algorithm TEXT,
+        content_fingerprint TEXT,
+        r2_key TEXT NOT NULL UNIQUE,
+        size_bytes INTEGER NOT NULL,
+        object_etag TEXT,
+        object_uploaded_at TEXT,
+        status TEXT NOT NULL CHECK(status IN ('pending', 'active', 'orphaned')),
+        created_at TEXT NOT NULL,
+        orphaned_at TEXT
+      )`),
+      env.DB.prepare(`CREATE TABLE IF NOT EXISTS upload_cleanup_jobs (
+        id TEXT PRIMARY KEY,
+        upload_id TEXT NOT NULL,
+        r2_key TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        claimed_at TEXT NOT NULL
       )`),
       env.DB.prepare(`CREATE TABLE IF NOT EXISTS storage_usage (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         active_bytes INTEGER NOT NULL DEFAULT 0
       )`),
+      env.DB.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS download_active_blob_fingerprint
+        ON file_blobs(fingerprint_algorithm, content_fingerprint, size_bytes)
+        WHERE status = 'active'
+          AND fingerprint_algorithm IS NOT NULL
+          AND content_fingerprint IS NOT NULL`),
+      env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS download_storage_text_shares_insert
+        AFTER INSERT ON shares
+        WHEN NEW.type = 'text' AND NEW.deleted_at IS NULL BEGIN
+          UPDATE storage_usage SET active_bytes = active_bytes + NEW.size_bytes WHERE id = 1;
+        END`),
+      env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS download_storage_text_shares_update
+        AFTER UPDATE OF type, deleted_at, size_bytes ON shares BEGIN
+          UPDATE storage_usage SET active_bytes = active_bytes
+            - CASE WHEN OLD.type = 'text' AND OLD.deleted_at IS NULL THEN OLD.size_bytes ELSE 0 END
+            + CASE WHEN NEW.type = 'text' AND NEW.deleted_at IS NULL THEN NEW.size_bytes ELSE 0 END
+          WHERE id = 1;
+        END`),
+      env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS download_storage_text_shares_delete
+        AFTER DELETE ON shares
+        WHEN OLD.type = 'text' AND OLD.deleted_at IS NULL BEGIN
+          UPDATE storage_usage SET active_bytes = active_bytes - OLD.size_bytes WHERE id = 1;
+        END`),
+      env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS download_storage_uploads_insert
+        AFTER INSERT ON upload_sessions BEGIN
+          UPDATE storage_usage SET active_bytes = active_bytes + NEW.size_bytes WHERE id = 1;
+        END`),
+      env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS download_storage_uploads_update
+        AFTER UPDATE OF size_bytes ON upload_sessions BEGIN
+          UPDATE storage_usage SET active_bytes = active_bytes - OLD.size_bytes + NEW.size_bytes WHERE id = 1;
+        END`),
+      env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS download_storage_uploads_delete
+        AFTER DELETE ON upload_sessions BEGIN
+          UPDATE storage_usage SET active_bytes = active_bytes - OLD.size_bytes WHERE id = 1;
+        END`),
+      env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS download_storage_blobs_insert
+        AFTER INSERT ON file_blobs BEGIN
+          UPDATE storage_usage SET active_bytes = active_bytes + NEW.size_bytes WHERE id = 1;
+        END`),
+      env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS download_storage_blobs_update
+        AFTER UPDATE OF size_bytes ON file_blobs BEGIN
+          UPDATE storage_usage SET active_bytes = active_bytes - OLD.size_bytes + NEW.size_bytes WHERE id = 1;
+        END`),
+      env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS download_storage_blobs_delete
+        AFTER DELETE ON file_blobs BEGIN
+          UPDATE storage_usage SET active_bytes = active_bytes - OLD.size_bytes WHERE id = 1;
+        END`),
+      env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS download_legacy_blob_after_file_share_insert
+        AFTER INSERT ON shares
+        WHEN NEW.type = 'file' AND NEW.deleted_at IS NULL AND NEW.blob_id IS NULL BEGIN
+          INSERT INTO file_blobs (
+            id, fingerprint_algorithm, content_fingerprint, r2_key, size_bytes,
+            object_etag, object_uploaded_at, status, created_at, orphaned_at
+          ) VALUES (
+            'legacy-' || NEW.id, NULL, NULL, NEW.r2_key, NEW.size_bytes,
+            NEW.object_etag, NEW.object_uploaded_at, 'active',
+            COALESCE(NEW.object_uploaded_at, NEW.created_at), NULL
+          );
+          UPDATE shares SET blob_id = 'legacy-' || NEW.id WHERE id = NEW.id AND blob_id IS NULL;
+        END`),
+      env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS download_orphan_blob_after_share_update
+        AFTER UPDATE OF deleted_at ON shares
+        WHEN OLD.type = 'file'
+          AND OLD.deleted_at IS NULL
+          AND NEW.deleted_at IS NOT NULL
+          AND OLD.blob_id IS NOT NULL BEGIN
+          UPDATE file_blobs
+          SET status = 'orphaned', orphaned_at = NEW.deleted_at
+          WHERE id = OLD.blob_id
+            AND status = 'active'
+            AND NOT EXISTS (
+              SELECT 1 FROM shares
+              WHERE shares.blob_id = OLD.blob_id
+                AND shares.type = 'file'
+                AND shares.deleted_at IS NULL
+            );
+        END`),
+      env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS download_orphan_blob_after_share_delete
+        AFTER DELETE ON shares
+        WHEN OLD.type = 'file' AND OLD.blob_id IS NOT NULL BEGIN
+          UPDATE file_blobs
+          SET status = 'orphaned', orphaned_at = COALESCE(OLD.deleted_at, datetime('now'))
+          WHERE id = OLD.blob_id
+            AND status = 'active'
+            AND NOT EXISTS (
+              SELECT 1 FROM shares
+              WHERE shares.blob_id = OLD.blob_id
+                AND shares.type = 'file'
+                AND shares.deleted_at IS NULL
+            );
+        END`),
     ])
     await env.DB.prepare('INSERT OR IGNORE INTO storage_usage (id, active_bytes) VALUES (1, 0)').run()
   })
 
   beforeEach(async () => {
     await env.DB.batch([
+      env.DB.prepare('DELETE FROM shares'),
+      env.DB.prepare('DELETE FROM upload_sessions'),
+      env.DB.prepare('DELETE FROM upload_cleanup_jobs'),
+      env.DB.prepare('DELETE FROM file_blobs'),
       env.DB.prepare('DELETE FROM abuse_counters'),
       env.DB.prepare('DELETE FROM settings'),
     ])
@@ -490,6 +605,37 @@ describe('share download accounting', () => {
       body: new Uint8Array(100),
     })
     expect(partRetry.status).toBe(200)
+  })
+
+  it('rejects an oversized chunked part before writing it to R2', async () => {
+    const init = await SELF.fetch('https://example.test/api/share/file/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: 'oversized.bin', mimeType: 'application/octet-stream', size: 100 }),
+    })
+    expect(init.status).toBe(200)
+    const body = await init.json<{ data: { uploadToken: string } }>()
+
+    const part = await SELF.fetch(new Request('https://example.test/api/share/file/part', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'X-Part-Number': '1',
+        'X-Upload-Token': body.data.uploadToken,
+      },
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(101))
+          controller.close()
+        },
+      }),
+    }))
+    expect(part.status).toBe(413)
+
+    const session = await env.DB.prepare(`
+      SELECT id FROM upload_sessions WHERE display_name = 'oversized.bin'
+    `).first()
+    expect(session).not.toBeNull()
   })
 })
 

@@ -1,5 +1,6 @@
 import { DB } from './db'
 import { R2Storage } from './r2'
+import { reconcileUploadCleanupJob } from './upload-cleanup'
 
 const HISTORY_PURGE_BATCH_SIZE = 1000
 
@@ -22,6 +23,14 @@ export async function cleanupExpiredShares(
   const expiredShares = await dbClient.getExpiredShares(batchSize)
   const uploadSessionStaleBefore = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
   const expiredUploadSessions = await dbClient.getExpiredUploadSessions(batchSize, uploadSessionStaleBefore)
+  // Claim stale sessions in D1 before touching either shares or R2. A D1 batch
+  // atomically moves unreferenced sessions to a durable cleanup outbox and
+  // removes duplicate reservations whose final object already has an active
+  // share. Completion also requires the session row, so only one side can win.
+  await dbClient.claimUploadSessionsForCleanup(
+    expiredUploadSessions,
+    new Date().toISOString(),
+  )
 
   let processed = 0
   let deletedR2 = 0
@@ -29,60 +38,101 @@ export async function cleanupExpiredShares(
   let failures = 0
 
   if (expiredShares.length) {
-    const r2Keys = [...new Set(expiredShares.map((share) => share.r2_key))]
-    try {
-      // R2 accepts up to 1,000 keys per delete. The configured cleanup batch is
-      // capped at 100, so this remains one binding operation.
-      await r2Client.deleteObjects(r2Keys)
-      deletedR2 += r2Keys.length
-      processed = await dbClient.markSharesDeletedByIds(
-        expiredShares.map((share) => share.id),
-        new Date().toISOString(),
-      )
-    } catch (e) {
-      failures += expiredShares.length
-      console.error('Failed to batch cleanup expired shares:', e)
+    const managedFileShares = expiredShares.filter(
+      (share) => share.type === 'file' && Boolean(share.blob_id),
+    )
+    const directObjectShares = expiredShares.filter(
+      (share) => share.type !== 'file' || !share.blob_id,
+    )
+    const deletedAt = new Date().toISOString()
+
+    if (directObjectShares.length) {
+      const r2Keys = [...new Set(directObjectShares.map((share) => share.r2_key))]
+      try {
+        // Legacy file rows and text shares still own their R2 keys directly.
+        // Preserve the established delete-first ordering for those objects.
+        await r2Client.deleteObjects(r2Keys)
+        deletedR2 += r2Keys.length
+        processed += await dbClient.markSharesDeletedByIds(
+          directObjectShares.map((share) => share.id),
+          deletedAt,
+        )
+      } catch (e) {
+        failures += directObjectShares.length
+        console.error('Failed to batch cleanup expired direct-object shares:', e)
+      }
+    }
+
+    if (managedFileShares.length) {
+      try {
+        // Managed file shares may share one physical R2 object. Soft-delete the
+        // logical shares first; the migration trigger moves only an unreferenced
+        // blob to the durable orphan outbox.
+        processed += await dbClient.markSharesDeletedByIds(
+          managedFileShares.map((share) => share.id),
+          deletedAt,
+        )
+        await dbClient.orphanUnreferencedFileBlobs(
+          managedFileShares.flatMap((share) => share.blob_id ? [share.blob_id] : []),
+          deletedAt,
+        )
+      } catch (e) {
+        failures += managedFileShares.length
+        console.error('Failed to mark expired managed file shares:', e)
+      }
     }
   }
 
-  const cleanedSessionIds: string[] = []
-  const activeShareKeys = new Map((await dbClient.getActiveShareKeys(
-    expiredUploadSessions.map((session) => session.share_id),
-  )).map((share) => [share.id, share.r2_key]))
-  // Older versions inserted the active share before deleting its upload
-  // reservation. Repair those rows without touching the completed R2 object.
-  for (const session of expiredUploadSessions) {
-    if (activeShareKeys.get(session.share_id) === session.r2_key) {
-      cleanedSessionIds.push(session.id)
+  // Retry both newly orphaned blobs and outbox rows left by an earlier R2 or
+  // D1 failure. R2 deletion is idempotent; remove the accounting row only after
+  // the object deletion succeeds.
+  const orphanedBlobs = await dbClient.getOrphanedFileBlobs(batchSize)
+  for (let offset = 0; offset < orphanedBlobs.length; offset += 6) {
+    const chunk = orphanedBlobs.slice(offset, offset + 6)
+    const results = await Promise.all(chunk.map(async (blob) => {
+      try {
+        await r2Client.deleteObject(blob.r2_key)
+        const removed = await dbClient.deleteOrphanedFileBlob(blob.id)
+        if (!removed) {
+          const remaining = await dbClient.getFileBlobById(blob.id)
+          if (remaining) {
+            throw new Error('Orphaned blob row was retained after R2 deletion')
+          }
+        }
+        return true
+      } catch (error) {
+        console.error(`Failed to cleanup orphaned file blob ${blob.id}:`, error)
+        return false
+      }
+    }))
+    for (const removed of results) {
+      if (removed) deletedR2++
+      else failures++
     }
   }
-  const sessionsToAbort = expiredUploadSessions.filter(
-    (session) => activeShareKeys.get(session.share_id) !== session.r2_key,
-  )
-  // Keep binding concurrency conservative while avoiding one D1 DELETE per session.
-  for (let offset = 0; offset < sessionsToAbort.length; offset += 6) {
+
+  const cleanupJobs = await dbClient.getUploadCleanupJobs(batchSize)
+  const activeJobR2Keys = new Set(await dbClient.getActiveR2Keys(
+    cleanupJobs.map((job) => job.r2_key),
+  ))
+  const cleanedJobIds = cleanupJobs
+    .filter((job) => activeJobR2Keys.has(job.r2_key))
+    .map((job) => job.id)
+  const jobsToReconcile = cleanupJobs.filter((job) => !activeJobR2Keys.has(job.r2_key))
+  // The active-reference check is defensive for data written by an overlapping
+  // old isolate or manual repair. Normal 2.5 completion cannot publish after
+  // the atomic claim has removed the session row.
+  for (let offset = 0; offset < jobsToReconcile.length; offset += 6) {
     // Six avoids starting a large burst of R2 binding operations at once.
-    const chunk = sessionsToAbort.slice(offset, offset + 6)
-    const results = await Promise.all(chunk.map(async (session) => {
+    const chunk = jobsToReconcile.slice(offset, offset + 6)
+    const results = await Promise.all(chunk.map(async (job) => {
       try {
-        const multipart = r2Client.resumeMultipartUpload(session.r2_key, session.upload_id)
-        await multipart.abort()
-        return { id: session.id, aborted: true, deletedObject: false }
-      } catch (abortError) {
-        // A completed multipart upload cannot be aborted. Deleting its final key
-        // also makes a lost R2-complete/D1-commit window safe to clean up. If
-        // the upload is still incomplete, R2 automatically expires it after
-        // seven days by default, even though deleting the final key is a no-op.
-        try {
-          await r2Client.deleteObject(session.r2_key)
-          return { id: session.id, aborted: false, deletedObject: true }
-        } catch (deleteError) {
-          console.error(`Failed to cleanup upload session ${session.id}:`, {
-            abortError,
-            deleteError,
-          })
-          return null
-        }
+        return { id: job.id, ...await reconcileUploadCleanupJob(r2Client, job) }
+      } catch (cleanupError) {
+        // Keep the outbox reservation when R2 cannot be reconciled. Removing it
+        // here could leave multipart parts or a completed object unaccounted.
+        console.error(`Failed to cleanup upload job ${job.id}:`, cleanupError)
+        return null
       }
     }))
     for (const result of results) {
@@ -90,18 +140,18 @@ export async function cleanupExpiredShares(
         failures++
         continue
       }
-      cleanedSessionIds.push(result.id)
+      cleanedJobIds.push(result.id)
       if (result.aborted) abortedUploads++
       if (result.deletedObject) deletedR2++
     }
   }
 
-  if (cleanedSessionIds.length) {
+  if (cleanedJobIds.length) {
     try {
-      await dbClient.deleteUploadSessionsByIds(cleanedSessionIds)
+      await dbClient.deleteUploadCleanupJobsByIds(cleanedJobIds)
     } catch (e) {
-      failures += cleanedSessionIds.length
-      console.error('Failed to batch delete stale upload sessions:', e)
+      failures += cleanedJobIds.length
+      console.error('Failed to batch delete reconciled upload cleanup jobs:', e)
     }
   }
 

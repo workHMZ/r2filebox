@@ -84,8 +84,14 @@ describe('file MIME resolution', () => {
     expect(resolveMimeType('misleading.heic', 'application/x-custom')).toBe('application/x-custom')
   })
 
-  it('uses the extension after rejecting malformed MIME input', () => {
+  it('normalizes valid MIME parameters and casing before resolving', () => {
+    expect(resolveMimeType('unknown.bin', ' Application/X-Custom; version=1 ')).toBe('application/x-custom')
+    expect(resolveMimeType('unknown.bin', 'IMAGE/HEIC; charset=binary')).toBe('image/heic')
     expect(resolveMimeType('clip.WEBM', 'video/webm; charset=utf-8')).toBe('video/webm')
+  })
+
+  it('uses the extension after rejecting malformed MIME input', () => {
+    expect(resolveMimeType('clip.WEBM', 'not-a-mime')).toBe('video/webm')
   })
 
   it('keeps the safe generic fallback for unknown or extensionless filenames', () => {

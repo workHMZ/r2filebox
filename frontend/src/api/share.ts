@@ -35,6 +35,46 @@ export interface ResolvedShare {
   download_url?: string
 }
 
+export interface FileUploadSuccessData {
+  instantUpload: boolean
+  code: string
+  share_url: string
+  full_share_url: string
+  qr_code_data: string
+  file_name: string
+  size_bytes: number
+  expire_at: string
+  max_downloads: number | null
+  dedupToken?: string
+  dedupTokenExpiresAt?: string
+}
+
+export interface FileUploadPartData {
+  partNumber: number
+  etag: string
+  sha256: string
+  partSize: number
+  receipt: string
+}
+
+export interface CompletedUploadPart {
+  partNumber: number
+  etag: string
+  sha256?: string
+  partSize?: number
+  receipt?: string
+}
+
+type FileUploadInitData =
+  | {
+    instantUpload: false
+    code: string
+    uploadToken: string
+    partSize: number
+    partCount: number
+  }
+  | (FileUploadSuccessData & { instantUpload: true })
+
 export const shareApi = {
   // 分享文本
   shareText: (data: {
@@ -66,13 +106,11 @@ export const shareApi = {
     expire_value: number
     expire_style: string
     turnstileToken?: string
+    fingerprintAlgorithm?: string
+    contentFingerprint?: string
+    dedupToken?: string
   }, signal?: AbortSignal) => {
-    return request<ApiResponse<{
-      code: string
-      uploadToken: string
-      partSize: number
-      partCount: number
-    }>>({
+    return request<ApiResponse<FileUploadInitData>>({
       url: '/api/share/file/init',
       method: 'POST',
       data,
@@ -97,10 +135,7 @@ export const shareApi = {
       body: chunk,
       signal,
     })
-    const data = await res.json().catch(() => null) as ApiResponse<{
-      partNumber: number
-      etag: string
-    }> | null
+    const data = await res.json().catch(() => null) as ApiResponse<FileUploadPartData> | null
     if (!res.ok || data?.code !== 200) {
       const retryAfter = res.headers.get('Retry-After')
       const seconds = retryAfter === null ? Number.NaN : Number(retryAfter)
@@ -118,18 +153,9 @@ export const shareApi = {
   completeFileUpload: (data: {
     uploadToken: string
     code: string
-    parts: Array<{ partNumber: number; etag: string }>
+    parts: CompletedUploadPart[]
   }, signal?: AbortSignal) => {
-    return request<ApiResponse<{
-      code: string
-      share_url: string
-      full_share_url: string
-      qr_code_data: string
-      file_name: string
-      size_bytes: number
-      expire_at: string
-      max_downloads: number | null
-    }>>({
+    return request<ApiResponse<FileUploadSuccessData>>({
       url: '/api/share/file/complete',
       method: 'POST',
       headers: {
