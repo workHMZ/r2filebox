@@ -1,4 +1,6 @@
-const SHARE_CODE_PATTERN = /^[A-Za-z0-9_-]{1,128}$/
+// Mirror the Base58-style alphabet the Worker accepts (no 0, 1, I, O, or l),
+// so an unusable code is caught in the input instead of after a 404 round trip.
+const SHARE_CODE_PATTERN = /^[23456789A-HJ-NP-Za-km-z]{1,128}$/
 
 const codeFromSharePath = (path: string): string => {
   const pathOnly = path.split(/[?#]/, 1)[0]

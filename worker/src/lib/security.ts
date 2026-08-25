@@ -39,6 +39,9 @@ export async function securityHeaders(c: Context, next: Next) {
   }
 }
 
+// Only Cloudflare's own connecting-IP header is trusted. A forwarded-for chain
+// is attacker-controlled, so honouring it would hand every request a fresh
+// rate-limit bucket and let an audit entry claim any source address.
 export function getClientIp(c: Context): string | null {
-  return c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For')?.split(',')[0]?.trim() || null
+  return c.req.header('CF-Connecting-IP')?.trim() || null
 }

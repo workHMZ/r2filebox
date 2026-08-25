@@ -5,7 +5,7 @@ import { success } from '../lib/response'
 const app = new Hono<{ Bindings: Env }>()
 
 app.get('/api/version', (c) => {
-  const version = c.env.APP_VERSION || '2.5.0'
+  const version = c.env.APP_VERSION || '2.5.1'
   const configuredCommitHash = c.env.GIT_COMMIT_HASH?.trim()
   const commitHash = configuredCommitHash && configuredCommitHash !== 'unknown'
     ? configuredCommitHash

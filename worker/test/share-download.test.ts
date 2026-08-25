@@ -272,6 +272,108 @@ describe('share download accounting', () => {
     expect(exhausted.status).toBe(404)
   })
 
+  it('answers an unsatisfiable Range with 416 instead of a misleading 206', async () => {
+    const code = 'HJKL2345MNPQ'
+    const content = '0123456789abcdef'
+    await createFileShare(code, 'clip.mp4', 'video/mp4', content)
+    const cookie = await openDownloadSession(code)
+    const downloadUrl = cookie.downloadUrl
+
+    const beyondEnd = await SELF.fetch(`https://example.test${downloadUrl}`, {
+      headers: { Cookie: cookie.header, Range: `bytes=${content.length}-${content.length + 10}` },
+    })
+    expect(beyondEnd.status).toBe(416)
+    expect(beyondEnd.headers.get('content-range')).toBe(`bytes */${content.length}`)
+    expect(beyondEnd.headers.get('accept-ranges')).toBe('bytes')
+    expect(await beyondEnd.text()).not.toBe(content)
+
+    const zeroSuffix = await SELF.fetch(`https://example.test${downloadUrl}`, {
+      headers: { Cookie: cookie.header, Range: 'bytes=-0' },
+    })
+    expect(zeroSuffix.status).toBe(416)
+  })
+
+  it('serves a malformed Range as a complete 200 body', async () => {
+    const code = 'RSTU2345VWXY'
+    const content = '0123456789abcdef'
+    await createFileShare(code, 'clip.mp4', 'video/mp4', content)
+    const cookie = await openDownloadSession(code)
+
+    for (const range of ['bytes=abc', 'bytes=5-3', 'bytes=0-1,4-5']) {
+      const response = await SELF.fetch(`https://example.test${cookie.downloadUrl}`, {
+        headers: { Cookie: cookie.header, Range: range },
+      })
+      expect(response.status, range).toBe(200)
+      expect(response.headers.get('content-range'), range).toBeNull()
+      expect(new TextDecoder().decode(await response.arrayBuffer()), range).toBe(content)
+    }
+  })
+
+  it('serves suffix and open-ended Range requests from the requested offset', async () => {
+    const code = 'ZABC2345DEFG'
+    const content = '0123456789abcdef'
+    await createFileShare(code, 'clip.mp4', 'video/mp4', content)
+    const cookie = await openDownloadSession(code)
+
+    const suffix = await SELF.fetch(`https://example.test${cookie.downloadUrl}`, {
+      headers: { Cookie: cookie.header, Range: 'bytes=-4' },
+    })
+    expect(suffix.status).toBe(206)
+    expect(suffix.headers.get('content-range')).toBe('bytes 12-15/16')
+    expect(suffix.headers.get('content-length')).toBe('4')
+    expect(new TextDecoder().decode(await suffix.arrayBuffer())).toBe('cdef')
+
+    const openEnded = await SELF.fetch(`https://example.test${cookie.downloadUrl}`, {
+      headers: { Cookie: cookie.header, Range: 'bytes=8-' },
+    })
+    expect(openEnded.status).toBe(206)
+    expect(openEnded.headers.get('content-range')).toBe('bytes 8-15/16')
+    expect(new TextDecoder().decode(await openEnded.arrayBuffer())).toBe('89abcdef')
+
+    // An end past the object is clamped, not treated as a failure.
+    const clamped = await SELF.fetch(`https://example.test${cookie.downloadUrl}`, {
+      headers: { Cookie: cookie.header, Range: 'bytes=12-999' },
+    })
+    expect(clamped.status).toBe(206)
+    expect(clamped.headers.get('content-range')).toBe('bytes 12-15/16')
+    expect(new TextDecoder().decode(await clamped.arrayBuffer())).toBe('cdef')
+  })
+
+  it('keeps the text extraction when the stored object is already gone', async () => {
+    const code = 'DEFG2345HJKL'
+    const content = 'the object behind this share disappears'
+    const { shareId } = await createTextShare(code, content)
+    const stored = await env.DB.prepare('SELECT r2_key FROM shares WHERE id = ?')
+      .bind(shareId)
+      .first<{ r2_key: string }>()
+    await env.BUCKET.delete(stored!.r2_key)
+
+    const missing = await SELF.fetch('https://example.test/api/share/resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    })
+    expect(missing.status).toBe(404)
+
+    // The share allows a single extraction, so a burnt slot would make the
+    // restored object permanently unreachable.
+    const afterMiss = await env.DB.prepare('SELECT download_count FROM shares WHERE id = ?')
+      .bind(shareId)
+      .first<{ download_count: number }>()
+    expect(afterMiss?.download_count).toBe(0)
+
+    await env.BUCKET.put(stored!.r2_key, content, {
+      httpMetadata: { contentType: 'text/plain; charset=utf-8' },
+    })
+    const restored = await SELF.fetch('https://example.test/api/share/resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    })
+    expect(restored.status).toBe(200)
+    await expect(restored.json()).resolves.toMatchObject({ data: { text: content } })
+  })
+
   it.each([
     {
       label: 'MOV',
@@ -686,6 +788,20 @@ function trackStatementFirst(
       return typeof value === 'function' ? value.bind(target) : value
     },
   })
+}
+
+async function openDownloadSession(code: string): Promise<{ header: string, downloadUrl: string }> {
+  const response = await SELF.fetch('https://example.test/api/share/resolve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  })
+  expect(response.status).toBe(200)
+  const body = await response.json<{ data: { download_url: string } }>()
+  return {
+    header: cookiePair(response.headers.get('set-cookie') || ''),
+    downloadUrl: body.data.download_url,
+  }
 }
 
 async function createTextShare(code: string, content: string): Promise<{ shareId: string }> {

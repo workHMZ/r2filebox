@@ -4,6 +4,7 @@ import { boolEnv, intEnv } from './env'
 
 const DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 const MAX_UPLOAD_BYTES_LIMIT = 95 * 1024 * 1024
+export const MAX_TEXT_BYTES_LIMIT = 1024 * 1024
 export const DEFAULT_CLEANUP_BATCH_SIZE = 100
 
 export interface RuntimeConfig {
@@ -11,6 +12,7 @@ export interface RuntimeConfig {
   appDescription: string
   codeLength: number
   maxUploadBytes: number
+  maxTextBytes: number
   maxTotalStorageBytes: number
   defaultExpireHours: number
   maxExpireHours: number
@@ -54,12 +56,18 @@ export async function getRuntimeConfig(env: Env, db = new DB(env.DB)): Promise<R
 export function buildRuntimeConfig(env: Env, settings: Record<string, string> = {}): RuntimeConfig {
   const minUploadBytes = 1024 * 1024
   const maxExpireHours = clamp(numberValue(settings.MAX_EXPIRE_HOURS, 168), 1, 8760)
+  const maxUploadBytes = clamp(
+    numberValue(settings.MAX_UPLOAD_BYTES, DEFAULT_MAX_UPLOAD_BYTES),
+    minUploadBytes,
+    MAX_UPLOAD_BYTES_LIMIT,
+  )
 
   return {
     appName: stringValue(settings.APP_NAME, 'R2FileBox'),
     appDescription: stringValue(settings.APP_DESCRIPTION, 'Private code-based file sharing on Cloudflare R2'),
     codeLength: clamp(numberValue(settings.CODE_LENGTH, 12), 6, 64),
-    maxUploadBytes: clamp(numberValue(settings.MAX_UPLOAD_BYTES, DEFAULT_MAX_UPLOAD_BYTES), minUploadBytes, MAX_UPLOAD_BYTES_LIMIT),
+    maxUploadBytes,
+    maxTextBytes: Math.min(maxUploadBytes, MAX_TEXT_BYTES_LIMIT),
     maxTotalStorageBytes: Math.max(numberValue(settings.MAX_TOTAL_STORAGE_BYTES, 8 * 1024 * 1024 * 1024), 1),
     defaultExpireHours: clamp(numberValue(settings.DEFAULT_EXPIRE_HOURS, 24), 1, maxExpireHours),
     maxExpireHours,

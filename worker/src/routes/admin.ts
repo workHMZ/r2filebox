@@ -118,8 +118,8 @@ app.post('/admin/logout', async (c) => {
     await audit(db, c, 'admin_logout', null, 'success', await hashIp(getClientIp(c), pepper), {
       subject: { type: 'admin', name: c.get('user').username, sizeBytes: null },
     })
-  } catch (error) {
-    console.error('Failed to write admin logout audit log:', error)
+  } catch (cause) {
+    console.error('Failed to write admin logout audit log:', cause)
   }
   c.header('Set-Cookie', adminSessionCookie('', c.req.url, 0))
   return c.json(success(null, 'Logout successful'))
@@ -319,7 +319,7 @@ app.get('/admin/maintenance/system-info', (c) => {
     runtime: 'Cloudflare Workers',
     platform: 'V8 isolate',
     storage: 'D1 + R2 + Workers Rate Limiting',
-    version: c.env.APP_VERSION || '2.5.0',
+    version: c.env.APP_VERSION || '2.5.1',
     r2_bucket_name: c.env.R2_BUCKET_NAME || null,
     d1_database_name: c.env.D1_DATABASE_NAME || null,
   }))
@@ -582,8 +582,8 @@ async function audit(
       status,
       created_at: new Date().toISOString(),
     })
-  } catch (error) {
-    console.error('Failed to write admin audit log:', error)
+  } catch (cause) {
+    console.error('Failed to write admin audit log:', cause)
   }
 }
 

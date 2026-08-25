@@ -14,6 +14,7 @@ app.get('/api/config', async (c) => {
       name: config.appName,
       description: config.appDescription,
       maxUploadBytes: config.maxUploadBytes,
+      maxTextBytes: config.maxTextBytes,
       defaultExpireHours: config.defaultExpireHours,
       maxExpireHours: config.maxExpireHours,
       requireTurnstile: config.requireTurnstile,

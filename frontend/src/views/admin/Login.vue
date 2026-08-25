@@ -127,6 +127,7 @@ import { useConfigStore } from '@/stores/config'
 import { useI18n } from '@/i18n'
 import AppLogo from '@/components/AppLogo.vue'
 import InterfaceControls from '@/components/InterfaceControls.vue'
+import { safeAdminRedirect } from '@/utils/admin-redirect'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -183,10 +184,7 @@ const handleLogin = async () => {
   try {
     await userStore.login(loginForm.username, loginForm.password)
     ElMessage.success(t('admin.login.done'))
-    const redirect = typeof router.currentRoute.value.query.redirect === 'string'
-      ? router.currentRoute.value.query.redirect
-      : '/admin'
-    await router.replace(redirect)
+    await router.replace(safeAdminRedirect(router.currentRoute.value.query.redirect))
   } catch (error: unknown) {
     loginError.value = error instanceof Error ? error.message : t('admin.login.failed')
     ElMessage.error(loginError.value)

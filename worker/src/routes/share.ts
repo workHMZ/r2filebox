@@ -18,6 +18,7 @@ import { getClientIp } from '../lib/security'
 import { signJWT, verifyJWT } from '../lib/auth'
 import {
   getRuntimeConfig,
+  MAX_TEXT_BYTES_LIMIT,
   RuntimeConfigUnavailableError,
   type RuntimeConfig,
 } from '../lib/runtime-config'
@@ -40,13 +41,13 @@ type Bindings = Env
 
 const app = new Hono<{ Bindings: Bindings }>()
 const MULTIPART_PART_SIZE = CONTENT_FINGERPRINT_PART_SIZE
-const MAX_TEXT_BYTES = 1024 * 1024
-const MAX_TEXT_REQUEST_BYTES = MAX_TEXT_BYTES + (64 * 1024)
+const MAX_TEXT_REQUEST_BYTES = MAX_TEXT_BYTES_LIMIT + (64 * 1024)
 const MAX_INIT_BODY_BYTES = 16 * 1024
 const MAX_COMPLETE_BODY_BYTES = 32 * 1024
 const MAX_RESOLVE_BODY_BYTES = 4 * 1024
 const MAX_MULTIPART_PARTS = 12
 const DOWNLOAD_SESSION_TTL_SECONDS = 15 * 60
+const SHARE_CODE_ATTEMPTS = 5
 const INSTANT_UPLOAD_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60
 
 interface UploadTokenPayload extends Record<string, unknown> {
@@ -84,7 +85,7 @@ async function createTextShare(c: Context<{ Bindings: Bindings }>) {
       return c.json(error(ErrorCode.TEXT_SHARE_DISABLED, 403, 'Text sharing is disabled by administrator'), 403)
     }
 
-    const maxUploadBytes = Math.min(config.maxUploadBytes, MAX_TEXT_BYTES)
+    const maxTextBytes = config.maxTextBytes
     const contentLength = getContentLength(c)
     if (contentLength && contentLength > MAX_TEXT_REQUEST_BYTES) {
       return c.json(error(ErrorCode.PAYLOAD_TOO_LARGE, 413, 'Payload too large'), 413)
@@ -116,13 +117,11 @@ async function createTextShare(c: Context<{ Bindings: Bindings }>) {
     }
 
     const textBytes = new TextEncoder().encode(text)
-    if (textBytes.length > maxUploadBytes) {
+    if (textBytes.length > maxTextBytes) {
       return c.json(error(ErrorCode.PAYLOAD_TOO_LARGE, 413, 'Payload too large'), 413)
     }
 
-    const codeLength = config.codeLength
-    const rawCode = generateCode(codeLength)
-    const codeHash = await hashCode(rawCode, pepper)
+    const { rawCode, codeHash } = await reserveShareCode(db, config.codeLength, pepper)
     const shareId = crypto.randomUUID()
     const r2Key = generateR2Key(shareId)
     const expireAt = getExpireAt(config, body)
@@ -168,9 +167,9 @@ async function createTextShare(c: Context<{ Bindings: Bindings }>) {
         await Promise.allSettled([r2.deleteObject(r2Key)])
         return c.json(error(ErrorCode.STORAGE_LIMIT_REACHED, 403, 'Storage soft limit reached'), 403)
       }
-    } catch (error) {
+    } catch (cause) {
       await Promise.allSettled([r2.deleteObject(r2Key)])
-      throw error
+      throw cause
     }
 
     const url = `${new URL(c.req.url).origin}/#/share/${rawCode}`
@@ -258,9 +257,7 @@ async function initMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
 
     const safeFilename = sanitizeFilename(String(body.filename || 'upload.bin'))
     const mimeType = resolveMimeType(safeFilename, String(body.mimeType || ''))
-    const codeLength = config.codeLength
-    const rawCode = generateCode(codeLength)
-    const codeHash = await hashCode(rawCode, pepper)
+    const { rawCode, codeHash } = await reserveShareCode(db, config.codeLength, pepper)
     const shareId = crypto.randomUUID()
     const r2Key = generateR2Key(shareId)
     const expireAt = getExpireAt(config, body)
@@ -356,9 +353,9 @@ async function initMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
     let reserved = false
     try {
       reserved = await db.createUploadSession(session, maxStorage)
-    } catch (error) {
+    } catch (cause) {
       await Promise.allSettled([multipart.abort()])
-      throw error
+      throw cause
     }
     if (!reserved) {
       await Promise.allSettled([multipart.abort()])
@@ -845,13 +842,20 @@ async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string 
     }
 
     if (share.type === 'text') {
+      const r2 = new R2Storage(c.env.BUCKET)
+      // Confirm the object still exists before spending a download slot, so a
+      // share whose object has already gone does not burn its final extraction
+      // on a request that can only answer 404. The file branch below does the
+      // same, and HEAD keeps this a metadata-only read.
+      if (!await r2.headObject(share.r2_key)) {
+        return c.json(error(ErrorCode.SHARE_NOT_FOUND, 404, 'Share not found or expired'), 404)
+      }
       // Reserve the extraction atomically before loading the R2 body. A
       // concurrent request that loses the final download slot must not read
       // text content that it is no longer allowed to return.
       if (!await db.consumeShareDownload(share.id)) {
         return c.json(error(ErrorCode.SHARE_NOT_FOUND, 404, 'Share not found or expired'), 404)
       }
-      const r2 = new R2Storage(c.env.BUCKET)
       const obj = await r2.getObject(share.r2_key)
       if (!obj) {
         return c.json(error(ErrorCode.SHARE_NOT_FOUND, 404, 'Share not found or expired'), 404)
@@ -974,13 +978,30 @@ async function downloadWithSession(c: Context<{ Bindings: Bindings }>) {
       })
     }
 
-    const rangeHeader = c.req.header('Range')
-    const r2Options: R2GetOptions | undefined = rangeHeader
-      ? { range: c.req.raw.headers }
-      : undefined
+    // Handing the raw headers to R2 makes an unsatisfiable or malformed Range
+    // silently degrade into a full-object read, which the response code below
+    // would then report as a 206 that does not start where the client asked -
+    // a resumable downloader would write those bytes at the wrong offset.
+    // Resolving the range here keeps status, Content-Range, and body in step.
+    const requestedRange = parseByteRange(c.req.header('Range'), share.size_bytes)
+    if (requestedRange.kind === 'unsatisfiable') {
+      return new Response('Requested range not satisfiable', {
+        status: 416,
+        headers: {
+          'Content-Range': `bytes */${share.size_bytes}`,
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'private, no-store',
+        },
+      })
+    }
 
     const r2 = new R2Storage(c.env.BUCKET)
-    const obj = await r2.getObject(share.r2_key, r2Options)
+    const obj = await r2.getObject(
+      share.r2_key,
+      requestedRange.kind === 'range'
+        ? { range: { offset: requestedRange.offset, length: requestedRange.length } }
+        : undefined,
+    )
     if (!obj) {
       return new Response('Share code invalid or file unavailable', { status: 404 })
     }
@@ -1005,21 +1026,11 @@ async function downloadWithSession(c: Context<{ Bindings: Bindings }>) {
     headers.set('etag', obj.httpEtag)
 
     let status = 200
-    if (rangeHeader && obj.range) {
+    if (requestedRange.kind === 'range') {
+      const { offset, length } = requestedRange
       status = 206
-      if ('offset' in obj.range && typeof obj.range.offset === 'number') {
-        const offset = obj.range.offset
-        const length = obj.range.length ?? (share.size_bytes - offset)
-        const end = Math.min(offset + length - 1, share.size_bytes - 1)
-        headers.set('Content-Range', `bytes ${offset}-${end}/${share.size_bytes}`)
-        headers.set('Content-Length', String(end - offset + 1))
-      } else if ('suffix' in obj.range && typeof obj.range.suffix === 'number') {
-        const suffix = obj.range.suffix
-        const start = Math.max(share.size_bytes - suffix, 0)
-        const end = share.size_bytes - 1
-        headers.set('Content-Range', `bytes ${start}-${end}/${share.size_bytes}`)
-        headers.set('Content-Length', String(end - start + 1))
-      }
+      headers.set('Content-Range', `bytes ${offset}-${offset + length - 1}/${share.size_bytes}`)
+      headers.set('Content-Length', String(length))
     }
 
     return new Response(obj.body, { status, headers })
@@ -1289,6 +1300,25 @@ function normalizeUploadedParts(parts: unknown): R2UploadedPart[] {
     .sort((a, b) => a.partNumber - b.partNumber)
 }
 
+/**
+ * shares.code_hash and upload_sessions.code_hash are both UNIQUE, so a drawn
+ * code that is already in use would surface as a 500 - for a multipart upload
+ * only after the entire file had been written to R2. Draw a code that is free
+ * in both tables before anything is reserved.
+ */
+async function reserveShareCode(
+  db: DB,
+  codeLength: number,
+  pepper: string,
+): Promise<{ rawCode: string, codeHash: string }> {
+  for (let attempt = 1; attempt <= SHARE_CODE_ATTEMPTS; attempt++) {
+    const rawCode = generateCode(codeLength)
+    const codeHash = await hashCode(rawCode, pepper)
+    if (await db.isCodeHashAvailable(codeHash)) return { rawCode, codeHash }
+  }
+  throw new Error(`Could not allocate an unused share code after ${SHARE_CODE_ATTEMPTS} attempts`)
+}
+
 function getExpireAt(config: RuntimeConfig, body: Record<string, unknown>): string {
   const expireValue = Number.parseInt(String(body.expire_value || '1'), 10)
   const expireStyle = String(body.expire_style || 'day')
@@ -1397,6 +1427,41 @@ function toHttpEtag(value: string): string {
   return `"${normalized}"`
 }
 
+export type ByteRangeRequest =
+  | { kind: 'none' }
+  | { kind: 'unsatisfiable' }
+  | { kind: 'range', offset: number, length: number }
+
+/**
+ * Resolve a single byte range against a known object size. A syntactically
+ * invalid or multi-range header is ignored rather than rejected, as RFC 9110
+ * requires, which keeps those requests on the plain 200 path instead of
+ * answering them with a misleading 206.
+ */
+export function parseByteRange(header: string | undefined, sizeBytes: number): ByteRangeRequest {
+  if (!header) return { kind: 'none' }
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim())
+  if (!match) return { kind: 'none' }
+  const [, rawStart, rawEnd] = match
+  if (!rawStart && !rawEnd) return { kind: 'none' }
+  if (!Number.isSafeInteger(sizeBytes) || sizeBytes <= 0) return { kind: 'unsatisfiable' }
+
+  if (!rawStart) {
+    // bytes=-N asks for the final N bytes; more than the whole object is the
+    // whole object, and a zero-length suffix cannot be satisfied.
+    const suffix = Math.min(Number(rawEnd), sizeBytes)
+    if (suffix <= 0) return { kind: 'unsatisfiable' }
+    return { kind: 'range', offset: sizeBytes - suffix, length: suffix }
+  }
+
+  const start = Number(rawStart)
+  if (!Number.isSafeInteger(start)) return { kind: 'none' }
+  if (start >= sizeBytes) return { kind: 'unsatisfiable' }
+  const end = rawEnd ? Math.min(Number(rawEnd), sizeBytes - 1) : sizeBytes - 1
+  if (end < start) return { kind: 'none' }
+  return { kind: 'range', offset: start, length: end - start + 1 }
+}
+
 export function isSafeInlinePreviewMime(mimeType: string | null): boolean {
   const normalized = mimeType?.split(';', 1)[0]?.trim().toLowerCase() || ''
   if (normalized.startsWith('audio/') || normalized.startsWith('video/')) return true
@@ -1486,8 +1551,8 @@ async function audit(
       status,
       created_at: new Date().toISOString(),
     })
-  } catch (error) {
-    console.error('Failed to write share audit log:', error)
+  } catch (cause) {
+    console.error('Failed to write share audit log:', cause)
   }
 }
 

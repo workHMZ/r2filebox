@@ -10,9 +10,11 @@
         :placeholder="t('text.placeholder')"
         resize="none"
         class="text-area"
-        maxlength="10000"
-        show-word-limit
+        :maxlength="maxTextBytes"
       />
+      <p class="text-size-hint" :class="{ 'is-over': textTooLarge }" role="status" aria-live="polite">
+        {{ t('text.sizeHint', { used: formattedTextSize, max: formattedTextLimit }) }}
+      </p>
     </div>
 
     <ShareSettings
@@ -38,7 +40,7 @@
       class="text-share-submit"
       :loading="sharing"
       :aria-busy="sharing"
-      :disabled="!textContent.trim() || (requiresTurnstile && !turnstileToken)"
+      :disabled="!textContent.trim() || textTooLarge || (requiresTurnstile && !turnstileToken)"
     >
       <template #icon>
         <el-icon v-if="!sharing" aria-hidden="true"><Promotion /></el-icon>
@@ -55,8 +57,9 @@ import { useRoute } from 'vue-router'
 import { shareApi } from '@/api/share'
 import { ElMessage } from 'element-plus'
 import { Promotion } from '@element-plus/icons-vue'
-import { useI18n } from '@/i18n'
+import { getLocaleTag, useI18n } from '@/i18n'
 import { useConfigStore } from '@/stores/config'
+import { formatFileSize } from '@/utils/format'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import ShareSettings from '@/components/upload/ShareSettings.vue'
 import { expireSelectionFromHours, type ExpireStyle } from '@/utils/expiration'
@@ -66,10 +69,21 @@ const emit = defineEmits<{
 }>()
 
 const route = useRoute()
-const { t } = useI18n()
+const { locale, t } = useI18n()
 const configStore = useConfigStore()
+const DEFAULT_MAX_TEXT_BYTES = 1024 * 1024
 
 const textContent = ref('')
+
+// The Worker measures UTF-8 bytes, so a character cap can only ever be a coarse
+// guard: every character is at least one byte, which makes the byte limit a
+// maxlength that never truncates text the server would have accepted. The byte
+// counter below is what actually tells the user where the limit is.
+const maxTextBytes = computed(() => configStore.config?.maxTextBytes || DEFAULT_MAX_TEXT_BYTES)
+const textBytes = computed(() => new TextEncoder().encode(textContent.value).byteLength)
+const textTooLarge = computed(() => textBytes.value > maxTextBytes.value)
+const formattedTextSize = computed(() => formatFileSize(textBytes.value, getLocaleTag(locale.value)))
+const formattedTextLimit = computed(() => formatFileSize(maxTextBytes.value, getLocaleTag(locale.value)))
 
 onMounted(() => {
   const search = new URLSearchParams(window.location.search)
@@ -108,6 +122,10 @@ const handleShare = async () => {
   }
 
   await configStore.fetchConfig()
+  if (textTooLarge.value) {
+    ElMessage.error(t('text.tooLarge', { max: formattedTextLimit.value }))
+    return
+  }
   if (requiresTurnstile.value && !turnstileToken.value) {
     ElMessage.warning(t('turnstile.required'))
     return
@@ -154,6 +172,17 @@ const handleShare = async () => {
 
 .text-input-area {
   margin-bottom: 22px;
+}
+
+.text-size-hint {
+  margin: 6px 2px 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: right;
+}
+
+.text-size-hint.is-over {
+  color: var(--danger-color);
 }
 
 .text-area :deep(.el-textarea__inner) {

@@ -412,6 +412,21 @@ export class DB {
     return await stmt.first<Share>()
   }
 
+  /**
+   * shares.code_hash and upload_sessions.code_hash are both UNIQUE, and a share
+   * keeps its row until the deleted-share purge runs, so a reusable code must be
+   * absent from both tables.
+   */
+  async isCodeHashAvailable(codeHash: string): Promise<boolean> {
+    const taken = await this.db.prepare(`
+      SELECT 1 AS taken FROM shares WHERE code_hash = ?
+      UNION ALL
+      SELECT 1 AS taken FROM upload_sessions WHERE code_hash = ?
+      LIMIT 1
+    `).bind(codeHash, codeHash).first<{ taken: number }>()
+    return taken === null
+  }
+
   async getShareById(id: string): Promise<Share | null> {
     const stmt = this.db.prepare('SELECT * FROM shares WHERE id = ? AND deleted_at IS NULL').bind(id)
     return await stmt.first<Share>()

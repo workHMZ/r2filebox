@@ -5,6 +5,7 @@ export interface PublicConfig {
   name: string
   description: string
   maxUploadBytes: number
+  maxTextBytes: number
   openUpload: number
   expireStyle: string[]
   defaultExpireHours: number

@@ -149,6 +149,7 @@ import ActionFeedbackButton from '@/components/ActionFeedbackButton.vue'
 import { useActionFeedback } from '@/composables/useActionFeedback'
 import { getLocaleTag, useI18n } from '@/i18n'
 import { formatDateTime, formatFileSize } from '@/utils/format'
+import { pageAfterRemoval } from '@/utils/pagination'
 import { classifyFile, type FileCategory } from '@/utils/file-type'
 
 const loading = ref(false)
@@ -251,6 +252,7 @@ const deleteFile = async (file: AdminShare) => {
       deletedFileId.value = file.id
       showDeleteSucceeded()
       await new Promise((resolve) => setTimeout(resolve, 450))
+      pagination.page = pageAfterRemoval(pagination.page, pagination.total, pagination.pageSize)
       await fetchFiles()
       resetDeleteSucceeded()
       deletedFileId.value = ''

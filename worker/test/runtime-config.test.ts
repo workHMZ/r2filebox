@@ -19,6 +19,8 @@ describe('runtime configuration', () => {
       appName: 'R2FileBox',
       appDescription: 'Private code-based file sharing on Cloudflare R2',
       maxUploadBytes: 52428800,
+      // Text shares stay capped at 1 MiB even when files may be much larger.
+      maxTextBytes: 1048576,
       enablePublicUpload: true,
       requireTurnstile: false,
     })
@@ -40,6 +42,7 @@ describe('runtime configuration', () => {
     expect(config).toMatchObject({
       appName: 'Configured Name',
       maxUploadBytes: 64 * 1024 * 1024,
+      maxTextBytes: 1048576,
       maxExpireHours: 720,
       enableTextShare: false,
       rateLimitDownloadPerMinute: 42,
@@ -99,6 +102,7 @@ describe('runtime configuration', () => {
       'enableTextShare',
       'expireStyle',
       'maxExpireHours',
+      'maxTextBytes',
       'maxUploadBytes',
       'name',
       'openUpload',

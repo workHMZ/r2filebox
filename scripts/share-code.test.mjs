@@ -22,6 +22,17 @@ test('extracts codes from supported share links', () => {
   for (const link of links) assert.equal(parseShareCode(link), code, link)
 })
 
+test('rejects codes outside the alphabet the Worker accepts', () => {
+  // 0, 1, I, O, and l are excluded from the generated alphabet, and the API
+  // rejects them outright, so they must never reach the share route.
+  for (const ambiguous of ['0', '1', 'I', 'O', 'l']) {
+    const input = `${code.slice(0, -1)}${ambiguous}`
+    assert.equal(parseShareCode(input), '', input)
+    assert.equal(parseShareCode(`https://box.example/#/share/${input}`), '', input)
+  }
+  assert.equal(parseShareCode('abc_def-ghi'), '')
+})
+
 test('rejects unrelated or malformed links', () => {
   const invalid = [
     '',
