@@ -8,6 +8,8 @@ import {
   sha256Bytes,
 } from '../src/lib/content-fingerprint'
 
+const TWO_PART_UPLOAD_TIMEOUT_MS = 120_000
+
 interface UploadInitData {
   instantUpload: boolean
   uploadToken?: string
@@ -208,6 +210,10 @@ describe('verified instant upload', () => {
     expect((await resolveAndDownload(second.code)).bytes).toEqual(content)
   })
 
+  // The only test that pushes a real multi-part payload: it hashes 8 MiB twice
+  // (client manifest, then the Worker's streaming digest) and drives an actual R2
+  // multipart upload. That is CPU-bound, so a shared CI runner takes roughly three
+  // times as long as a developer machine and 30 s left no headroom.
   it('verifies and instantly reuses a real two-part upload', async () => {
     const content = new Uint8Array(CONTENT_FINGERPRINT_PART_SIZE + 1)
     content[0] = 0x52
@@ -243,7 +249,7 @@ describe('verified instant upload', () => {
     const downloaded = await resolveAndDownload(instant.code)
     expect(downloaded.data.file_name).toBe('two-part-copy.bin')
     expect(downloaded.bytes).toEqual(content)
-  }, 30_000)
+  }, TWO_PART_UPLOAD_TIMEOUT_MS)
 
   it('does not expose a hash-only lookup without the prior capability', async () => {
     const content = new TextEncoder().encode('capability protected bytes')
