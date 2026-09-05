@@ -54,7 +54,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { shareApi } from '@/api/share'
+import { shareApi, type ShareCreatedResult } from '@/api/share'
 import { ElMessage } from 'element-plus'
 import { Promotion } from '@element-plus/icons-vue'
 import { getLocaleTag, useI18n } from '@/i18n'
@@ -65,7 +65,7 @@ import ShareSettings from '@/components/upload/ShareSettings.vue'
 import { expireSelectionFromHours, type ExpireStyle } from '@/utils/expiration'
 
 const emit = defineEmits<{
-  success: [result: { code: string; share_url: string; full_share_url: string; qr_code_data: string }]
+  success: [result: ShareCreatedResult]
 }>()
 
 const route = useRoute()
@@ -148,6 +148,8 @@ const handleShare = async () => {
         share_url: res.data.share_url,
         full_share_url: res.data.full_share_url,
         qr_code_data: res.data.qr_code_data,
+        expire_at: res.data.expire_at,
+        max_downloads: res.data.max_downloads,
       })
       
       // 重置

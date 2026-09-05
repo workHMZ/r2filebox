@@ -319,7 +319,7 @@ app.get('/admin/maintenance/system-info', (c) => {
     runtime: 'Cloudflare Workers',
     platform: 'V8 isolate',
     storage: 'D1 + R2 + Workers Rate Limiting',
-    version: c.env.APP_VERSION || '2.5.1',
+    version: c.env.APP_VERSION || '2.6.0',
     r2_bucket_name: c.env.R2_BUCKET_NAME || null,
     d1_database_name: c.env.D1_DATABASE_NAME || null,
   }))
@@ -331,7 +331,16 @@ app.post('/admin/maintenance/clean-expired', async (c) => {
     const config = await getRuntimeConfig(c.env, db)
     const pepper = getRequiredSecret(c.env, 'CODE_HASH_PEPPER')
     const ipHash = await hashIp(getClientIp(c), pepper)
-    const result = await cleanupExpiredShares(c.env.DB, c.env.BUCKET, config.cleanupBatchSize)
+    // An administrator is waiting on this response, and an HTTP request gets the
+    // same 10 ms of CPU on the Free plan as a Cron run, so drain one batch less.
+    // The operation is idempotent, so clearing a large backlog is just repeated
+    // clicks - or the hourly Cron catching up on its own.
+    const result = await cleanupExpiredShares(
+      c.env.DB,
+      c.env.BUCKET,
+      config.cleanupBatchSize,
+      { maxPasses: 2, budgetMs: 5_000 },
+    )
     await audit(db, c, 'admin_cleanup_expired', null, result.failures ? 'partial' : 'success', ipHash, {
       config,
       subject: { type: 'system', name: 'expired-content', sizeBytes: null },

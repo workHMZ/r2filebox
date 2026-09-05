@@ -106,6 +106,17 @@
               </div>
             </div>
 
+            <div class="share-terms-card">
+              <div class="share-term">
+                <span class="share-term-key">{{ t('share.success.expire') }}</span>
+                <span class="share-term-val">{{ shareExpireText }}</span>
+              </div>
+              <div class="share-term">
+                <span class="share-term-key">{{ t('share.success.maxDownloads') }}</span>
+                <span class="share-term-val">{{ shareMaxDownloadsText }}</span>
+              </div>
+            </div>
+
             <div v-if="qrCodeDataUrl" class="qrcode-section">
               <img :src="qrCodeDataUrl" alt="" aria-hidden="true" class="qrcode-image" />
               <p class="qrcode-tip">{{ t('share.qr.tip') }}</p>
@@ -158,10 +169,12 @@ import FileUpload from '@/components/upload/FileUpload.vue'
 import TextShare from '@/components/upload/TextShare.vue'
 import GetShare from '@/components/upload/GetShare.vue'
 import { useActionFeedback } from '@/composables/useActionFeedback'
-import { useI18n } from '@/i18n'
+import type { ShareCreatedResult } from '@/api/share'
+import { getLocaleTag, useI18n } from '@/i18n'
+import { formatDateTime } from '@/utils/format'
 
 const configStore = useConfigStore()
-const { t } = useI18n()
+const { locale, t } = useI18n()
 
 const fileShareEnabled = computed(() => {
   const config = configStore.config
@@ -176,8 +189,21 @@ const tabChosenByUser = ref(false)
 const showShareDialog = ref(false)
 const shareUrl = ref('')
 const shareCode = ref('')
+const shareExpireAt = ref('')
+const shareMaxDownloads = ref<number | null>(null)
 const qrCodeDataUrl = ref('')
 let qrGenerationVersion = 0
+
+const shareExpireText = computed(() => (
+  shareExpireAt.value
+    ? formatDateTime(shareExpireAt.value, getLocaleTag(locale.value))
+    : '—'
+))
+const shareMaxDownloadsText = computed(() => (
+  shareMaxDownloads.value === null
+    ? t('share.success.unlimited')
+    : t('share.success.times', { count: shareMaxDownloads.value })
+))
 
 const route = useRoute()
 
@@ -199,18 +225,11 @@ watch(
   { immediate: true },
 )
 
-interface ShareResult {
-  code: string
-  share_url: string
-  full_share_url: string
-  qr_code_data: string
-}
-
 const triggerShareSuccessHaptic = () => {
   if (typeof navigator.vibrate === 'function') navigator.vibrate(35)
 }
 
-const handleShareSuccess = async (result: ShareResult) => {
+const handleShareSuccess = async (result: ShareCreatedResult) => {
   const version = ++qrGenerationVersion
   let url = result.full_share_url || result.share_url
 
@@ -227,6 +246,8 @@ const handleShareSuccess = async (result: ShareResult) => {
 
   shareUrl.value = url
   shareCode.value = result.code
+  shareExpireAt.value = result.expire_at
+  shareMaxDownloads.value = result.max_downloads
   qrCodeDataUrl.value = ''
   showShareDialog.value = true
   triggerShareSuccessHaptic()
@@ -490,6 +511,41 @@ const handleDialogClosed = () => {
 .code-body :deep(.el-button) {
   flex: 0 0 auto;
   white-space: nowrap;
+}
+
+.share-terms-card {
+  display: flex;
+  width: 100%;
+  max-width: 460px;
+  box-sizing: border-box;
+  margin: 0 auto 20px;
+  padding: 12px 18px;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+}
+
+.share-term {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.share-term-key {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.share-term-val {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: right;
 }
 
 .qrcode-section {

@@ -46,7 +46,11 @@ const MAX_INIT_BODY_BYTES = 16 * 1024
 const MAX_COMPLETE_BODY_BYTES = 32 * 1024
 const MAX_RESOLVE_BODY_BYTES = 4 * 1024
 const MAX_MULTIPART_PARTS = 12
-const DOWNLOAD_SESSION_TTL_SECONDS = 15 * 60
+// One hour, not fifteen minutes: the pickup slot is consumed when the page
+// resolves, so a window that lapses before the user presses download costs them
+// a pickup and answers with a bare 404. An hour also covers a full-size file on
+// a slow mobile link without a second pickup.
+const DOWNLOAD_SESSION_TTL_SECONDS = 60 * 60
 const SHARE_CODE_ATTEMPTS = 5
 const INSTANT_UPLOAD_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60
 
@@ -902,10 +906,11 @@ async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string 
     if (!await db.consumeShareDownload(share.id)) {
       return c.json(error(ErrorCode.SHARE_NOT_FOUND, 404, 'Share not found or expired'), 404)
     }
+    const downloadExpiresAtSeconds = Math.floor(Date.now() / 1000) + DOWNLOAD_SESSION_TTL_SECONDS
     const token = await signJWT({
       purpose: 'download',
       share_id: share.id,
-      exp: Math.floor(Date.now() / 1000) + DOWNLOAD_SESSION_TTL_SECONDS,
+      exp: downloadExpiresAtSeconds,
       nonce: crypto.randomUUID(),
     }, sessionSecret)
     const downloadUrl = `/api/share/download/${share.id}`
@@ -937,6 +942,9 @@ async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string 
       download_count: share.download_count + 1,
       max_downloads: share.max_downloads,
       download_url: downloadUrl,
+      // Lets the page tell the visitor the pickup window lapsed instead of
+      // opening a tab that can only answer 404 after the slot was consumed.
+      download_expires_at: new Date(downloadExpiresAtSeconds * 1000).toISOString(),
     }))
   } catch (e: unknown) {
     return routeFailure(c, 'resolve share', e, 'Could not retrieve share')
@@ -1031,6 +1039,12 @@ async function downloadWithSession(c: Context<{ Bindings: Bindings }>) {
       status = 206
       headers.set('Content-Range', `bytes ${offset}-${offset + length - 1}/${share.size_bytes}`)
       headers.set('Content-Length', String(length))
+    } else {
+      // Constructing a Response from an R2 stream produces a chunked reply with
+      // no length, which is what makes a browser download report an unknown
+      // size and no progress. obj.size is the stored object's own length, so it
+      // stays correct even if the share row and the object ever disagree.
+      headers.set('Content-Length', String(obj.size))
     }
 
     return new Response(obj.body, { status, headers })

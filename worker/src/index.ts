@@ -40,6 +40,8 @@ export default {
   async scheduled(_controller: ScheduledController, env: Env) {
     // Let a rejection propagate so Cloudflare records the Cron invocation as
     // failed in Past Events instead of silently reporting success.
+    // Pass count and budget stay at the Free-plan-safe defaults: throughput
+    // comes from the hourly schedule, not from doing more per invocation.
     requireSuccessfulCleanup(await cleanupExpiredShares(env.DB, env.BUCKET, DEFAULT_CLEANUP_BATCH_SIZE))
   },
 } satisfies ExportedHandler<Env>

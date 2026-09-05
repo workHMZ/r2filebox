@@ -163,6 +163,10 @@
                 <span class="info-key">{{ t('shareView.expire') }}</span>
                 <span class="info-val expire-time">{{ formatDateTime(shareData.expire_at, getLocaleTag(locale)) }}</span>
               </div>
+              <div class="info-row">
+                <span class="info-key">{{ t('shareView.remaining') }}</span>
+                <span class="info-val">{{ remainingPickupsText }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -225,6 +229,20 @@ const isMediaImage = computed(() => {
   return mime.startsWith('image/') && mime !== 'image/svg+xml'
 })
 
+// download_count already includes this visit, so the figure shown is what is
+// left for anyone else - including this visitor after a reload, which spends a
+// pickup of its own.
+const remainingPickupsText = computed(() => {
+  const share = shareData.value
+  if (!share || share.max_downloads === null || share.max_downloads === undefined) {
+    return t('shareView.remainingUnlimited')
+  }
+  return t('shareView.remainingValue', {
+    remaining: Math.max(0, share.max_downloads - share.download_count),
+    total: share.max_downloads,
+  })
+})
+
 const fetchShare = async (code: string, version: number) => {
   loading.value = true
   error.value = ''
@@ -265,14 +283,27 @@ const copyText = async () => {
 
 const downloadFile = () => {
   if (!shareCode.value) return
-  
+
   const url = shareData.value?.download_url
   if (!url) {
     ElMessage.error(t('shareView.networkFailed'))
     return
   }
+  // The pickup session is what authorises the download. Once it lapses the
+  // endpoint can only answer 404 in a new tab, so say so here instead.
+  if (isDownloadSessionExpired()) {
+    ElMessage.warning(t('shareView.sessionExpired'))
+    return
+  }
   window.open(withDisposition(url, 'attachment'), '_blank', 'noopener,noreferrer')
   showDownloadStarted()
+}
+
+const isDownloadSessionExpired = () => {
+  const expiresAt = shareData.value?.download_expires_at
+  if (!expiresAt) return false
+  const expiresAtMs = Date.parse(expiresAt)
+  return Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now()
 }
 
 const handleMediaPreviewError = () => {

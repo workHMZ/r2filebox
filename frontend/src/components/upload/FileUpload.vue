@@ -1,28 +1,32 @@
 <template>
   <form class="file-upload-container" @submit.prevent="handleUpload">
-    <el-upload
-      ref="uploadRef"
-      :auto-upload="false"
-      :on-change="handleFileChange"
-      :show-file-list="false"
-      :disabled="uploading || fingerprinting"
-      drag
-      class="upload-dragger"
-    >
-      <div class="upload-content">
-        <div class="upload-icon-wrapper">
-          <el-icon size="30" aria-hidden="true"><UploadFilled /></el-icon>
+    <!-- Capture-phase only: the dragger still handles the drop and keeps the
+         first file. This just notices the files it silently discarded. -->
+    <div @drop.capture="handleMultiFileDrop">
+      <el-upload
+        ref="uploadRef"
+        :auto-upload="false"
+        :on-change="handleFileChange"
+        :show-file-list="false"
+        :disabled="uploading || fingerprinting"
+        drag
+        class="upload-dragger"
+      >
+        <div class="upload-content">
+          <div class="upload-icon-wrapper">
+            <el-icon size="30" aria-hidden="true"><UploadFilled /></el-icon>
+          </div>
+          <div class="upload-text">
+            <h3>{{ t('upload.drop.title') }}</h3>
+            <p>{{ t('upload.drop.browse') }}</p>
+          </div>
+          <div class="upload-hint">
+            <el-icon aria-hidden="true"><InfoFilled /></el-icon>
+            {{ uploadLimitText }}
+          </div>
         </div>
-        <div class="upload-text">
-          <h3>{{ t('upload.drop.title') }}</h3>
-          <p>{{ t('upload.drop.browse') }}</p>
-        </div>
-        <div class="upload-hint">
-          <el-icon aria-hidden="true"><InfoFilled /></el-icon>
-          {{ uploadLimitText }}
-        </div>
-      </div>
-    </el-upload>
+      </el-upload>
+    </div>
 
     <transition name="fade">
       <div v-if="selectedFile" class="selected-file">
@@ -127,6 +131,7 @@ import {
   UploadPartError,
   type FileUploadPartData,
   type FileUploadSuccessData,
+  type ShareCreatedResult,
 } from '@/api/share'
 import { isTerminalUploadError } from '@/utils/upload-error'
 import { ElMessage } from 'element-plus'
@@ -158,7 +163,7 @@ import {
 } from '@/utils/content-fingerprint'
 
 const emit = defineEmits<{
-  success: [result: { code: string; share_url: string; full_share_url: string; qr_code_data: string }]
+  success: [result: ShareCreatedResult]
 }>()
 
 const { locale, t } = useI18n()
@@ -285,6 +290,15 @@ const form = ref<{ expire_value: number; expire_style: ExpireStyle }>({
   expire_style: initialExpire.style,
 })
 
+// Element Plus keeps only the first dropped file when `multiple` is off, and it
+// does so silently. Say which file survived so the rest are not lost quietly.
+const handleMultiFileDrop = (event: DragEvent) => {
+  if (uploading.value || fingerprinting.value) return
+  const files = event.dataTransfer?.files
+  if (!files || files.length < 2) return
+  ElMessage.warning(t('upload.singleFileOnly', { name: files[0].name }))
+}
+
 const handleFileChange = async (file: UploadFile) => {
   if (uploading.value) return
   fingerprintController?.abort()
@@ -330,7 +344,9 @@ const handleFileChange = async (file: UploadFile) => {
         : false
       if (currentVersion !== selectionVersion || selectedFile.value !== selected) return
       resumableState.value = savedState && savedStateVerified ? savedState : null
-      if (savedState && !resumableState.value) removeUploadState(resumeFingerprint)
+      // The saved parts no longer match this file, so the reservation the
+      // Worker still holds for them can never be resumed.
+      if (savedState && !resumableState.value) discardUploadState(savedState)
       if (resumableState.value) {
         uploadStatusText.value = t('upload.resumeDetected')
         uploadAnnouncement.value = `${fileAnnouncement} ${t('upload.resumeDetected')}`
@@ -401,6 +417,9 @@ const handleUpload = async () => {
       )
     )
   ) {
+    // This upload is about to start a fresh session, so the mismatched one is
+    // abandoned for good: release it instead of leaving it to go stale.
+    discardUploadState(state)
     state = null
     resumableState.value = null
   }
@@ -468,6 +487,16 @@ const handleUpload = async () => {
       resumableState.value = state
     }
 
+    // Bytes already on the server per part. Parts restored from a resumable
+    // state start out complete, and a retried part restarts from zero, so the
+    // bar tracks real transfer instead of jumping one whole part at a time.
+    const sentBytesByPart = new Map<number, number>()
+    const partByteLength = (partNumber: number) =>
+      Math.min(partNumber * state!.partSize, file.size) - ((partNumber - 1) * state!.partSize)
+    for (const part of state.parts) {
+      sentBytesByPart.set(part.partNumber, partByteLength(part.partNumber))
+    }
+
     const uploadOnePart = async (index: number) => {
       const partNumber = index + 1
       const start = index * state!.partSize
@@ -486,14 +515,20 @@ const handleUpload = async () => {
           partNumber,
           chunk,
           controller.signal,
+          (sentBytes) => {
+            sentBytesByPart.set(partNumber, Math.min(sentBytes, chunk.size))
+            updateProgress(sentBytesByPart, file.size)
+          },
         )
         state!.parts.push(verifyUploadedPart(part, partNumber, chunk.size, expectedSha256))
         state!.parts.sort((a, b) => a.partNumber - b.partNumber)
         saveUploadState(state!)
         resumableState.value = state
         completedCount++
-        updateProgress(state!)
+        sentBytesByPart.set(partNumber, chunk.size)
+        updateProgress(sentBytesByPart, file.size)
       } catch (error) {
+        sentBytesByPart.delete(partNumber)
         if (!fatalUploadError && !controller.signal.aborted && !isAbortError(error)) {
           fatalUploadError = error
           controller.abort()
@@ -507,10 +542,9 @@ const handleUpload = async () => {
       const partNumber = index + 1
       if (!state.parts.some((part) => part.partNumber === partNumber)) {
         pendingIndices.push(index)
-      } else {
-        updateProgress(state)
       }
     }
+    updateProgress(sentBytesByPart, file.size)
 
     const worker = async () => {
       while (true) {
@@ -603,6 +637,8 @@ const finishSuccessfulUpload = (
     share_url: result.share_url,
     full_share_url: result.full_share_url,
     qr_code_data: result.qr_code_data,
+    expire_at: result.expire_at,
+    max_downloads: result.max_downloads,
   })
 
   uploading.value = false
@@ -618,14 +654,18 @@ const uploadPartWithRetry = async (
   partNumber: number,
   chunk: Blob,
   signal: AbortSignal,
+  onProgress?: (sentBytes: number) => void,
 ): Promise<FileUploadPartData> => {
   let lastError: unknown
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const res = await shareApi.uploadFilePart(uploadToken, partNumber, chunk, signal)
+      const res = await shareApi.uploadFilePart(uploadToken, partNumber, chunk, signal, onProgress)
       return res.data
     } catch (error) {
       lastError = error
+      // A retried attempt resends the whole part, so drop what the failed
+      // attempt had reported instead of counting those bytes twice.
+      onProgress?.(0)
       if (signal.aborted || !shouldRetryPart(error) || attempt === 3) break
       uploadStatusText.value = t('upload.retry', { part: partNumber, attempt })
       const baseDelay = error instanceof UploadPartError && error.retryAfterMs !== null
@@ -664,8 +704,13 @@ const verifyUploadedPart = (
   }
 }
 
-const updateProgress = (state: UploadState) => {
-  uploadProgress.value = Math.min(95, Math.floor((state.parts.length / state.partCount) * 95))
+// Capped at 95 so the bar keeps a visible remainder for the completion request,
+// which merges the parts server-side after the last byte is sent.
+const updateProgress = (sentBytesByPart: Map<number, number>, totalBytes: number) => {
+  if (totalBytes <= 0) return
+  let sent = 0
+  for (const bytes of sentBytesByPart.values()) sent += bytes
+  uploadProgress.value = Math.min(95, Math.floor((sent / totalBytes) * 95))
 }
 
 const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
@@ -835,6 +880,21 @@ const removeUploadState = (fingerprint: string) => {
   } catch {
     // Ignore storage restrictions in private browsing modes.
   }
+}
+
+/**
+ * Drop a resumable upload the browser can no longer continue, and tell the
+ * Worker so it releases the storage reservation and the uploaded R2 parts now
+ * rather than waiting for the session to go stale and a Cron run to reclaim it.
+ * Best effort: the local state is discarded either way.
+ */
+const discardUploadState = (state: UploadState | null) => {
+  if (!state) return
+  removeUploadState(state.fingerprint)
+  if (!state.uploadToken) return
+  void shareApi.abortFileUpload(state.uploadToken).catch(() => {
+    // The scheduled cleanup still reclaims this session on its own.
+  })
 }
 
 const getDedupCapabilityKey = (

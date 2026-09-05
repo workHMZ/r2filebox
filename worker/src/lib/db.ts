@@ -54,6 +54,15 @@ export interface VerifiedUploadCompletion {
 }
 
 export class DB {
+  /**
+   * Settings are read on nearly every route, and several routes read them more
+   * than once (a handler plus its audit call). One DB instance lives for exactly
+   * one request, so memoising here removes those duplicate reads without ever
+   * serving a value from a previous request. upsertSettings clears it so a
+   * writer still observes its own write.
+   */
+  private settingsRead: Promise<Record<string, string>> | null = null
+
   constructor(private db: D1Database) {}
 
   async createShare(share: Share, maxStorageBytes: number): Promise<boolean> {
@@ -844,9 +853,14 @@ export class DB {
             AND action IN ('share_text_create', 'multipart_file_complete', 'instant_file_create')
           THEN 1 ELSE 0
         END) AS completed_shares,
+        -- One resolve is one counted retrieval: it consumes a download slot and
+        -- issues the short-lived session that serves the bytes. 'share_download_file'
+        -- is deliberately absent - it has not been written since 1.0, and 1.0 wrote
+        -- it alongside 'share_resolve_file', so counting both would double-count
+        -- any surviving legacy row.
         sum(CASE
           WHEN status = 'success'
-            AND action IN ('share_resolve_text', 'share_download_file')
+            AND action IN ('share_resolve_text', 'share_resolve_file')
           THEN 1 ELSE 0
         END) AS completed_retrievals,
         count(DISTINCT CASE
@@ -899,6 +913,20 @@ export class DB {
   }
 
   async getSettings(): Promise<Record<string, string>> {
+    if (!this.settingsRead) {
+      // Cache the promise, not the result, so concurrent readers within one
+      // request share a single query. A rejection is not retained: clearing it
+      // in the catch keeps a transient D1 failure from poisoning later reads.
+      this.settingsRead = this.readSettings().catch((cause) => {
+        this.settingsRead = null
+        throw cause
+      })
+    }
+    // Hand out a copy so a caller cannot mutate what a later caller reads.
+    return { ...await this.settingsRead }
+  }
+
+  private async readSettings(): Promise<Record<string, string>> {
     const { results } = await this.db.prepare('SELECT key, value, updated_at FROM settings').all<Setting>()
     return Object.fromEntries(results.map((row) => [row.key, row.value]))
   }
@@ -912,6 +940,8 @@ export class DB {
       VALUES (?, ?, ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `).bind(key, value, now)))
+    // The writer re-reads the effective configuration straight after this.
+    this.settingsRead = null
   }
 
 }

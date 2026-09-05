@@ -239,6 +239,79 @@ describe('scheduled cleanup reporting', () => {
       .bind(blobId)
       .first()).resolves.toBeNull()
   })
+
+  it('drains an expired-share backlog larger than one batch in a single run', async () => {
+    // Three passes is the Free-plan default, so this is exactly what one hourly
+    // Cron run reclaims. A larger backlog is left for the next hour by design.
+    const backlog = 250
+    const expired = new Date(Date.now() - 60_000).toISOString()
+    const now = new Date().toISOString()
+    const inserts = Array.from({ length: backlog }, () => env.DB.prepare(`
+      INSERT INTO shares (
+        id, code_hash, type, r2_key, display_name, mime_type, size_bytes,
+        title, created_at, expire_at, deleted_at, max_downloads,
+        download_count, created_ip_hash, last_access_at, object_etag,
+        object_uploaded_at, blob_id
+      ) VALUES (?, ?, 'text', ?, 'text.txt', 'text/plain', 4,
+        NULL, ?, ?, NULL, 10, 0, NULL, NULL, NULL, ?, NULL)
+    `).bind(
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      `scheduled-backlog/${crypto.randomUUID()}`,
+      now,
+      expired,
+      now,
+    ))
+    for (let offset = 0; offset < inserts.length; offset += 50) {
+      await env.DB.batch(inserts.slice(offset, offset + 50))
+    }
+
+    const result = await cleanupExpiredShares(env.DB, env.BUCKET, 100)
+
+    expect(result.failures).toBe(0)
+    expect(result.processed).toBe(backlog)
+    await expect(env.DB.prepare(`
+      SELECT count(*) AS remaining FROM shares
+      WHERE deleted_at IS NULL AND expire_at < ?
+    `).bind(new Date().toISOString()).first<{ remaining: number }>())
+      .resolves.toEqual({ remaining: 0 })
+  })
+
+  it('stops after one pass when the caller limits it to a single batch', async () => {
+    const backlog = 150
+    const expired = new Date(Date.now() - 60_000).toISOString()
+    const now = new Date().toISOString()
+    const inserts = Array.from({ length: backlog }, () => env.DB.prepare(`
+      INSERT INTO shares (
+        id, code_hash, type, r2_key, display_name, mime_type, size_bytes,
+        title, created_at, expire_at, deleted_at, max_downloads,
+        download_count, created_ip_hash, last_access_at, object_etag,
+        object_uploaded_at, blob_id
+      ) VALUES (?, ?, 'text', ?, 'text.txt', 'text/plain', 4,
+        NULL, ?, ?, NULL, 10, 0, NULL, NULL, NULL, ?, NULL)
+    `).bind(
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      `scheduled-single/${crypto.randomUUID()}`,
+      now,
+      expired,
+      now,
+    ))
+    for (let offset = 0; offset < inserts.length; offset += 50) {
+      await env.DB.batch(inserts.slice(offset, offset + 50))
+    }
+
+    const result = await cleanupExpiredShares(env.DB, env.BUCKET, 100, { maxPasses: 1 })
+
+    expect(result.processed).toBe(100)
+    // The rest stays queued rather than extending one invocation past its
+    // CPU budget; the next scheduled run picks it up.
+    await expect(env.DB.prepare(`
+      SELECT count(*) AS remaining FROM shares
+      WHERE deleted_at IS NULL AND expire_at < ?
+    `).bind(new Date().toISOString()).first<{ remaining: number }>())
+      .resolves.toEqual({ remaining: backlog - 100 })
+  })
 })
 
 async function insertManagedShare(

@@ -1,5 +1,6 @@
 import { env, SELF } from 'cloudflare:test'
 import { describe, expect, it, vi } from 'vitest'
+import { DB as RealDB } from '../src/lib/db'
 import type { DB } from '../src/lib/db'
 import {
   getRuntimeConfig,
@@ -110,4 +111,79 @@ describe('runtime configuration', () => {
       'turnstileSiteKey',
     ])
   })
+
+  it('reads the settings table once per DB instance', async () => {
+    const counted = countingSettingsDatabase()
+    const db = new RealDB(counted.database)
+
+    await getRuntimeConfig({} as Env, db)
+    await getRuntimeConfig({} as Env, db)
+    await Promise.all([
+      getRuntimeConfig({} as Env, db),
+      getRuntimeConfig({} as Env, db),
+    ])
+
+    expect(counted.reads()).toBe(1)
+  })
+
+  it('re-reads the settings table after the same instance writes settings', async () => {
+    const counted = countingSettingsDatabase()
+    const db = new RealDB(counted.database)
+
+    const before = await getRuntimeConfig({} as Env, db)
+    expect(before.appName).toBe('R2FileBox')
+
+    await db.upsertSettings({ APP_NAME: 'Renamed Instance' })
+    const after = await getRuntimeConfig({} as Env, db)
+
+    expect(after.appName).toBe('Renamed Instance')
+    expect(counted.reads()).toBe(2)
+    await db.upsertSettings({ APP_NAME: 'R2FileBox' })
+  })
+
+  it('does not retain a failed settings read', async () => {
+    let failNext = true
+    const failing = new Proxy(env.DB, {
+      get(target, property, receiver) {
+        if (property === 'prepare') {
+          return (query: string) => {
+            if (failNext && query.includes('FROM settings')) {
+              failNext = false
+              return {
+                all: () => Promise.reject(new Error('D1 unavailable')),
+              } as unknown as D1PreparedStatement
+            }
+            return target.prepare(query)
+          }
+        }
+        const value = Reflect.get(target, property, receiver)
+        return typeof value === 'function' ? value.bind(target) : value
+      },
+    })
+    const db = new RealDB(failing)
+
+    await expect(getRuntimeConfig({} as Env, db)).rejects.toBeInstanceOf(
+      RuntimeConfigUnavailableError,
+    )
+    await expect(getRuntimeConfig({} as Env, db)).resolves.toMatchObject({
+      appName: 'R2FileBox',
+    })
+  })
 })
+
+function countingSettingsDatabase() {
+  let reads = 0
+  const database = new Proxy(env.DB, {
+    get(target, property, receiver) {
+      if (property === 'prepare') {
+        return (query: string) => {
+          if (query.includes('FROM settings')) reads++
+          return target.prepare(query)
+        }
+      }
+      const value = Reflect.get(target, property, receiver)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  })
+  return { database, reads: () => reads }
+}

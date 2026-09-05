@@ -22,6 +22,17 @@ export class UploadPartError extends Error {
   }
 }
 
+/**
+ * The caller identifies cancellation with `instanceof DOMException` and
+ * `name === 'AbortError'`, which is what fetch rejects with, so reuse the
+ * signal's own reason and fall back to an equivalent DOMException.
+ */
+function abortReason(signal?: AbortSignal): unknown {
+  return signal?.reason instanceof DOMException
+    ? signal.reason
+    : new DOMException('Upload cancelled', 'AbortError')
+}
+
 export interface ResolvedShare {
   code: string
   type: 'text' | 'file'
@@ -33,6 +44,7 @@ export interface ResolvedShare {
   download_count: number
   max_downloads: number | null
   download_url?: string
+  download_expires_at?: string
 }
 
 export interface FileUploadSuccessData {
@@ -47,6 +59,20 @@ export interface FileUploadSuccessData {
   max_downloads: number | null
   dedupToken?: string
   dedupTokenExpiresAt?: string
+}
+
+/**
+ * What the home view needs to hand a finished share to its creator. Expiry and
+ * the pickup allowance travel with it: they are the two facts the creator has
+ * to know before passing the link on.
+ */
+export interface ShareCreatedResult {
+  code: string
+  share_url: string
+  full_share_url: string
+  qr_code_data: string
+  expire_at: string
+  max_downloads: number | null
 }
 
 export interface FileUploadPartData {
@@ -119,35 +145,81 @@ export const shareApi = {
     })
   },
 
-  uploadFilePart: async (
+  // XMLHttpRequest rather than fetch: fetch cannot report how much of a request
+  // body has been sent, which left the progress bar frozen for a whole part.
+  // Error, abort, and retry semantics below match the previous fetch version.
+  uploadFilePart: (
     uploadToken: string,
     partNumber: number,
     chunk: Blob,
     signal?: AbortSignal,
-  ) => {
-    const res = await fetch(`/api/share/file/part`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/octet-stream',
-        'X-Upload-Token': uploadToken,
-        'X-Part-Number': String(partNumber),
-      },
-      body: chunk,
-      signal,
+    onProgress?: (sentBytes: number) => void,
+  ): Promise<ApiResponse<FileUploadPartData>> => {
+    return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(abortReason(signal))
+        return
+      }
+
+      const xhr = new XMLHttpRequest()
+      let settled = false
+      const finish = (settle: () => void) => {
+        if (settled) return
+        settled = true
+        signal?.removeEventListener('abort', onAbort)
+        settle()
+      }
+      const onAbort = () => {
+        xhr.abort()
+        finish(() => reject(abortReason(signal)))
+      }
+      // A network-layer failure is surfaced as TypeError because that is what
+      // fetch threw, and the caller's retry predicate keys off that type.
+      const failNetwork = () => finish(() => reject(new TypeError(t('request.network'))))
+
+      xhr.open('PUT', '/api/share/file/part', true)
+      xhr.responseType = 'text'
+      xhr.withCredentials = true
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+      xhr.setRequestHeader('X-Upload-Token', uploadToken)
+      xhr.setRequestHeader('X-Part-Number', String(partNumber))
+
+      if (onProgress) {
+        xhr.upload.onprogress = (event) => onProgress(event.loaded)
+      }
+      xhr.onerror = failNetwork
+      xhr.ontimeout = failNetwork
+      xhr.onabort = onAbort
+      xhr.onload = () => finish(() => {
+        let data: ApiResponse<FileUploadPartData> | null = null
+        try {
+          data = JSON.parse(xhr.responseText) as ApiResponse<FileUploadPartData>
+        } catch {
+          data = null
+        }
+        if (xhr.status < 200 || xhr.status > 299 || data?.code !== 200) {
+          const retryAfter = xhr.getResponseHeader('Retry-After')
+          const seconds = retryAfter === null ? Number.NaN : Number(retryAfter)
+          reject(new UploadPartError(
+            data ? formatApiError(data, 'upload.failed') : t('upload.failed'),
+            xhr.status,
+            data?.error_code ?? null,
+            Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : null,
+          ))
+          return
+        }
+        resolve(data)
+      })
+
+      signal?.addEventListener('abort', onAbort, { once: true })
+      try {
+        xhr.send(chunk)
+      } catch (cause) {
+        // A synchronous send() failure fires no event, so settle here or the
+        // upload would wait on a promise that can never resolve.
+        finish(() => reject(cause))
+      }
     })
-    const data = await res.json().catch(() => null) as ApiResponse<FileUploadPartData> | null
-    if (!res.ok || data?.code !== 200) {
-      const retryAfter = res.headers.get('Retry-After')
-      const seconds = retryAfter === null ? Number.NaN : Number(retryAfter)
-      const errorMessage = data ? formatApiError(data, 'upload.failed') : t('upload.failed')
-      throw new UploadPartError(
-        errorMessage,
-        res.status,
-        data?.error_code ?? null,
-        Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : null,
-      )
-    }
-    return data
   },
 
   completeFileUpload: (data: {
@@ -167,6 +239,19 @@ export const shareApi = {
       },
       signal,
       suppressErrorMessage: true,
+    })
+  },
+
+  // 放弃一个不会再续传的上传会话，让服务端立即释放容量预留与 R2 分片
+  abortFileUpload: (uploadToken: string) => {
+    return request<ApiResponse<null>>({
+      url: '/api/share/file/abort',
+      method: 'POST',
+      headers: {
+        'X-Upload-Token': uploadToken,
+      },
+      suppressErrorMessage: true,
+      suppressAuthRedirect: true,
     })
   },
 

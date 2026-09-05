@@ -7,407 +7,453 @@
 [![Latest Release](https://img.shields.io/github/v/release/workHMZ/r2filebox?sort=semver)](https://github.com/workHMZ/r2filebox/releases/latest)
 [![License](https://img.shields.io/github/license/workHMZ/r2filebox)](./LICENSE)
 
-[中文](#中文) · [English](#english) · [日本語](#日本語) · [Deploy to Cloudflare](#deploy-to-cloudflare)
+**你自己的取件柜。** 丢一个文件进去，拿到一串取件码，把码发给对方——没有注册，没有登录，没有网盘客户端。
+
+跑在 Cloudflare Workers + R2 + D1 上，一键部署，个人用量基本跑不出免费额度。
+
+[中文](#中文) · [English](#english) · [日本語](#日本語)
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/workHMZ/r2filebox)
 
-一个跑在 Cloudflare Workers 上的文件 / 文本分享服务：上传后拿到一个提取码，对方输入提取码或打开链接即可获取，双方都不需要注册登录。全部依赖 Workers + R2 + D1，免费额度内就能长期自托管。
+| | |
+|:---:|:---:|
+| [![上传文件](./docs/screenshots/home-file-share.png)](./docs/screenshots/home-file-share.png)<br>放一个文件进去 | [![输入取件码](./docs/screenshots/home-get-share.png)](./docs/screenshots/home-get-share.png)<br>对方输入取件码 |
+| [![分享已创建](./docs/screenshots/share-created.png)](./docs/screenshots/share-created.png)<br>取件码 · 链接 · 二维码 | [![取件页](./docs/screenshots/pickup-file.png)](./docs/screenshots/pickup-file.png)<br>取件页，可直接预览 |
+| [![管理后台](./docs/screenshots/admin-dashboard.png)](./docs/screenshots/admin-dashboard.png)<br>管理后台 | [![维护与存储](./docs/screenshots/admin-maintenance.png)](./docs/screenshots/admin-maintenance.png)<br>维护与存储 |
 
 ---
 
 ## 中文
 
-### 使用方式
+### 怎么用
 
-1. 拖入一个文件，或粘贴要分享的文本。
-2. 把提取码、完整链接或二维码发给对方。
-3. 对方输入提取码 / 粘贴链接 / 扫码，直接拿到内容，不需要注册。
+1. 拖一个文件进去，或者直接粘一段文本。
+2. 拿到取件码、分享链接和二维码，随便挑一个发给对方。
+3. 对方输码、点链接、扫码都行，直接下载。两边都不用注册。
 
-### 截图
+发出去的每一份分享都有自己的有效期和取件次数，到期或取完就自动消失，你不用回头收拾。
 
-| File sharing (Light) | Get a share (Dark) |
-|:---:|:---:|
-| [![File sharing screen in light mode](./docs/screenshots/home-file-share.png)](./docs/screenshots/home-file-share.png) | [![Pickup code entry screen in dark mode](./docs/screenshots/home-get-share.png)](./docs/screenshots/home-get-share.png) |
-| **Share created (Light)** | **Pickup box (Dark)** |
-| [![Share created dialog in light mode](./docs/screenshots/share-created.png)](./docs/screenshots/share-created.png) | [![Shared file pickup screen in dark mode](./docs/screenshots/pickup-file.png)](./docs/screenshots/pickup-file.png) |
-| **Admin dashboard (Light)** | **Maintenance and storage (Dark)** |
-| [![Admin dashboard in light mode](./docs/screenshots/admin-dashboard.png)](./docs/screenshots/admin-dashboard.png) | [![Maintenance and storage screen in dark mode](./docs/screenshots/admin-maintenance.png)](./docs/screenshots/admin-maintenance.png) |
+### 几件值得说的事
 
-### 亮点
+**秒传，但没有「哈希查询」接口。**
+第二次上传同一个文件时不用再传一遍——这是常见功能，但常见实现往往开一个「这个哈希存在吗」的接口，于是任何人都能拿一个文件去问服务器「别人传过这个吗」。这里不一样：秒传需要你**上次自己传成功时服务端签发、并存在你本地的凭证**。没有这张凭证就老老实实传。服务器不回答任何关于别人内容的问题。
 
-- **深浅色模式自动跟随**：自动适配设备系统主题，支持手动切换并本地记忆偏好。
-- **隐私与安全保护**：提取码仅保存不可逆哈希；管理员凭据保存在 Cloudflare Secret 中，命令行部署默认使用 PBKDF2 哈希；生产部署全程 HTTPS 加密。
-- **多语言与自动识别**：原生支持中、英、日三语，自动识别浏览器偏好语言并支持随时无缝切换。
-- **零成本私有化部署**：一键部署至 Cloudflare，个人常规使用完全覆盖在免费额度内。
-- **2.5.0 安全秒传、分片与断点续传**：首次上传会计算完整内容树指纹并完整传输；成功后浏览器本地保存服务端签名的 capability。再次选择相同内容且 capability 仍有效时，可直接创建新的独立分享而无需重传；网络中断时仍支持分片断点续传。
-- **多途径免密提取**：通过提取码、分享链接或扫码均可获取内容，发送与接收方均无需注册。
-- **动态后台管理**：支持在可视化控制台实时调整有效期、提取次数等核心参数，保存即生效。
-- **PWA 系统级集成**：支持作为独立应用安装至设备桌面，并深度接入系统原生分享菜单。
-- **全自动空间回收**：定时任务每天自动清理过期文件与冗余分片，长期运行免维护。
+**大文件断了能接着传。**
+文件按 8 MiB 分片，进度存在本地。网断了、页面关了、手机切后台了，回来重选同一个文件就从断点继续。上传进度按字节走，不是一片一跳。
 
-### 技术亮点
+**看视频不会把取件次数用光。**
+取件次数按「取件」算，不按 HTTP 请求算。输一次码换一份 1 小时的下载会话，这一小时里拖进度条、断点续传、浏览器自动重试，都不再扣次数。
 
-- **密码与提取码保护**：命令行部署生成的管理员密码哈希使用 PBKDF2(SHA-256, 10 万轮)；Deploy Button 提供的 `ADMIN_PASSWORD` 作为 Cloudflare Secret 保存。两种模式均使用常量时间比较。提取码只存 SHA-256 加盐哈希，随机码生成用拒绝采样（Rejection Sampling）保证字符分布无偏，而不是简单取模。
-- **下载令牌**：基于 Web Crypto API 手写的 HMAC-SHA256 JWT，作用域仅限单次提取会话、15 分钟过期，不依赖第三方 JWT 库；会话期内允许反复发 Range 请求，不会重复扣减剩余提取次数。
-- **可验证的秒传协议**：客户端首次上传计算覆盖完整文件的树指纹；Worker 在接收每个分片时流式计算 SHA-256 并签发绑定上传会话、分片大小与哈希的收据，完成阶段再校验全部收据和树根。只有持有上次成功上传返回并在本地缓存的签名 capability 才能秒传，没有公开的“哈希是否存在”查询接口。
-- **O(1) 物理存储计数**：D1 触发器在写入时原子维护 `storage_usage` 汇总表，按 R2 中的物理 blob 加未完成上传的预留空间计数；多个逻辑分享引用同一 blob 时不会重复占用配额，管理后台也不需要扫描 shares 全表。
-- **双层限流，互补而非二选一**：Workers 原生 Rate Limiting API 做边缘粗粒度丢弃，D1 滑动时间窗口计数器做跨节点精确限流，专门防提取码被暴力枚举。
-- **内容安全**：SVG 等存在脚本注入风险的文件格式，强制以附件形式下载，不做内联渲染；API / 管理后台走严格的 Content-Security-Policy，静态资源走宽松策略，按路由分层而不是全站统一规则。
-- **结构化错误码 + i18n 三级回退**：后端返回稳定的 ErrorCode、参数和英文兜底 message；前端 `formatApiError` 依次尝试 ErrorCode 对应的 i18n 文案→原始 message→通用兜底。
-- **可重试的物理回收**：删除或过期一个分享只会移除该分享；同一物理 blob 的最后一个引用消失后，blob 才进入 orphan outbox。Cron 会删除对应 R2 对象并清除 outbox 记录，R2 删除失败则保留记录供下次重试；同时也会 abort 因上传中断而滞留的未合并分片。
-- **隐私保护**：审计日志与限流记录只存 IP 的单向哈希，不落明文 IP。
-- **CI 护栏**：`verify-config.mjs` 在 CI 里断言 `wrangler.toml` 的 D1 `database_id` 保持占位符（防止误提交真实生产库 ID）、限流 namespace 互不冲突、Deploy 按钮所需的 Secret 描述与 `.dev.vars.example` 保持同步。
-- **构建元数据用 Cloudflare 原生能力**：`version_metadata` 绑定拿部署时间戳，`WORKERS_CI_COMMIT_SHA`（Workers Builds 官方注入的环境变量）拿真实 commit hash，而不是自己在 CI 脚本里拼接。
+**同样的内容只占一份空间，但每个分享各过各的。**
+两个人分享同一个文件，R2 里只有一份对象，但两个分享的取件码、有效期、次数互不相干。删掉其中一个不会影响另一个；只有最后一个引用也消失了，实体文件才真正删除。
 
-### 架构与安全模型
+**改配置不用重新部署。**
+有效期上限、取件次数、单文件大小、开关文本/文件分享、是否上人机验证，都在后台点一下就生效。
 
-```text
-首次上传文件：完整内容树指纹 + 分片
-    │
-    ▼
-Worker：流式 SHA-256、签名分片收据、完成时校验树根
-    ├─ 物理 blob ─────────────────────→ 私有 R2(不透明对象键)
-    ├─ blob 引用 + 分享元数据 ─────────→ D1
-    └─ 返回签名 capability ────────────→ 浏览器本地缓存
+**装到桌面，接进系统分享菜单。**
+PWA，可以装成独立应用；手机上从别的 App 点「分享」能直接分享到这里。
 
-相同文件 + 有效 capability → Worker 直接创建独立分享 ─┐
-                                                      └→ 引用同一物理 blob，不公开哈希查询
-
-每个分享：独立随机提取码、有效期与最大提取次数
-    └─ 提取码的 SHA-256 加盐哈希 ──────→ D1，不保存提取码明文
-
-上传文本 → Worker 校验、限流 ──────────→ 私有 R2 + D1 分享元数据
-
-输入提取码或完整 URL → Worker 提取并重新哈希 → D1 查找并原子扣减提取次数
-    ├─ 文本：Worker 从 R2 读取后返回
-    └─ 文件：签发 15 分钟下载会话 → Worker 从 R2 流式返回(Range / ETag)
-```
-
-这是服务端访问控制，不是端到端加密：Worker 必须能读到正文才能返回内容。安全边界来自私有 R2、不可逆的提取码哈希、短期下载会话，以及所有访问都经过 Worker。重要文件建议上传前自行加密，例如打包为带密码的压缩包。
-
-| 层级 | 技术 | 用途 |
-|------|------|------|
-| 边缘应用 | Hono + Cloudflare Workers | API、鉴权、安全头、流式下载、定时清理 |
-| 对象存储 | Cloudflare R2 | 私有文件与文本正文 |
-| 数据库 | Cloudflare D1 | 分享元数据、物理 blob 引用、上传会话、回收 outbox、设置、审计日志、精确限流 |
-| 前端 | Vue 3 + Element Plus | 用户界面与管理后台，由 Workers Static Assets 托管 |
-| 指标与防护 | Analytics Engine + Workers Rate Limiting | 轻量指标与边缘粗粒度限流 |
-
-### 默认值与边界
-
-| 项目 | 当前行为 |
-|------|----------|
-| 单文件上传 | 默认 50 MiB，管理员可配置 1–95 MiB |
-| 应用上传上限 | 95 MiB；这是当前应用配置和分片数量的实现边界，不是 R2 Multipart 本身的总文件上限 |
-| 总存储软限制 | 默认 8 GiB；按物理 blob + 未完成上传预留计数，重复分享同一 blob 不重复计费；达到后停止接收需要新增空间的内容，不删除已有内容 |
-| 有效期 | 默认 24 小时，默认最长 168 小时，可由管理员调整 |
-| 最大提取次数 | 默认 10 次，可由管理员调整 |
-| 自动清理 | 每天 00:00 UTC 处理过期分享、最后引用消失的 orphan blob 和残留分片；失败的 R2 blob 删除会重试 |
+**跑起来就不用管了。**
+每小时一次的定时任务负责清过期分享、回收没人引用的物理文件、abort 掉半截的分片上传。R2 删除失败会留记录下次重试。
 
 ### 部署
 
 > [!IMPORTANT]
-> **部署前提：激活 R2 服务**
-> Cloudflare 要求账户绑定有效支付方式才能激活 R2。不绑定支付方式，部署脚本或 "Deploy to Cloudflare" 按钮都会因无法创建 R2 桶而失败。
+> Cloudflare 要求账户绑定支付方式才能开通 R2。**没绑支付方式，不管哪种部署方式都会卡在创建 R2 桶这一步。** R2 本身有免费额度，绑卡不等于扣费。
 
-> [!WARNING]
-> **2.5.0 数据模型升级后只能前滚。** `0003_instant_upload.sql` 会允许多个分享引用同一 R2 blob。2.5.0 开始处理文件后，不要把 Worker 回滚到 2.4.x：旧清理逻辑假定一个分享独占一个 R2 对象，可能删除仍被其他分享引用的内容。故障时应临时关闭公开文件上传并前滚修复 2.5.x；迁移仍必须先于 Worker 部署执行。
+#### 一键部署
 
-需要 Node.js 24(`>=24.11.0 <25`)，推荐使用 `.nvmrc` 固定的版本。
-
-#### 命令行部署（推荐）
-
-```bash
-npm ci
-npm run deploy:cf
-```
-
-全自动交互式引导：自动创建或复用 R2 / D1、把生成的 D1 `database_id` 回写到本地 `wrangler.toml`、交互式设置高强度管理员密码并哈希化后部署为加密 Secret、最后跑迁移并发布 Worker。检测到现有绑定时不会自动轮换密钥。
-
-#### Deploy to Cloudflare
-
-点击 [页面顶部的 Deploy to Cloudflare 按钮](#r2filebox) 进行部署，并设置：
+点上面的 **Deploy to Cloudflare** 按钮，页面里填两行命令：
 
 ```text
 Build command:  npm run build
 Deploy command: npm run deploy
 ```
 
-`npm run deploy` 会先应用远程 D1 迁移，再执行 `wrangler deploy`。首次部署需要：
+然后填三个密钥：
 
-| Secret | 要求 |
-|--------|------|
-| `ADMIN_PASSWORD` | 管理员密码，16–4096 字符 |
-| `CODE_HASH_PEPPER` | 用 `openssl rand -hex 32` 生成；更换后已有提取码失效 |
-| `SESSION_SECRET` | 用 `openssl rand -hex 32` 生成；更换后已有会话失效 |
+| 密钥 | 怎么来 |
+|---|---|
+| `ADMIN_PASSWORD` | 你自己想一个，16–4096 字符。**这个 Cloudflare 不会帮你找回，先存好。** |
+| `CODE_HASH_PEPPER` | `openssl rand -hex 32` |
+| `SESSION_SECRET` | `openssl rand -hex 32` |
 
-`ADMIN_USERNAME` 可选，默认为 `admin`。Turnstile 默认关闭，可在部署后从后台启用。
+后两个生成一次就别再动了：换 `CODE_HASH_PEPPER` 会让所有已发出的取件码失效，换 `SESSION_SECRET` 会踢掉所有登录态和下载会话。
 
-### 本地开发
+`ADMIN_USERNAME` 可选，默认 `admin`。人机验证默认关着，想开去后台开。
+
+#### 命令行部署
+
+想要自动生成密码哈希、自动建资源的，用这个：
 
 ```bash
-cp .dev.vars.example .dev.vars
+npm ci
+npm run deploy:cf
+```
+
+一路问下来：建（或复用）R2 桶和 D1 库、把 `database_id` 写回本地 `wrangler.toml`、让你设管理员密码并**用 PBKDF2 哈希后**存成 Secret、跑迁移、发布。检测到已有资源时它不会自作主张换密钥。
+
+需要 Node.js 24（`>=24.11.0 <25`，`.nvmrc` 里钉好了）。
+
+> [!WARNING]
+> **2.5.0 之后不能往回退。** `0003_instant_upload.sql` 让多个分享共用一个 R2 对象，而 2.4.x 的清理逻辑还以为「一个分享独占一个对象」，退回去会删掉别人还在用的文件。出事就先在后台关掉公开上传，然后往前修。任何时候迁移都要先于 Worker 部署。
+
+### 默认值
+
+| | |
+|---|---|
+| 单文件 | 50 MiB，后台可调 1–95 MiB |
+| 总容量 | 8 GiB 软限制，满了停止接收新内容，不动已有的 |
+| 有效期 | 24 小时，上限 168 小时 |
+| 取件次数 | 10 次 |
+| 自动清理 | 每小时一次 |
+
+95 MiB 是当前分片数量下的实现上限，不是 R2 的限制。
+
+### 本地跑
+
+```bash
+cp .dev.vars.example .dev.vars   # 填好里面的三个值
 npm ci
 npm run build
 npm run db:migrate:local
-npm run dev                       # http://localhost:8787
+npm run dev                      # http://localhost:8787
 ```
 
-### 测试与仓库安全
+改完前端要重新 `npm run build`，Wrangler 才会读到新产物。`.dev.vars` 不要提交。
 
 ```bash
-npm run verify          # 配置、PWA/主题资源、三语言、类型、脚本与 Worker 测试
-npm run deploy:dry-run  # 构建前端并验证 Wrangler 部署包，不上传
+npm run verify          # 配置、资源、三语、类型、脚本、Worker 测试一起过
+npm run deploy:dry-run  # 构建并验证部署包，不上传
 ```
 
-测试覆盖管理员鉴权、分享解析与下载、Range/ETag、限流、断点续传错误分类，以及秒传 capability 校验、伪造树根与篡改收据拒绝、同一内容并发首次上传收敛为单一 blob、物理存储计数、最后引用回收与失败重试、定时清理、健康检查等场景。CI 在推送 `main` 和 Pull Request 时跑完整验证；CodeQL 做每周 + PR 的语义扫描；Dependabot 与 Secret Scanning 常驻开启。
+### 说清楚：这不是端到端加密
+
+Worker 必须能读到内容才能发给对方，所以它读得到。安全边界来自私有 R2 桶、只存哈希的取件码、短命的下载会话，以及所有访问都过 Worker 这一道。真正敏感的东西，上传前自己加密——打个带密码的压缩包就行。
+
+审计日志和限流记录里只有 IP 的单向哈希，没有明文 IP。
+
+<details>
+<summary>实现细节（给想看代码的人）</summary>
+
+| 层 | 用了什么 | 干什么 |
+|---|---|---|
+| 边缘 | Hono + Workers | API、鉴权、安全头、流式下载、定时清理 |
+| 对象存储 | R2（私有桶） | 文件正文和文本正文 |
+| 数据库 | D1 | 分享元数据、物理 blob 引用、上传会话、回收 outbox、设置、审计日志、精确限流 |
+| 前端 | Vue 3 + Element Plus | 用户界面和后台，走 Workers Static Assets |
+| 观测 | Analytics Engine + Rate Limiting | 轻量指标、边缘粗粒度限流 |
+
+- **秒传协议**：客户端算覆盖全文件的树指纹；Worker 收每个分片时流式算 SHA-256，签发一张绑定了上传会话、分片序号、分片大小和哈希的收据；完成时校验全部收据并重算树根。伪造树根、篡改收据、跨会话复用收据都会被拒。
+- **取件码**：只存 `SHA-256(pepper + code)`。随机码用拒绝采样保证字符分布无偏，字母表剔掉了 `0/O/1/l/I`。
+- **下载令牌**：Web Crypto 手写的 HMAC-SHA256 JWT，不引第三方库；作用域限定到单个分享，`HttpOnly` + `SameSite=Strict` + Path 锁死到该分享的下载路径。
+- **容量计数是 O(1)**：D1 触发器在写入时维护 `storage_usage` 汇总行，按物理 blob + 未完成上传的预留计数。后台看用量不用扫全表，重复分享同一 blob 也不重复占额度。
+- **限流分两层**：Workers 原生 Rate Limiting 在边缘粗筛，D1 时间窗计数器做跨节点的精确限制，主要防取件码被枚举。
+- **回收是可重试的**：删除/过期只动逻辑分享；最后一个引用消失后物理 blob 才进 orphan outbox，Cron 先删 R2 对象再删 outbox 行，删失败就留着下次重试。半截的分片上传走同一套 outbox。
+- **CSP 分路由**：API 和后台走严格策略，静态资源走宽松策略。SVG 这类能带脚本的格式一律强制下载，不做内联预览。
+- **错误码三级回退**：后端返稳定的 ErrorCode + 参数 + 英文兜底文案，前端按 ErrorCode 本地化 → 原始 message → 通用兜底依次取。
+- **CI 护栏**：`verify-config.mjs` 断言 `wrangler.toml` 里的 D1 `database_id` 还是占位符（防止真实生产库 ID 被提交）、限流 namespace 不冲突、Deploy 按钮的密钥说明和 `.dev.vars.example` 同步。
+
+关于定时清理的额度取舍：Workers 免费版每次调用只有 **10 ms CPU**（等 D1/R2 的 I/O 不算），而调用次数几乎白给（10 万次/天）。所以清理策略是「跑得勤、每次少干」——每小时一次，单次最多连跑 3 批（约 300 条）。空跑一次只有 11 行 D1 读、0 行写，一天 24 次约占读额度的 0.005%。剩下的积压交给下一个整点。付费版 CPU 是 30 秒 / 15 分钟，可以放心调高 `maxPasses`。
+
+</details>
+
+### 许可
+
+**LGPL-3.0-or-later** · [LICENSE](./LICENSE) · [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)
+
+灵感来自 [FileCodeBox](https://github.com/vastsa/FileCodeBox) 和它的 [Go 实现](https://github.com/zy84338719/FileCodeBox)。本项目是独立的 Cloudflare Workers 实现。
 
 ---
 
 ## English
 
+**Your own pickup locker.** Drop a file in, get a short code, send the code. No sign-up, no login, no desktop client.
+
+Runs on Cloudflare Workers + R2 + D1. One click to deploy, and personal use stays comfortably inside the free tier.
+
 ### How it works
 
-1. Drop in one file, or paste the text you want to share.
-2. Send the pickup code, full share URL, or QR code to the recipient.
-3. They enter the code, paste the URL, or scan the code — no account needed on either side.
+1. Drag in a file, or paste some text.
+2. You get a pickup code, a share link, and a QR code. Send whichever is convenient.
+3. They type the code, open the link, or scan it. Neither of you needs an account.
 
-### Highlights
+Every share carries its own expiry and pickup budget. When it runs out, it's gone — nothing for you to clean up afterwards.
 
-- **Automatic Theme Switching**: Seamlessly adapts to your device's light or dark mode, with manual override and local preference memory.
-- **Privacy & Security First**: Pickup codes are stored only as irreversible hashes. Admin credentials are kept in Cloudflare Secrets, and CLI deployments use PBKDF2 hashes by default. Production traffic is HTTPS-encrypted.
-- **Multilingual Support**: Natively supports English, Chinese, and Japanese. Automatically detects your browser's language with instant manual switching.
-- **Zero-Cost Self-Hosting**: One-click deployment to Cloudflare. Typical personal use fits entirely within the generous free tier limits.
-- **2.5.0 Secure Instant, Chunked & Resumable Uploads**: A first upload fingerprints and transfers the complete file, then caches a server-signed capability locally. Selecting the same content again can create a new, independent share without retransmitting the bytes while that capability remains valid; interrupted multipart uploads remain resumable.
-- **Frictionless Sharing**: Retrieve files instantly via pickup code, direct link, or QR code. No account registration required for either party.
-- **Dynamic Admin Console**: Modify expiries, download limits, and system parameters on the fly via the web dashboard without redeploying.
-- **Native PWA Integration**: Installable to your home screen as a standalone app, fully integrated with your OS's native share menu (Web Share Target).
-- **Automated Maintenance**: A daily cron job automatically purges expired shares and orphaned data chunks, keeping your storage clean effortlessly.
+### Things worth pointing out
 
-### Technical Highlights
+**Instant re-upload, without a hash oracle.**
+Uploading the same file twice doesn't retransmit it. That part is common; the usual implementation isn't. Most of them expose a "does this hash exist?" endpoint, which lets anyone probe whether some file has been uploaded by someone else. Here, skipping the transfer requires a **capability the server signed for you on your own successful upload**, cached in your browser. No capability, no shortcut. The server never answers questions about other people's content.
 
-- **Password & Code Protection**: CLI deployments store the admin password as a PBKDF2 hash (SHA-256, 100k iterations); Deploy Button installations keep `ADMIN_PASSWORD` in a Cloudflare Secret. Both modes use constant-time verification. Pickup codes are stored only as salted SHA-256 hashes, and random codes use rejection sampling for an unbiased character distribution.
-- **Stateless Download Tokens**: A hand-rolled HMAC-SHA256 JWT built on the Web Crypto API, scoped to a single pickup session and expiring in 15 minutes, with no third-party JWT library. Repeated Range requests within that session are allowed without consuming extra pickups.
-- **Verifiable Instant-Upload Protocol**: The first upload computes a tree fingerprint over the complete file. As every part arrives, the Worker streams it through SHA-256 and returns a signed receipt bound to the upload session, part size, and digest; completion verifies every receipt and the resulting tree root. Instant reuse requires the signed capability returned by a previous successful upload and cached locally—there is no public “does this hash exist?” oracle.
-- **O(1) Physical Storage Accounting**: A D1 trigger atomically maintains `storage_usage` from physical R2 blobs plus reservations for unfinished uploads. Multiple logical shares of one blob consume the bytes only once, and the admin dashboard never scans the full shares table to report usage.
-- **Two Complementary Rate-Limiting Layers**: Workers' native Rate Limiting API drops obvious abuse at the edge, while D1 sliding-window counters enforce exact, cross-node limits specifically against brute-forcing pickup codes.
-- **Content Safety**: Formats with script-injection risk, like SVG, are always forced to download as attachments instead of rendering inline. API and admin routes get a strict Content-Security-Policy; the static asset shell gets a looser one—split by route rather than one blanket policy.
-- **Structured Errors & i18n Fallbacks**: The backend returns a stable ErrorCode, parameters, and an English fallback message. The frontend's `formatApiError` resolves them in order: localized ErrorCode → raw message → generic fallback.
-- **Retryable Physical Cleanup**: Deleting or expiring a share removes only that share. When the last reference to a physical blob disappears, the blob enters an orphan outbox; Cron removes its R2 object and then the outbox row, retaining failures for a later retry. It also aborts incomplete multipart uploads left behind by interruptions.
-- **Privacy-Preserving Logs**: Audit logs and rate-limit keys only ever store a one-way hash of the client IP, never plaintext.
-- **CI Guardrails**: `verify-config.mjs` asserts in CI that the D1 `database_id` in `wrangler.toml` stays a placeholder, that rate-limit namespaces don't collide, and that the Deploy-button secret descriptions stay in sync with `.dev.vars.example`.
-- **Native Build Metadata**: The `version_metadata` binding supplies the deploy timestamp, and `WORKERS_CI_COMMIT_SHA` (an official Workers Builds environment variable) supplies the real commit hash—nothing is hand-assembled in CI scripts.
+**Big uploads survive a dropped connection.**
+Files go up in 8 MiB parts and progress is kept locally. Lose your network, close the tab, background the app on a phone — pick the same file again and it resumes where it stopped. The progress bar moves by bytes, not one jump per part.
 
-### Architecture and security model
+**Watching a video doesn't burn the pickup budget.**
+A pickup is counted once per pickup, not once per HTTP request. Entering the code opens a one-hour download session; within that hour, seeking through a video, resuming a download, or a browser retry all cost nothing extra.
 
-```text
-First file upload: full-content tree fingerprint + parts
-    │
-    ▼
-Worker: streaming SHA-256, signed part receipts, tree-root verification
-    ├─ Physical blob ─────────────────────→ private R2 (opaque object key)
-    ├─ Blob reference + share metadata ───→ D1
-    └─ Signed capability ─────────────────→ cached locally by the browser
+**Identical content is stored once, but shares stay independent.**
+Two people sharing the same file means one object in R2 — yet each share keeps its own code, expiry, and pickup count. The physical object is deleted only when the last reference to it goes away.
 
-Same file + valid capability → Worker creates an independent share ─┐
-                                                                   └→ same physical blob; no public hash lookup
+**Settings change without a redeploy.**
+Expiry ceiling, pickup limit, max file size, whether text or file sharing is on, whether to require a Turnstile challenge — all of it is a click in the admin console.
 
-Every share: independent random pickup code, expiry, and pickup limit
-    └─ Salted SHA-256 pickup-code hash ───→ D1; plaintext is never stored
+**Installs to your home screen, hooks into the OS share menu.**
+It's a PWA, and it registers as a Web Share Target, so sharing to it from another app just works.
 
-Upload text → Worker validates and rate-limits → private R2 + D1 share metadata
-
-Enter a code or full URL → Worker extracts and hashes it → D1 finds the share and atomically consumes one pickup
-    ├─ Text: Worker reads the R2 object and returns it
-    └─ File: issue a 15-minute download session → stream from R2 (Range / ETag)
-```
-
-This is server-side access control, not end-to-end encryption: the Worker has to be able to read content in order to serve it. Security comes from private R2 storage, irreversible pickup-code hashing, short-lived sessions, and routing every access through the Worker. Encrypt sensitive files before upload, such as in a password-protected archive, if you need more than that.
-
-| Layer | Technology | Purpose |
-|-------|------------|---------|
-| Edge app | Hono + Cloudflare Workers | API, auth, security headers, streaming, scheduled cleanup |
-| Object storage | Cloudflare R2 | Private file and shared-text bodies |
-| Database | Cloudflare D1 | Share metadata, physical-blob references, upload sessions, cleanup outbox, settings, audit logs, exact rate counters |
-| Frontend | Vue 3 + Element Plus | Public UI and admin console via Workers Static Assets |
-| Metrics and guard | Analytics Engine + Workers Rate Limiting | Lightweight metrics and edge throttling |
-
-### Defaults and limits
-
-| Item | Current behavior |
-|------|------------------|
-| Single-file upload | 50 MiB by default, configurable 1–95 MiB |
-| Application upload ceiling | 95 MiB — this is the app's current chunk-count boundary, not R2 multipart's own file-size limit |
-| Total-storage soft limit | 8 GiB by default; counts physical blobs plus unfinished-upload reservations, while repeat shares of one blob add no bytes; uploads needing new space stop at the limit and existing content is untouched |
-| Expiry | 24 hours by default, 168 hours max by default, admin-configurable |
-| Maximum pickups | 10 by default, admin-configurable |
-| Scheduled cleanup | Daily at 00:00 UTC for expired shares, unreferenced orphan blobs, and leftover multipart parts; failed R2 blob deletions are retried |
+**It looks after itself.**
+An hourly job clears expired shares, reclaims physical files nothing references any more, and aborts half-finished multipart uploads. Failed R2 deletions are kept and retried.
 
 ### Deploy
 
 > [!IMPORTANT]
-> **Prerequisite: R2 needs a payment method on file**
-> Cloudflare requires a valid payment method on file to activate R2. Without a payment method, the deploy script and the "Deploy to Cloudflare" button will fail to create the R2 bucket.
+> Cloudflare requires a payment method on file before R2 can be activated. **Without one, every deployment path fails at "create R2 bucket."** R2 has its own free tier — adding a card is not the same as being charged.
 
-> [!WARNING]
-> **The 2.5.0 data-model upgrade is forward-only.** `0003_instant_upload.sql` allows multiple shares to reference one R2 blob. After 2.5.0 starts handling files, do not roll the Worker back to 2.4.x: its cleanup code assumes one share owns one R2 object and can delete content still referenced elsewhere. During an incident, disable public file uploads and roll forward to a corrected 2.5.x build. Always apply the migration before deploying the Worker.
+#### One click
 
-Node.js 24 (`>=24.11.0 <25`) is required; the version pinned in `.nvmrc` is recommended.
-
-#### CLI (recommended)
-
-```bash
-npm ci
-npm run deploy:cf
-```
-
-A fully automatic interactive deploy helper: it provisions or reuses R2/D1, writes the generated D1 `database_id` back into your local `wrangler.toml`, prompts for an admin password and hashes it before deploying it as an encrypted secret, then runs migrations and deploys the Worker. Existing bindings are not rotated automatically.
-
-#### Deploy to Cloudflare
-
-Click the [Deploy to Cloudflare button at the top of this page](#r2filebox) and set:
+Hit the **Deploy to Cloudflare** button above and fill in two commands:
 
 ```text
 Build command:  npm run build
 Deploy command: npm run deploy
 ```
 
-`npm run deploy` applies remote D1 migrations before `wrangler deploy`. The first deployment requires:
+Then three secrets:
 
-| Secret | Requirement |
-|--------|-------------|
-| `ADMIN_PASSWORD` | Admin password, 16–4096 characters |
-| `CODE_HASH_PEPPER` | Generate with `openssl rand -hex 32`; rotating it invalidates existing pickup codes |
-| `SESSION_SECRET` | Generate with `openssl rand -hex 32`; rotating it invalidates existing sessions |
+| Secret | Where it comes from |
+|---|---|
+| `ADMIN_PASSWORD` | Pick one, 16–4096 characters. **Cloudflare can't recover it for you — save it somewhere first.** |
+| `CODE_HASH_PEPPER` | `openssl rand -hex 32` |
+| `SESSION_SECRET` | `openssl rand -hex 32` |
 
-`ADMIN_USERNAME` is optional, defaults to `admin`. Turnstile is off by default and can be enabled later from the admin console.
+Generate the last two once and leave them alone. Rotating `CODE_HASH_PEPPER` invalidates every pickup code already handed out; rotating `SESSION_SECRET` drops all admin sessions and download sessions.
 
-### Local development
+`ADMIN_USERNAME` is optional and defaults to `admin`. Turnstile is off until you turn it on from the console.
 
-```bash
-cp .dev.vars.example .dev.vars
-npm ci
-npm run build
-npm run db:migrate:local
-npm run dev                       # http://localhost:8787
-```
+#### From the command line
 
-Re-run `npm run build` after frontend changes so Wrangler reloads the generated assets. Never commit `.dev.vars`, admin credentials, or production secrets.
-
-### Tests and repository security
-
-```bash
-npm run verify          # config, PWA/theme assets, i18n, types, scripts, and Worker tests
-npm run deploy:dry-run  # build the frontend and validate the Wrangler bundle without uploading
-```
-
-Coverage includes admin auth, share resolution and downloads, Range/ETag, rate limiting, resumable-upload error classification, instant-upload capability enforcement, rejection of forged roots and tampered receipts, convergence of concurrent first uploads of the same content onto one blob, physical storage accounting, last-reference cleanup with retry behavior, scheduled cleanup, and health checks. CI runs full verification on pushes to `main` and on pull requests; CodeQL runs semantic SAST weekly and on PRs; Dependabot and Secret Scanning are always on — those two are repository settings rather than workflows, so their badge just says `Enabled`.
-
-### License
-
-Inspired by [FileCodeBox](https://github.com/vastsa/FileCodeBox) and parts of its [Go implementation](https://github.com/zy84338719/FileCodeBox). This is an independent Cloudflare Workers implementation.
-
-**LGPL-3.0-or-later** · [LICENSE](./LICENSE) · [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)
-
----
-
-## 日本語
-
-<details>
-<summary>日本語版を開く / Expand Japanese</summary>
-
-### 使い方
-1. ファイルをドラッグ＆ドロップするか、テキストを貼り付けます。
-2. 受取コード・共有URL・QRコードのいずれかを相手に送ります。
-3. 相手はコードを入力するか URL を開くだけで取得できます。登録は不要です。
-
-### 主な特徴
-
-- **自動テーマ切り替え**: デバイスのダーク / ライトモードに自動適応し、手動での切り替えや設定の保存にも対応しています。
-- **プライバシーとセキュリティ**: 受取コードは不可逆ハッシュのみを保存します。管理者認証情報は Cloudflare Secret に保存され、CLI デプロイでは既定で PBKDF2 ハッシュを使用します。本番通信は HTTPS で暗号化されます。
-- **多言語対応**: 日本語、英語、中国語をネイティブサポート。ブラウザの言語を自動認識し、いつでも手動で切り替え可能です。
-- **ゼロコストで自己ホスト**: Cloudflare にワンクリックでデプロイ可能。個人利用であれば、通常は無料枠内に収まります。
-- **2.5.0 の安全な瞬時アップロード・分割・レジューム**: 初回はファイル全体のツリー指紋を計算して全データを送信し、成功後にサーバー署名済み capability をブラウザへ保存します。同じ内容を再選択した際、capability が有効であればデータを再送せず新しい独立共有を作成できます。通信中断時の分割アップロード再開にも引き続き対応しています。
-- **登録不要で簡単共有**: 受取コード、リンク、QR コードから即座にファイルを取得可能。送信者・受信者ともにアカウントは不要です。
-- **動的な管理画面**: 有効期限やダウンロード回数などの設定をウェブ上から直接変更でき、再デプロイなしで即座に反映されます。
-- **PWA とシステム統合**: アプリとしてホーム画面に追加可能で、OS 標準の共有メニューとも深く統合されています。
-- **完全自動のクリーンアップ**: 定期ジョブが期限切れのファイルや不要なデータ断片を毎日自動で削除するため、メンテナンスフリーで運用できます。
-
-### 技術的なハイライト
-
-- **パスワードと受取コードの保護**: CLI デプロイでは管理者パスワードを PBKDF2 (SHA-256、10万回イテレーション) ハッシュとして保存し、Deploy Button では `ADMIN_PASSWORD` を Cloudflare Secret に保存します。どちらも定数時間で検証します。受取コードはソルト付き SHA-256 ハッシュのみを保存し、ランダムコードの生成には棄却サンプリングを使用します。
-- **ダウンロードトークン**: Web Crypto API を使って自前実装した HMAC-SHA256 JWT。単一の受取セッションに限定され、有効期限は 15 分。サードパーティの JWT ライブラリには依存していません。セッション内であれば Range リクエストを繰り返しても、受取回数は追加で消費されません。
-- **検証可能な瞬時アップロード方式**: 初回アップロードではファイル全体を対象にツリー指紋を計算します。Worker は各パートを受信しながら SHA-256 をストリーム計算し、アップロードセッション・パートサイズ・ハッシュに結び付いた署名付きレシートを返し、完了時に全レシートとツリールートを検証します。瞬時アップロードには、前回の成功時に返されローカル保存された署名済み capability が必須で、ハッシュの存在を公開照会する API はありません。
-- **O(1) の物理ストレージ集計**: D1 のトリガーが物理 R2 blob と未完了アップロードの予約容量から `storage_usage` をアトミックに更新します。同じ blob を複数の論理共有が参照しても容量は一度だけ計上され、管理画面で shares テーブル全体をスキャンする必要もありません。
-- **二層のレート制限**: Workers ネイティブの Rate Limiting API がエッジで粗い防御を行い、D1 のスライディングウィンドウカウンターが受取コードへのブルートフォース攻撃に対してノードをまたいだ厳密な制限を行います。
-- **コンテンツの安全性**: SVG などスクリプトインジェクションのリスクがある形式は、インラインプレビューを無効化し、強制的に添付ファイルとしてダウンロードさせます。API・管理画面には厳格な Content-Security-Policy を、静的アセット配信には緩やかなポリシーを適用し、ルートごとに使い分けています。
-- **構造化エラーコード + i18n フォールバック**: バックエンドは安定した ErrorCode、パラメータ、英語のフォールバックメッセージを返します。フロントエンドの `formatApiError` は ErrorCode のローカライズ文言 → 元のメッセージ → 汎用フォールバックの順に解決します。
-- **再試行可能な物理クリーンアップ**: 共有の削除・期限切れではその共有だけを削除し、物理 blob への最後の参照がなくなった時点で orphan outbox に登録します。Cron は対応する R2 オブジェクトを削除してから outbox レコードを消し、R2 削除に失敗した場合は次回の再試行用に保持します。中断された未結合パートも abort します。
-- **プライバシー保護**: 監査ログやレート制限のキーには IP の一方向ハッシュ値のみを保存し、平文の IP は保存しません。
-- **CI によるガードレール**: `verify-config.mjs` が CI 上で `wrangler.toml` の D1 `database_id` がプレースホルダーのままであること、レート制限のネームスペースが重複していないこと、Deploy ボタン用の Secret 説明が `.dev.vars.example` と同期していることを検証します。
-- **Cloudflare ネイティブなビルドメタデータ**: `version_metadata` バインディングでデプロイ時刻を、Workers Builds 公式の環境変数である `WORKERS_CI_COMMIT_SHA` で実際のコミットハッシュを取得しており、CI 側で手動組み立てしていません。
-
-### アーキテクチャとセキュリティモデル
-
-```text
-初回ファイル: 全内容ツリー指紋 + パート
-    │
-    ▼
-Worker: ストリーム SHA-256、署名付きパートレシート、ツリールート検証
-    ├─ 物理 blob ─────────────────────→ 非公開 R2 (不透明なオブジェクトキー)
-    ├─ blob 参照 + 共有メタデータ ─────→ D1
-    └─ 署名済み capability ───────────→ ブラウザへローカル保存
-
-同一ファイル + 有効な capability → 独立した共有を新規作成
-    └─ 同じ物理 blob を参照し、公開ハッシュ照会は行わない
-
-各共有は受取コード・有効期限・最大受取回数を個別に保持
-```
-
-これはサーバーサイドのアクセス制御であり、エンドツーエンドの暗号化ではありません。Worker がコンテンツを配信するためにはデータを読み込める必要があります。安全性はプライベート R2、不可逆な受取コードハッシュ、短命なダウンロードセッション、そしてすべてのアクセスが Worker を経由することに由来します。機密ファイルはアップロード前にパスワード付きアーカイブなどで暗号化してください。
-
-### デフォルト値と制限
-
-単一ファイルは既定 50 MiB(管理者設定で 1–95 MiB)、アプリの上限は 95 MiB、総容量ソフト上限は既定 8 GiB です。容量は物理 blob と未完了アップロードの予約分で計上し、同じ blob の重複共有は加算しません。有効期限は既定 24 時間(既定最大 168 時間)、最大受取回数は既定 10 回です。クリーンアップは毎日 00:00 UTC に期限切れ共有、最後の参照を失った orphan blob、残留パートを処理し、R2 削除に失敗した blob は再試行します。設定可能な項目は管理画面から変更できます。
-
-### デプロイ
-
-> [!IMPORTANT]
-> R2 を有効化するには、Cloudflare アカウントに有効な支払い方法を登録する必要があります。支払い方法を登録しないと、R2 バケットの作成に失敗するため、デプロイスクリプトや「Deploy to Cloudflare」ボタンでのデプロイが失敗します。
-
-> [!WARNING]
-> **2.5.0 のデータモデル更新後は前方更新のみです。** `0003_instant_upload.sql` により複数の共有が同じ R2 blob を参照できます。2.5.0 でファイル処理を開始した後は 2.4.x にロールバックしないでください。旧クリーンアップは 1 共有につき 1 オブジェクトを前提とするため、別の共有が参照中の内容を削除する可能性があります。障害時は公開ファイルアップロードを一時停止し、修正版 2.5.x へ前方更新してください。マイグレーションは必ず Worker より先に適用します。
-
-Node.js 24(`>=24.11.0 <25`)が必要です。`.nvmrc` のバージョンを推奨します。
+If you'd rather have the password hashed for you and the resources provisioned automatically:
 
 ```bash
 npm ci
 npm run deploy:cf
 ```
 
-R2/D1 の作成またはバインド、`wrangler.toml` への `database_id` の書き戻し、管理者パスワードのハッシュ化とシークレットへのデプロイ、マイグレーションと Worker のデプロイまでを対話形式で自動実行します。既存のバインディングはシークレットを自動ローテーションしません。
+It walks you through creating (or reusing) the R2 bucket and D1 database, writes the `database_id` back into your local `wrangler.toml`, prompts for an admin password and stores it as a **PBKDF2 hash**, runs the migrations, and deploys. When it finds existing resources it won't rotate your secrets behind your back.
 
-初回デプロイに必要な Secret は `ADMIN_PASSWORD`(16–4096文字)、`CODE_HASH_PEPPER`、`SESSION_SECRET`(いずれも `openssl rand -hex 32` で生成)。`ADMIN_USERNAME` は任意で既定値は `admin` です。
+Needs Node.js 24 (`>=24.11.0 <25`, pinned in `.nvmrc`).
 
-### ローカル開発
+> [!WARNING]
+> **2.5.0 is forward-only.** `0003_instant_upload.sql` lets several shares reference one R2 object, and 2.4.x cleanup still assumes one share owns one object — rolling back can delete content another share is using. If something breaks, turn off public uploads in the console and fix forward. Migrations always go before the Worker deploy.
+
+### Defaults
+
+| | |
+|---|---|
+| Per file | 50 MiB, adjustable 1–95 MiB from the console |
+| Total storage | 8 GiB soft limit; new content stops, existing content is untouched |
+| Expiry | 24 hours, up to 168 |
+| Pickups | 10 |
+| Cleanup | Hourly |
+
+The 95 MiB ceiling comes from the current part count, not from R2.
+
+### Running it locally
 
 ```bash
-cp .dev.vars.example .dev.vars
+cp .dev.vars.example .dev.vars   # fill in the three values
 npm ci
 npm run build
 npm run db:migrate:local
-npm run dev                       # http://localhost:8787
+npm run dev                      # http://localhost:8787
 ```
 
-`.dev.vars`、管理者認証情報、本番シークレットはコミットしないでください。
-
-### テストとリポジトリの安全性
+Re-run `npm run build` after frontend changes so Wrangler picks up the new assets. Never commit `.dev.vars`.
 
 ```bash
-npm run verify          # 設定、PWA/テーマ、i18n、型、スクリプト、Worker テスト
-npm run deploy:dry-run  # フロントエンドをビルドし、アップロードせず Wrangler バンドルを検証
+npm run verify          # config, assets, i18n, types, scripts, Worker tests
+npm run deploy:dry-run  # build and validate the bundle without uploading
 ```
 
-管理者認証、共有の解決とダウンロード、Range/ETag、レート制限、レジューム時のエラー分類に加え、瞬時アップロード capability の必須化、偽造ツリールート・改ざんレシートの拒否、同一内容の初回同時アップロードが単一 blob に収束すること、物理ストレージ集計、最後の参照を失った blob の回収と再試行、定時クリーンアップ、ヘルスチェックをテストしています。
+### To be clear: this is not end-to-end encryption
+
+The Worker has to be able to read your content in order to serve it, so it can. What protects you is a private R2 bucket, pickup codes stored only as hashes, short-lived download sessions, and every access going through the Worker. If something is genuinely sensitive, encrypt it before uploading — a password-protected archive is enough.
+
+Audit logs and rate-limit records only ever hold a one-way hash of the client IP, never the address itself.
+
+<details>
+<summary>Implementation notes (for people reading the code)</summary>
+
+| Layer | What | For |
+|---|---|---|
+| Edge | Hono + Workers | API, auth, security headers, streaming, scheduled cleanup |
+| Objects | R2 (private bucket) | File and text bodies |
+| Database | D1 | Share metadata, blob references, upload sessions, cleanup outbox, settings, audit logs, exact rate counters |
+| Frontend | Vue 3 + Element Plus | Public UI and admin console, served by Workers Static Assets |
+| Observability | Analytics Engine + Rate Limiting | Lightweight metrics and edge throttling |
+
+- **Instant-upload protocol.** The client computes a tree fingerprint over the whole file. As each part arrives, the Worker streams it through SHA-256 and issues a receipt bound to the upload session, part number, part size, and digest. Completion verifies every receipt and recomputes the root. Forged roots, tampered receipts, and receipts replayed across sessions are all rejected.
+- **Pickup codes.** Stored as `SHA-256(pepper + code)` only. Random codes use rejection sampling for an unbiased distribution over an alphabet with `0/O/1/l/I` removed.
+- **Download tokens.** HMAC-SHA256 JWTs written against Web Crypto — no third-party library. Scoped to a single share, `HttpOnly`, `SameSite=Strict`, with the cookie path pinned to that share's download route.
+- **O(1) storage accounting.** A D1 trigger keeps a `storage_usage` row in step on every write, counting physical blobs plus reservations for unfinished uploads. The console never scans the shares table, and repeat shares of one blob don't double-count.
+- **Two rate-limiting layers.** The native Workers Rate Limiting API sheds obvious abuse at the edge; D1 window counters enforce the exact, cross-node limit that actually matters against pickup-code enumeration.
+- **Reclamation is retryable.** Deleting or expiring a share touches only that share. When its last reference disappears the blob enters an orphan outbox; cron deletes the R2 object first, then the outbox row, and keeps failures for the next run. Half-finished multipart uploads use the same outbox.
+- **CSP is per-route.** Strict for API and admin, relaxed for the static shell. Formats that can carry script, SVG among them, are always forced to download rather than rendered inline.
+- **Errors fall back three ways.** The backend returns a stable ErrorCode plus parameters and an English fallback string; the frontend resolves localized ErrorCode → raw message → generic fallback.
+- **CI guardrails.** `verify-config.mjs` asserts that the D1 `database_id` in `wrangler.toml` is still a placeholder (so a real production ID can't be committed), that rate-limit namespaces don't collide, and that the deploy-button secret descriptions stay in sync with `.dev.vars.example`.
+
+On the cleanup schedule: the Workers Free plan gives each invocation **10 ms of CPU** (waiting on D1 and R2 doesn't count), while invocations themselves are nearly free at 100k/day. So cleanup runs often and does little each time — hourly, at most 3 batches (~300 items) per run. An idle run costs 11 D1 rows read and zero written; 24 of those a day is about 0.005% of the daily read allowance. Anything left over waits for the next hour. Paid plans get 30 s / 15 min of CPU and can raise `maxPasses` freely.
 
 </details>
+
+### License
+
+**LGPL-3.0-or-later** · [LICENSE](./LICENSE) · [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)
+
+Inspired by [FileCodeBox](https://github.com/vastsa/FileCodeBox) and parts of its [Go implementation](https://github.com/zy84338719/FileCodeBox). This is an independent Cloudflare Workers implementation.
+
+---
+
+## 日本語
+
+**自分専用の受取ロッカー。** ファイルを放り込むと短い受取コードが出るので、それを相手に渡すだけ。登録もログインも専用クライアントも要りません。
+
+Cloudflare Workers + R2 + D1 で動きます。ワンクリックでデプロイでき、個人利用なら無料枠を使い切ることはまずありません。
+
+### 使い方
+
+1. ファイルをドラッグするか、テキストを貼り付けます。
+2. 受取コード・共有リンク・QR コードが出るので、都合のいいものを相手に送ります。
+3. 相手はコードを入力するか、リンクを開くか、QR を読むだけ。どちらもアカウント不要です。
+
+共有ごとに有効期限と受取回数を持っていて、使い切れば自動で消えます。あとから片付ける必要はありません。
+
+### 特に見てほしいところ
+
+**瞬時アップロード。ただしハッシュ照会 API は持ちません。**
+同じファイルを二度目に送るとき再送しない——ここまではよくある機能ですが、実装はたいてい「このハッシュは存在しますか」という API を公開してしまい、誰でも任意のファイルについて「他人がアップしたか」を確かめられてしまいます。本実装が要求するのは、**前回自分のアップロードが成功したときにサーバーが署名し、ブラウザに保存された capability** です。これが無ければ普通に送信します。他人のコンテンツについてサーバーは何も答えません。
+
+**大きいファイルは切れても続きから。**
+8 MiB ごとに分割し、進捗はローカルに保存します。回線が切れても、タブを閉じても、スマホでバックグラウンドに回っても、同じファイルを選び直せば途中から再開します。進捗バーはバイト単位で動き、パートごとに飛んだりしません。
+
+**動画を見ても受取回数は減りません。**
+回数は HTTP リクエストではなく「受け取り」単位です。コードを入力すると 1 時間有効なダウンロードセッションが開き、その間のシーク操作・レジューム・ブラウザの再試行は一切カウントされません。
+
+**同じ内容の実体はひとつ、でも共有は独立。**
+同じファイルを二人が共有しても R2 上のオブジェクトはひとつですが、受取コード・有効期限・回数はそれぞれ別々です。最後の参照が消えて初めて実体を削除します。
+
+**設定変更に再デプロイは不要。**
+有効期限の上限、受取回数、ファイルサイズ上限、テキスト／ファイル共有の可否、Turnstile の要否——すべて管理画面のクリックだけで反映されます。
+
+**ホーム画面に入り、OS の共有メニューにも出ます。**
+PWA としてインストールでき、Web Share Target に対応しているので他のアプリの「共有」から直接送れます。
+
+**放っておいても勝手に片付きます。**
+毎時のジョブが期限切れの共有を消し、どこからも参照されなくなった実体を回収し、中断した分割アップロードを abort します。R2 の削除に失敗した分は記録を残して次回再試行します。
+
+### デプロイ
+
+> [!IMPORTANT]
+> R2 の有効化には Cloudflare アカウントへの支払い方法の登録が必要です。**未登録だとどの方法でも「R2 バケット作成」で失敗します。** R2 には無料枠があるので、カード登録＝課金ではありません。
+
+#### ワンクリック
+
+上の **Deploy to Cloudflare** ボタンを押し、コマンドを 2 行入力します。
+
+```text
+Build command:  npm run build
+Deploy command: npm run deploy
+```
+
+続いてシークレットを 3 つ。
+
+| シークレット | 用意の仕方 |
+|---|---|
+| `ADMIN_PASSWORD` | 自分で決めます（16–4096 文字）。**Cloudflare は再発行してくれないので、先に控えてください。** |
+| `CODE_HASH_PEPPER` | `openssl rand -hex 32` |
+| `SESSION_SECRET` | `openssl rand -hex 32` |
+
+後ろ 2 つは一度生成したら変更しないでください。`CODE_HASH_PEPPER` を変えると発行済みの受取コードがすべて無効になり、`SESSION_SECRET` を変えるとログイン状態とダウンロードセッションが切れます。
+
+`ADMIN_USERNAME` は任意で既定は `admin` です。Turnstile は既定でオフ、管理画面から有効化できます。
+
+#### コマンドラインから
+
+パスワードのハッシュ化やリソース作成まで任せたい場合はこちら。
+
+```bash
+npm ci
+npm run deploy:cf
+```
+
+R2 バケットと D1 データベースの作成（または再利用）、`database_id` のローカル `wrangler.toml` への書き戻し、管理者パスワードの入力と **PBKDF2 ハッシュ化**してのシークレット登録、マイグレーション、デプロイまで対話形式で進みます。既存リソースを検出した場合、シークレットを勝手にローテーションすることはありません。
+
+Node.js 24（`>=24.11.0 <25`、`.nvmrc` で固定）が必要です。
+
+> [!WARNING]
+> **2.5.0 以降はロールバックできません。** `0003_instant_upload.sql` により複数の共有が同じ R2 オブジェクトを参照するようになりますが、2.4.x のクリーンアップは「1 共有 = 1 オブジェクト」を前提にしているため、他の共有が使用中の実体を削除しうるからです。障害時は管理画面で公開アップロードを止め、前方修正してください。マイグレーションは必ず Worker のデプロイより先に。
+
+### 既定値
+
+| | |
+|---|---|
+| 1 ファイル | 50 MiB（管理画面で 1–95 MiB に調整可） |
+| 総容量 | 8 GiB のソフト上限。到達後は新規受付を停止し、既存データには触れません |
+| 有効期限 | 24 時間（上限 168 時間） |
+| 受取回数 | 10 回 |
+| 自動クリーンアップ | 毎時 |
+
+95 MiB は現在の分割数に由来する実装上の上限で、R2 側の制限ではありません。
+
+### ローカルで動かす
+
+```bash
+cp .dev.vars.example .dev.vars   # 3 つの値を埋めます
+npm ci
+npm run build
+npm run db:migrate:local
+npm run dev                      # http://localhost:8787
+```
+
+フロントエンドを変更したら `npm run build` をやり直してください。`.dev.vars` はコミットしないこと。
+
+```bash
+npm run verify          # 設定・アセット・三言語・型・スクリプト・Worker テスト
+npm run deploy:dry-run  # ビルドしてバンドルを検証（アップロードはしません）
+```
+
+### 断っておくと、これはエンドツーエンド暗号化ではありません
+
+配信するために Worker が中身を読める必要があるので、読めます。守っているのは非公開の R2 バケット、ハッシュしか保存しない受取コード、短命なダウンロードセッション、そしてすべてのアクセスが Worker を通ることです。本当に機微なものはアップロード前に自分で暗号化してください（パスワード付きアーカイブで十分です）。
+
+監査ログとレート制限の記録には IP の一方向ハッシュしか残らず、平文の IP は保存しません。
+
+<details>
+<summary>実装メモ（コードを読む人向け）</summary>
+
+| レイヤー | 技術 | 役割 |
+|---|---|---|
+| エッジ | Hono + Workers | API、認証、セキュリティヘッダー、ストリーミング、定期クリーンアップ |
+| オブジェクト | R2（非公開バケット） | ファイル本体とテキスト本体 |
+| データベース | D1 | 共有メタデータ、blob 参照、アップロードセッション、回収 outbox、設定、監査ログ、厳密なレート制限 |
+| フロントエンド | Vue 3 + Element Plus | 画面と管理コンソール（Workers Static Assets 配信） |
+| 可観測性 | Analytics Engine + Rate Limiting | 軽量メトリクスとエッジでの粗い制限 |
+
+- **瞬時アップロードの方式**：クライアントがファイル全体のツリー指紋を計算。Worker は各パート受信時に SHA-256 をストリーム計算し、アップロードセッション・パート番号・パートサイズ・ダイジェストに束ねたレシートを発行します。完了時に全レシートを検証してルートを再計算するため、偽造ルート・改ざんレシート・セッションをまたいだ再利用はいずれも拒否されます。
+- **受取コード**：`SHA-256(pepper + code)` のみ保存。乱数生成は棄却サンプリングで偏りを排除し、字母から `0/O/1/l/I` を除いています。
+- **ダウンロードトークン**：Web Crypto で自前実装した HMAC-SHA256 JWT（外部ライブラリなし）。単一の共有にスコープを限定し、`HttpOnly` / `SameSite=Strict`、Cookie のパスもその共有のダウンロード経路に固定しています。
+- **容量集計は O(1)**：D1 トリガーが書き込みのたびに `storage_usage` 行を更新し、物理 blob と未完了アップロードの予約分を数えます。管理画面が shares 全体を走査することはなく、同一 blob の重複共有も二重計上されません。
+- **レート制限は二層**：Workers ネイティブの Rate Limiting でエッジの粗い遮断、D1 のウィンドウカウンターでノードをまたいだ厳密な制限。後者が受取コードの総当たり対策の本体です。
+- **回収は再試行可能**：削除・期限切れは論理的な共有だけに作用します。最後の参照が消えた時点で blob を orphan outbox に入れ、Cron が R2 オブジェクト → outbox 行の順に削除、失敗分は次回に持ち越します。中断した分割アップロードも同じ outbox を通ります。
+- **CSP はルート別**：API と管理画面は厳格、静的アセットは緩め。SVG のようにスクリプトを含みうる形式はインライン表示せず必ずダウンロードさせます。
+- **エラーは三段フォールバック**：バックエンドが安定した ErrorCode・パラメータ・英語のフォールバック文言を返し、フロントエンドは ErrorCode のローカライズ → 元メッセージ → 汎用の順に解決します。
+- **CI のガードレール**：`verify-config.mjs` が `wrangler.toml` の D1 `database_id` がプレースホルダーのままであること（本番 ID の誤コミット防止）、レート制限のネームスペースが衝突しないこと、Deploy ボタン用シークレットの説明が `.dev.vars.example` と同期していることを検証します。
+
+クリーンアップの周期について：Workers 無料プランは 1 回の呼び出しあたり **CPU 10 ms**（D1 や R2 の待ち時間は含まれません）で、一方で呼び出し回数は 10 万回/日とほぼ使い放題です。そこで「短く、こまめに」を採り、毎時実行・1 回あたり最大 3 バッチ（約 300 件）としています。空振り 1 回のコストは D1 読み取り 11 行・書き込み 0 行で、1 日 24 回でも読み取り枠の約 0.005% です。残りは次の実行に回します。有料プランは CPU が 30 秒 / 15 分あるので `maxPasses` を上げても安全です。
+
+</details>
+
+### ライセンス
+
+**LGPL-3.0-or-later** · [LICENSE](./LICENSE) · [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)
+
+[FileCodeBox](https://github.com/vastsa/FileCodeBox) とその [Go 実装](https://github.com/zy84338719/FileCodeBox) に着想を得た、独立した Cloudflare Workers 実装です。

@@ -30,8 +30,8 @@ if (frontendPackageJson.version !== packageJson.version) {
 
 expectMatch(/^compatibility_date = "2026-07-20"$/m, 'compatibility_date must be 2026-07-20')
 expectMatch(
-  /\[triggers\][\s\S]*?^crons\s*=\s*\[\s*"0 0 \* \* \*"\s*\]/m,
-  'scheduled cleanup must run every day at 00:00 UTC',
+  /\[triggers\][\s\S]*?^crons\s*=\s*\[\s*"0 \* \* \* \*"\s*\]/m,
+  'scheduled cleanup must run hourly so reclaim keeps pace with share creation',
 )
 if (/\[\[kv_namespaces\]\]/.test(wrangler) || /binding = "RATE_LIMIT"/.test(wrangler)) {
   failures.push('The obsolete KV rate-limit binding must not be configured')

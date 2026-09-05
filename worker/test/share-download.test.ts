@@ -293,6 +293,42 @@ describe('share download accounting', () => {
     expect(zeroSuffix.status).toBe(416)
   })
 
+  it('declares Content-Length on a full download so the browser can show progress', async () => {
+    const code = 'LNGT2345HJKM'
+    const content = '0123456789abcdef'
+    await createFileShare(code, 'clip.mp4', 'video/mp4', content)
+    const cookie = await openDownloadSession(code)
+
+    const response = await SELF.fetch(`https://example.test${cookie.downloadUrl}`, {
+      headers: { Cookie: cookie.header },
+    })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-length')).toBe(String(content.length))
+    expect(new TextDecoder().decode(await response.arrayBuffer())).toBe(content)
+  })
+
+  it('reports the pickup window so the page can warn before the session lapses', async () => {
+    const code = 'WNDW2345HJKM'
+    await createFileShare(code, 'clip.mp4', 'video/mp4', '0123456789abcdef')
+
+    const response = await SELF.fetch('https://example.test/api/share/resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    })
+    expect(response.status).toBe(200)
+    const body = await response.json<{ data: { download_expires_at: string } }>()
+    const expiresAt = Date.parse(body.data.download_expires_at)
+    expect(Number.isFinite(expiresAt)).toBe(true)
+    expect(expiresAt).toBeGreaterThan(Date.now())
+
+    const cookieMaxAge = Number(
+      /max-age=(\d+)/i.exec(response.headers.get('set-cookie') || '')?.[1],
+    )
+    // The advertised window must not outlast the cookie that actually carries it.
+    expect(Math.round((expiresAt - Date.now()) / 1000)).toBeLessThanOrEqual(cookieMaxAge)
+  })
+
   it('serves a malformed Range as a complete 200 body', async () => {
     const code = 'RSTU2345VWXY'
     const content = '0123456789abcdef'

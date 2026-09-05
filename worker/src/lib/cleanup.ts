@@ -4,11 +4,24 @@ import { reconcileUploadCleanupJob } from './upload-cleanup'
 
 const HISTORY_PURGE_BATCH_SIZE = 1000
 
-export async function cleanupExpiredShares(
-  db: D1Database,
-  bucket: R2Bucket,
-  batchSize: number = 100
-): Promise<{
+// Draining repeats a pass while a batch came back full *and* that same batch
+// made forward progress, so a backlog larger than one batch is not deferred to
+// the next trigger while a permanently failing row still cannot spin the loop.
+//
+// The pass count is the CPU control, and it is deliberately small. The Workers
+// Free plan allows 10 ms of CPU per invocation (Cron Triggers included); time
+// spent awaiting D1 and R2 does not count, but parsing batches of rows and
+// serialising id lists does. Invocations are the cheap axis here - an idle run
+// costs 11 rows read and 0 rows written - so throughput comes from the hourly
+// schedule rather than from doing more work inside one invocation. A paid
+// deployment (30 s / 15 min of CPU) can raise this safely.
+const DEFAULT_MAX_CLEANUP_PASSES = 3
+
+// Wall-clock backstop only, for the case where R2 turns pathologically slow.
+// It is not what keeps the run inside the CPU limit; the pass count is.
+const DEFAULT_CLEANUP_BUDGET_MS = 10_000
+
+export interface CleanupResult {
   processed: number
   deletedR2: number
   abortedUploads: number
@@ -16,9 +29,70 @@ export async function cleanupExpiredShares(
   purgedAuditLogs: number
   purgedShares: number
   failures: number
-}> {
+}
+
+export interface CleanupOptions {
+  /**
+   * Upper bound on repeated passes within one invocation. Keep this small on
+   * the Workers Free plan: 10 ms of CPU per invocation is the binding limit.
+   */
+  maxPasses?: number
+  /** Wall-clock backstop; checked between passes, never mid-pass. */
+  budgetMs?: number
+}
+
+interface CleanupPassResult extends CleanupResult {
+  /** True when a batch was returned full and that batch also made progress. */
+  moreWorkLikely: boolean
+}
+
+export async function cleanupExpiredShares(
+  db: D1Database,
+  bucket: R2Bucket,
+  batchSize: number = 100,
+  options: CleanupOptions = {},
+): Promise<CleanupResult> {
   const dbClient = new DB(db)
   const r2Client = new R2Storage(bucket)
+  const maxPasses = Math.max(1, Math.trunc(options.maxPasses ?? DEFAULT_MAX_CLEANUP_PASSES))
+  const budgetMs = Math.max(0, options.budgetMs ?? DEFAULT_CLEANUP_BUDGET_MS)
+  const deadline = Date.now() + budgetMs
+
+  const totals: CleanupResult = {
+    processed: 0,
+    deletedR2: 0,
+    abortedUploads: 0,
+    purgedCounters: 0,
+    purgedAuditLogs: 0,
+    purgedShares: 0,
+    failures: 0,
+  }
+
+  for (let pass = 0; pass < maxPasses; pass++) {
+    const result = await runCleanupPass(dbClient, r2Client, batchSize)
+    totals.processed += result.processed
+    totals.deletedR2 += result.deletedR2
+    totals.abortedUploads += result.abortedUploads
+    totals.purgedCounters += result.purgedCounters
+    totals.purgedAuditLogs += result.purgedAuditLogs
+    totals.purgedShares += result.purgedShares
+    totals.failures += result.failures
+    if (!result.moreWorkLikely) break
+    if (Date.now() >= deadline) break
+  }
+
+  return totals
+}
+
+async function runCleanupPass(
+  dbClient: DB,
+  r2Client: R2Storage,
+  batchSize: number,
+): Promise<CleanupPassResult> {
+  // Mirror the clamping each DB helper applies so that "batch came back full"
+  // compares against the limit the query actually used.
+  const shareLimit = clamp(batchSize, 1, 100)
+  const outboxLimit = clamp(Math.trunc(batchSize), 1, 1000)
 
   const expiredShares = await dbClient.getExpiredShares(batchSize)
   const uploadSessionStaleBefore = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
@@ -27,7 +101,7 @@ export async function cleanupExpiredShares(
   // atomically moves unreferenced sessions to a durable cleanup outbox and
   // removes duplicate reservations whose final object already has an active
   // share. Completion also requires the session row, so only one side can win.
-  await dbClient.claimUploadSessionsForCleanup(
+  const claim = await dbClient.claimUploadSessionsForCleanup(
     expiredUploadSessions,
     new Date().toISOString(),
   )
@@ -87,6 +161,7 @@ export async function cleanupExpiredShares(
   // D1 failure. R2 deletion is idempotent; remove the accounting row only after
   // the object deletion succeeds.
   const orphanedBlobs = await dbClient.getOrphanedFileBlobs(batchSize)
+  let deletedBlobs = 0
   for (let offset = 0; offset < orphanedBlobs.length; offset += 6) {
     const chunk = orphanedBlobs.slice(offset, offset + 6)
     const results = await Promise.all(chunk.map(async (blob) => {
@@ -106,8 +181,12 @@ export async function cleanupExpiredShares(
       }
     }))
     for (const removed of results) {
-      if (removed) deletedR2++
-      else failures++
+      if (removed) {
+        deletedR2++
+        deletedBlobs++
+      } else {
+        failures++
+      }
     }
   }
 
@@ -146,9 +225,10 @@ export async function cleanupExpiredShares(
     }
   }
 
+  let removedJobs = 0
   if (cleanedJobIds.length) {
     try {
-      await dbClient.deleteUploadCleanupJobsByIds(cleanedJobIds)
+      removedJobs = await dbClient.deleteUploadCleanupJobsByIds(cleanedJobIds)
     } catch (e) {
       failures += cleanedJobIds.length
       console.error('Failed to batch delete reconciled upload cleanup jobs:', e)
@@ -176,5 +256,30 @@ export async function cleanupExpiredShares(
     return 0
   })
 
-  return { processed, deletedR2, abortedUploads, purgedCounters, purgedAuditLogs, purgedShares, failures }
+  // Each clause pairs "the batch was full" with "this batch actually shrank the
+  // backlog". A batch that only produced failures therefore stops the drain
+  // instead of being retried until the pass or time budget runs out.
+  const moreWorkLikely =
+    (expiredShares.length >= shareLimit && processed > 0) ||
+    (expiredUploadSessions.length >= shareLimit && claim.removedSessionIds.length > 0) ||
+    (orphanedBlobs.length >= outboxLimit && deletedBlobs > 0) ||
+    (cleanupJobs.length >= outboxLimit && removedJobs > 0) ||
+    purgedCounters >= HISTORY_PURGE_BATCH_SIZE ||
+    purgedAuditLogs >= HISTORY_PURGE_BATCH_SIZE ||
+    purgedShares >= HISTORY_PURGE_BATCH_SIZE
+
+  return {
+    processed,
+    deletedR2,
+    abortedUploads,
+    purgedCounters,
+    purgedAuditLogs,
+    purgedShares,
+    failures,
+    moreWorkLikely,
+  }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
 }
