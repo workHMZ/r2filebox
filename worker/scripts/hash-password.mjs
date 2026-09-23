@@ -11,6 +11,8 @@ if (password.length < 16 || password.length > 4096) {
   process.exit(1)
 }
 
+// Cloudflare Workers cap PBKDF2 at 100,000 iterations, so the Worker rejects
+// any higher count even though Node would compute it here.
 const iterations = 100000
 const hashBytes = 32
 const saltBytes = 16

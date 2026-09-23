@@ -1,6 +1,6 @@
 {
   "name": "r2filebox",
-  "version": "2.7.0",
+  "version": "2.8.0",
   "private": true,
   "license": "LGPL-3.0-or-later",
   "engines": {
@@ -16,7 +16,7 @@
     "deploy:cf": "node scripts/deploy-cloudflare.mjs",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
-    "cf-typegen": "wrangler types worker/worker-configuration.d.ts --env-file scripts/typegen.env.example --env-interface CloudflareBindings --include-runtime=false",
+    "cf-typegen": "wrangler types worker/worker-configuration.d.ts --env-file scripts/typegen.env.example --env-interface CloudflareBindings",
     "cf-typegen:check": "npm run cf-typegen -- --check",
     "typecheck": "tsc -p worker/tsconfig.json --noEmit",
     "typecheck:test": "tsc -p worker/test/tsconfig.json --noEmit",
@@ -34,7 +34,6 @@
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.22.0",
-    "@cloudflare/workers-types": "5.20260922.1",
     "@types/node": "^26.6.2",
     "sharp": "0.35.4",
     "typescript": "~5.9.3",

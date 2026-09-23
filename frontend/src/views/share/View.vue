@@ -22,8 +22,7 @@
         <div v-else-if="error" class="error-section" role="alert">
           <el-result icon="error" :title="t('shareView.invalid')" :sub-title="error">
             <template #extra>
-              <el-button type="primary" @click="$router.push('/')">
-                <el-icon aria-hidden="true"><HomeFilled /></el-icon>
+              <el-button type="primary" :icon="HomeFilled" @click="$router.push('/')">
                 {{ t('common.home') }}
               </el-button>
             </template>
@@ -42,8 +41,7 @@
                 </p>
               </div>
             </div>
-            <el-button class="home-btn" @click="$router.push('/')">
-              <el-icon><HomeFilled /></el-icon>
+            <el-button class="home-btn" :icon="HomeFilled" @click="$router.push('/')">
               {{ t('common.home') }}
             </el-button>
           </div>
@@ -124,8 +122,14 @@
                   <el-tag type="info" size="large" class="meta-tag">
                     {{ formatFileSize(shareData.size_bytes, getLocaleTag(locale)) }}
                   </el-tag>
-                  <el-tag v-if="shareData.mime_type" type="success" size="large" class="meta-tag">
-                    {{ shareData.mime_type }}
+                  <!-- A reader-facing type name; the exact MIME stays on hover. -->
+                  <el-tag
+                    type="success"
+                    size="large"
+                    class="meta-tag"
+                    :title="shareData.mime_type || undefined"
+                  >
+                    {{ t(fileTypeLabelKey(shareData.file_name || '', shareData.mime_type)) }}
                   </el-tag>
                 </div>
               </div>
@@ -191,6 +195,7 @@ import { getLocaleTag, useI18n } from '@/i18n'
 import AppLogo from '@/components/AppLogo.vue'
 import InterfaceControls from '@/components/InterfaceControls.vue'
 import { useActionFeedback } from '@/composables/useActionFeedback'
+import { fileTypeLabelKey } from '@/utils/file-type'
 import { formatDateTime, formatFileSize } from '@/utils/format'
 
 const route = useRoute()
@@ -227,8 +232,8 @@ const isMediaImage = computed(() => {
 })
 
 // download_count already includes this visit, so the figure shown is what is
-// left for anyone else - including this visitor after a reload, which spends a
-// pickup of its own.
+// left for anyone else. A reload in the same tab reuses this visit (see
+// readCachedPickup) instead of spending another pickup.
 const remainingPickupsText = computed(() => {
   const share = shareData.value
   if (!share || share.max_downloads === null || share.max_downloads === undefined) {
@@ -240,11 +245,53 @@ const remainingPickupsText = computed(() => {
   })
 })
 
+// Every resolve spends a pickup, and a reload - including the one iOS Safari
+// does on its own when it restores a discarded tab - would otherwise spend
+// another and could exhaust a one-pickup share before the recipient saw it.
+// sessionStorage is scoped to this tab and cleared when it closes, so a new
+// tab or another device still counts as a new pickup.
+const PICKUP_CACHE_PREFIX = 'r2filebox-pickup:'
+
+const readCachedPickup = (code: string): ResolvedShare | null => {
+  const key = `${PICKUP_CACHE_PREFIX}${code}`
+  try {
+    const raw = sessionStorage.getItem(key)
+    if (!raw) return null
+    const cached = JSON.parse(raw) as Partial<ResolvedShare> | null
+    const now = Date.now()
+    const usable = cached?.code === code &&
+      (cached.type === 'text' || cached.type === 'file') &&
+      Date.parse(cached.expire_at || '') > now &&
+      // A file is only reachable while its download session cookie lives.
+      (cached.type === 'text' || Date.parse(cached.download_expires_at || '') > now)
+    if (usable) return cached as ResolvedShare
+    sessionStorage.removeItem(key)
+  } catch {
+    // Storage may be blocked; resolving again is the safe fallback.
+  }
+  return null
+}
+
+const cachePickup = (share: ResolvedShare) => {
+  try {
+    sessionStorage.setItem(`${PICKUP_CACHE_PREFIX}${share.code}`, JSON.stringify(share))
+  } catch {
+    // Without storage a reload simply resolves again.
+  }
+}
+
 const fetchShare = async (code: string, version: number) => {
   loading.value = true
   error.value = ''
   shareData.value = null
   mediaPreviewFailed.value = false
+
+  const cached = readCachedPickup(code)
+  if (cached) {
+    shareData.value = cached
+    loading.value = false
+    return
+  }
 
   try {
     const res = await shareApi.getShare(code)
@@ -252,6 +299,7 @@ const fetchShare = async (code: string, version: number) => {
 
     if (res.code === 200) {
       shareData.value = res.data
+      cachePickup(res.data)
     } else {
       error.value = res.message || t('shareView.notFound')
     }

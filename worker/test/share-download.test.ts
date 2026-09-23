@@ -375,6 +375,58 @@ describe('share download accounting', () => {
     expect(new TextDecoder().decode(await clamped.arrayBuffer())).toBe('cdef')
   })
 
+  it('ignores Range when If-Range names a stale representation', async () => {
+    const code = 'FRNG2345HJKM'
+    const content = '0123456789abcdef'
+    await createFileShare(code, 'clip.mp4', 'video/mp4', content)
+    const cookie = await openDownloadSession(code)
+
+    const current = await SELF.fetch(`https://example.test${cookie.downloadUrl}`, {
+      method: 'HEAD',
+      headers: { Cookie: cookie.header },
+    })
+    const etag = current.headers.get('etag') || ''
+    expect(etag).toMatch(/^".+"$/)
+
+    const matching = await SELF.fetch(`https://example.test${cookie.downloadUrl}`, {
+      headers: { Cookie: cookie.header, Range: 'bytes=0-3', 'If-Range': etag },
+    })
+    expect(matching.status).toBe(206)
+    expect(new TextDecoder().decode(await matching.arrayBuffer())).toBe('0123')
+
+    const stale = await SELF.fetch(`https://example.test${cookie.downloadUrl}`, {
+      headers: { Cookie: cookie.header, Range: 'bytes=0-3', 'If-Range': '"stale"' },
+    })
+    expect(stale.status).toBe(200)
+    expect(stale.headers.get('content-range')).toBeNull()
+    expect(new TextDecoder().decode(await stale.arrayBuffer())).toBe(content)
+  })
+
+  it('answers HEAD with the download headers and keeps the handler cache policy', async () => {
+    const code = 'HEAD2345JKMN'
+    const content = '0123456789abcdef'
+    await createFileShare(code, 'clip.mp4', 'video/mp4', content)
+    const cookie = await openDownloadSession(code)
+
+    const head = await SELF.fetch(`https://example.test${cookie.downloadUrl}`, {
+      method: 'HEAD',
+      headers: { Cookie: cookie.header },
+    })
+    expect(head.status).toBe(200)
+    expect(head.headers.get('content-length')).toBe(String(content.length))
+    expect(head.headers.get('accept-ranges')).toBe('bytes')
+    expect(head.headers.get('cache-control')).toBe('private, no-store')
+    expect(await head.text()).toBe('')
+
+    const rangedHead = await SELF.fetch(`https://example.test${cookie.downloadUrl}`, {
+      method: 'HEAD',
+      headers: { Cookie: cookie.header, Range: 'bytes=4-7' },
+    })
+    expect(rangedHead.status).toBe(206)
+    expect(rangedHead.headers.get('content-range')).toBe('bytes 4-7/16')
+    expect(rangedHead.headers.get('content-length')).toBe('4')
+  })
+
   it('keeps the text extraction when the stored object is already gone', async () => {
     const code = 'DEFG2345HJKL'
     const content = 'the object behind this share disappears'

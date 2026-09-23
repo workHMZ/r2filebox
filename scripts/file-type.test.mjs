@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   classifyFile,
+  fileTypeLabelKey,
   FILE_TYPE_BY_EXTENSION,
   getFileExtension,
   inferMimeType,
@@ -74,4 +75,12 @@ test('infers a standard MIME type only when the provided MIME is generic or miss
   assert.equal(inferMimeType('clip.webm', 'binary/octet-stream'), 'video/webm')
   assert.equal(inferMimeType('clip.webm', 'not-a-mime'), 'video/webm')
   assert.equal(inferMimeType('unknown.bin'), 'application/octet-stream')
+})
+
+test('names a file type for readers instead of echoing its MIME type', () => {
+  assert.equal(fileTypeLabelKey('report.pdf', 'application/octet-stream'), 'fileType.pdf')
+  assert.equal(fileTypeLabelKey('sheet.xlsx', ''), 'fileType.excel')
+  assert.equal(fileTypeLabelKey('clip.bin', 'video/mp4'), 'fileType.video')
+  assert.equal(fileTypeLabelKey('backup.7z', 'application/octet-stream'), 'fileType.archive')
+  assert.equal(fileTypeLabelKey('f1.bin', 'application/octet-stream'), 'fileType.unknown')
 })

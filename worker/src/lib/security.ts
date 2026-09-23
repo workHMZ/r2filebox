@@ -32,7 +32,9 @@ export async function securityHeaders(c: Context, next: Next) {
     path === '/health'
 
   if (dynamicRoute) {
-    c.header('Cache-Control', 'no-store')
+    // Default to no-store without overriding a handler that already chose a
+    // policy of its own, such as the private, no-store file downloads.
+    if (!c.res.headers.has('Cache-Control')) c.header('Cache-Control', 'no-store')
     c.header('Content-Security-Policy', "default-src 'none'; base-uri 'none'; frame-ancestors 'none'")
   } else {
     c.header('Content-Security-Policy', APP_CSP)

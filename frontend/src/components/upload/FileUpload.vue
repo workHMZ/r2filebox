@@ -17,8 +17,9 @@
             <el-icon size="30" aria-hidden="true"><UploadFilled /></el-icon>
           </div>
           <div class="upload-text">
-            <h3>{{ t('upload.drop.title') }}</h3>
-            <p>{{ t('upload.drop.browse') }}</p>
+            <!-- A touch screen cannot drag a file in, so it gets tap wording. -->
+            <h3>{{ touchInput ? t('upload.drop.titleTouch') : t('upload.drop.title') }}</h3>
+            <p>{{ touchInput ? t('upload.drop.browseTouch') : t('upload.drop.browse') }}</p>
           </div>
           <div class="upload-hint">
             <el-icon aria-hidden="true"><InfoFilled /></el-icon>
@@ -131,6 +132,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 import type { Component } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import {
   shareApi,
   UploadPartError,
@@ -158,7 +160,12 @@ import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import ShareSettings from '@/components/upload/ShareSettings.vue'
 import { expireSelectionFromHours, type ExpireStyle } from '@/utils/expiration'
 import { formatFileSize } from '@/utils/format'
-import { classifyFile, inferMimeType, type FileCategory } from '@/utils/file-type'
+import {
+  classifyFile,
+  fileTypeLabelKey,
+  inferMimeType,
+  type FileCategory,
+} from '@/utils/file-type'
 import {
   CONTENT_FINGERPRINT_ALGORITHM,
   CONTENT_FINGERPRINT_PART_SIZE,
@@ -173,6 +180,7 @@ const emit = defineEmits<{
 
 const { locale, t } = useI18n()
 const configStore = useConfigStore()
+const touchInput = useMediaQuery('(hover: none) and (pointer: coarse)')
 const BYTES_PER_MB = 1024 * 1024
 
 type UploadedPart = {
@@ -242,21 +250,6 @@ const fileIconColorByCategory: Record<FileCategory, string> = {
   archive: 'var(--warning-color)',
   other: 'var(--text-regular)',
 }
-const fileTypeKeyByCategory: Record<FileCategory, string> = {
-  image: 'fileType.image',
-  video: 'fileType.video',
-  audio: 'fileType.audio',
-  document: 'fileType.document',
-  archive: 'fileType.archive',
-  other: 'fileType.unknown',
-}
-const detailedDocumentTypeKeyByMime: Readonly<Record<string, string>> = {
-  'application/pdf': 'fileType.pdf',
-  'application/msword': 'fileType.word',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'fileType.word',
-  'application/vnd.ms-excel': 'fileType.excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'fileType.excel',
-}
 const selectedFileCategory = computed<FileCategory>(() => {
   const file = selectedFile.value
   return file ? classifyFile(file.name, file.type) : 'other'
@@ -265,9 +258,7 @@ const selectedFileIcon = computed(() => fileIconByCategory[selectedFileCategory.
 const selectedFileIconColor = computed(() => fileIconColorByCategory[selectedFileCategory.value])
 const selectedFileTypeKey = computed(() => {
   const file = selectedFile.value
-  if (!file) return 'fileType.unknown'
-  return detailedDocumentTypeKeyByMime[inferMimeType(file.name, file.type)]
-    || fileTypeKeyByCategory[selectedFileCategory.value]
+  return file ? fileTypeLabelKey(file.name, file.type) : 'fileType.unknown'
 })
 
 const requiresTurnstile = computed(() => configStore.config?.requireTurnstile === true)
@@ -314,6 +305,17 @@ const handleFileChange = async (file: UploadFile) => {
   resumableState.value = null
   const selected = selectedFile.value
   if (selected) {
+    // The Worker rejects zero-byte files and the fingerprint needs content, so
+    // say what is wrong instead of reporting a failed identification.
+    if (selected.size === 0) {
+      selectedFile.value = null
+      uploadRef.value?.clearFiles()
+      const message = t('upload.emptyFile')
+      uploadStatusText.value = ''
+      uploadAnnouncement.value = message
+      ElMessage.error(message)
+      return
+    }
     const sizeLimit = maxUploadBytes.value
     if (sizeLimit !== null && selected.size > sizeLimit) {
       selectedFile.value = null

@@ -46,8 +46,7 @@
         </ul>
 
         <div class="sidebar-footer">
-          <el-button @click="goToUser" class="user-page-btn">
-            <el-icon><Promotion /></el-icon>
+          <el-button :icon="Promotion" class="user-page-btn" @click="goToUser">
             {{ t('admin.frontend') }}
           </el-button>
         </div>

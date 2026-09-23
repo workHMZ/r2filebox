@@ -240,7 +240,7 @@ const { active: refreshSucceeded, show: showRefreshSucceeded } = useActionFeedba
 const { lastRefreshTime, markRefreshed } = useLastRefresh()
 
 const versionInfo = ref<VersionInfo>({
-  version: '2.7.0',
+  version: '2.8.0',
   commit_hash: 'dev',
   short_hash: 'dev',
   build_time: null,

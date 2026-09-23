@@ -128,7 +128,7 @@ app.post('/admin/logout', async (c) => {
 app.get('/admin/stats', async (c) => {
   try {
     const db = new DB(c.env.DB)
-    const stats = await db.getSystemStats()
+    const stats = await db.getSystemStats(parseUtcOffsetMinutes(c.req.query('utc_offset_minutes')))
     return c.json(success(stats))
   } catch (e: unknown) {
     return adminRouteFailure(c, 'get admin stats', e, 'Could not load statistics')
@@ -266,7 +266,7 @@ app.get('/admin/stats/trend', async (c) => {
   try {
     const days = parseBoundedInteger(c.req.query('days'), 7, 1, 30)
     const db = new DB(c.env.DB)
-    const trend = await db.getUploadTrend(days)
+    const trend = await db.getUploadTrend(days, parseUtcOffsetMinutes(c.req.query('utc_offset_minutes')))
     return c.json(success(trend))
   } catch (e: unknown) {
     return adminRouteFailure(c, 'get upload trend', e, 'Could not load upload trend')
@@ -319,7 +319,7 @@ app.get('/admin/maintenance/system-info', (c) => {
     runtime: 'Cloudflare Workers',
     platform: 'V8 isolate',
     storage: 'D1 + R2 + Workers Rate Limiting',
-    version: c.env.APP_VERSION || '2.7.0',
+    version: c.env.APP_VERSION || '2.8.0',
     r2_bucket_name: c.env.R2_BUCKET_NAME || null,
     d1_database_name: c.env.D1_DATABASE_NAME || null,
   }))
@@ -594,6 +594,11 @@ async function audit(
   } catch (cause) {
     console.error('Failed to write admin audit log:', cause)
   }
+}
+
+// Real offsets run from UTC-12:00 to UTC+14:00.
+function parseUtcOffsetMinutes(value: string | undefined): number {
+  return parseBoundedInteger(value, 0, -12 * 60, 14 * 60)
 }
 
 function parseBoundedInteger(

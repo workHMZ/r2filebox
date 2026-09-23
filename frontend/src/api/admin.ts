@@ -1,6 +1,10 @@
 import { request } from '@/utils/request'
 import type { ApiResponse } from '@/types/common'
 
+// Day-based figures ("today", the daily trend) follow the administrator's
+// calendar, which the Worker cannot know. getTimezoneOffset is inverted.
+const localUtcOffsetMinutes = () => -new Date().getTimezoneOffset()
+
 export interface AdminStats {
   total_files: number
   text_shares: number
@@ -136,6 +140,7 @@ export const adminApi = {
   getStats: () => request<ApiResponse<AdminStats>>({
     url: '/admin/stats',
     method: 'GET',
+    params: { utc_offset_minutes: localUtcOffsetMinutes() },
   }),
 
   getDashboardStats: () => adminApi.getStats(),
@@ -160,7 +165,7 @@ export const adminApi = {
   getUploadTrend: (days = 7) => request<ApiResponse<Array<{ date: string; uploads: number }>>>({
     url: '/admin/stats/trend',
     method: 'GET',
-    params: { days },
+    params: { days, utc_offset_minutes: localUtcOffsetMinutes() },
   }),
 
   getFileTypeDistribution: () => request<ApiResponse<Array<{ mime_type: string; count: number }>>>({

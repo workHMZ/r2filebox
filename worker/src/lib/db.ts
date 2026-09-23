@@ -481,10 +481,17 @@ export class DB {
   }
 
 
-  async getSystemStats(): Promise<SystemStats> {
+  /**
+   * @param utcOffsetMinutes the viewer's offset from UTC, so "today" is the
+   * administrator's calendar day rather than the UTC one.
+   */
+  async getSystemStats(utcOffsetMinutes = 0): Promise<SystemStats> {
     const now = new Date().toISOString()
-    const todayStart = `${now.slice(0, 10)}T00:00:00.000Z`
-    const tomorrowStart = new Date(Date.parse(todayStart) + 24 * 60 * 60 * 1000).toISOString()
+    const todayStartMs = localDayStartUtcMs(Date.now(), utcOffsetMinutes)
+    const todayStart = new Date(todayStartMs).toISOString()
+    const tomorrowStart = new Date(todayStartMs + DAY_MS).toISOString()
+    // Uploads are counted whether or not the share has since expired and been
+    // cleaned up; the other figures describe what is still live.
     const stats = await this.db.prepare(`
       SELECT
         SUM(CASE WHEN type = 'file' THEN 1 ELSE 0 END) AS total_files,
@@ -493,7 +500,10 @@ export class DB {
         SUM(CASE WHEN expire_at > ? THEN 1 ELSE 0 END) AS active_shares,
         SUM(CASE WHEN expire_at <= ? THEN 1 ELSE 0 END) AS expired_shares,
         COALESCE((SELECT active_bytes FROM storage_usage WHERE id = 1), 0) AS total_size,
-        SUM(CASE WHEN created_at >= ? AND created_at < ? THEN 1 ELSE 0 END) AS today_uploads,
+        (
+          SELECT count(*) FROM shares AS uploads
+          WHERE uploads.created_at >= ? AND uploads.created_at < ?
+        ) AS today_uploads,
         COALESCE(SUM(download_count), 0) AS total_downloads
       FROM shares
       WHERE deleted_at IS NULL
@@ -520,22 +530,31 @@ export class DB {
     }
   }
 
-  async getUploadTrend(days: number): Promise<UploadTrendPoint[]> {
+  /**
+   * One point per calendar day in the viewer's time zone, oldest first, with
+   * quiet days reported as zero so the chart's spacing matches the calendar.
+   * Soft-deleted rows still count: a share that expired and was cleaned up was
+   * still uploaded that day, and the purge keeps them for seven days.
+   */
+  async getUploadTrend(days: number, utcOffsetMinutes = 0): Promise<UploadTrendPoint[]> {
     const limit = Math.min(Math.max(days, 1), 30)
-    const start = new Date()
-    start.setUTCHours(0, 0, 0, 0)
-    start.setUTCDate(start.getUTCDate() - (limit - 1))
+    const offsetMs = utcOffsetMinutes * 60 * 1000
+    const startMs = localDayStartUtcMs(Date.now(), utcOffsetMinutes) - ((limit - 1) * DAY_MS)
     const result = await this.db.prepare(`
-      SELECT 
-        date(created_at) as date,
-        count(*) as uploads
+      SELECT
+        date(created_at, ?) AS date,
+        count(*) AS uploads
       FROM shares
       WHERE created_at >= ?
-        AND deleted_at IS NULL
-      GROUP BY date(created_at)
-      ORDER BY date(created_at) ASC
-    `).bind(start.toISOString()).all<UploadTrendPoint>()
-    return result.results || []
+      GROUP BY 1
+    `).bind(`${utcOffsetMinutes >= 0 ? '+' : ''}${utcOffsetMinutes} minutes`, new Date(startMs).toISOString())
+      .all<UploadTrendPoint>()
+    const uploadsByDate = new Map((result.results || []).map((row) => [row.date, Number(row.uploads) || 0]))
+    return Array.from({ length: limit }, (_, index) => {
+      // Shift into the viewer's zone so the UTC calendar fields read as local.
+      const date = new Date(startMs + (index * DAY_MS) + offsetMs).toISOString().slice(0, 10)
+      return { date, uploads: uploadsByDate.get(date) ?? 0 }
+    })
   }
 
   async getFileTypeDistribution(): Promise<FileTypeCount[]> {
@@ -944,6 +963,14 @@ export class DB {
     this.settingsRead = null
   }
 
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** The UTC instant at which the local calendar day containing `nowMs` began. */
+function localDayStartUtcMs(nowMs: number, utcOffsetMinutes: number): number {
+  const offsetMs = utcOffsetMinutes * 60 * 1000
+  return (Math.floor((nowMs + offsetMs) / DAY_MS) * DAY_MS) - offsetMs
 }
 
 function boundedPurgeLimit(limit: number): number {

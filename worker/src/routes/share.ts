@@ -5,7 +5,7 @@ import { success, error } from '../lib/response'
 import { ErrorCode } from '../types/errors'
 import { generateCode, hashCode, hashIp } from '../lib/code'
 import {
-  calculateExpireAt,
+  calculateExpireHours,
   contentDispositionAttachment,
   contentDispositionInline,
   resolveMimeType,
@@ -53,6 +53,11 @@ const MAX_MULTIPART_PARTS = 12
 const DOWNLOAD_SESSION_TTL_SECONDS = 60 * 60
 const SHARE_CODE_ATTEMPTS = 5
 const INSTANT_UPLOAD_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60
+// How long a multipart upload may take, independent of the share lifetime the
+// sender picked: a one-minute share must not expire while its parts are still
+// on the wire. Matches the resumable state the browser keeps.
+const UPLOAD_SESSION_TTL_SECONDS = 24 * 60 * 60
+const MAX_SHARE_LIFETIME_MS = 8760 * 60 * 60 * 1000
 
 interface UploadTokenPayload extends Record<string, unknown> {
   purpose: 'multipart-upload'
@@ -63,6 +68,9 @@ interface UploadTokenPayload extends Record<string, unknown> {
   r2_key: string
   fingerprint_algorithm?: string
   content_fingerprint?: string
+  // Absent on tokens issued before 2.8.0, whose session expire_at is the share
+  // expiry itself.
+  share_lifetime_ms?: number
 }
 
 interface InstantUploadTokenPayload extends Record<string, unknown> {
@@ -128,7 +136,7 @@ async function createTextShare(c: Context<{ Bindings: Bindings }>) {
     const { rawCode, codeHash } = await reserveShareCode(db, config.codeLength, pepper)
     const shareId = crypto.randomUUID()
     const r2Key = generateR2Key(shareId)
-    const expireAt = getExpireAt(config, body)
+    const expireAt = expireAtAfter(getShareLifetimeMs(config, body))
     const maxDownloads = getMaxDownloads(config)
 
     const r2 = new R2Storage(c.env.BUCKET)
@@ -264,11 +272,12 @@ async function initMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
     const { rawCode, codeHash } = await reserveShareCode(db, config.codeLength, pepper)
     const shareId = crypto.randomUUID()
     const r2Key = generateR2Key(shareId)
-    const expireAt = getExpireAt(config, body)
+    const shareLifetimeMs = getShareLifetimeMs(config, body)
     const maxDownloads = getMaxDownloads(config)
 
     const r2 = new R2Storage(c.env.BUCKET)
-    const now = new Date().toISOString()
+    const nowMs = Date.now()
+    const now = new Date(nowMs).toISOString()
     const dedupToken = typeof body.dedupToken === 'string' && body.dedupToken.length <= 4096
       ? body.dedupToken
       : ''
@@ -290,7 +299,7 @@ async function initMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
           size_bytes: sizeBytes,
           title: null,
           created_at: now,
-          expire_at: expireAt,
+          expire_at: expireAtAfter(shareLifetimeMs, nowMs),
           deleted_at: null,
           max_downloads: maxDownloads,
           download_count: 0,
@@ -346,7 +355,8 @@ async function initMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
       mime_type: mimeType,
       size_bytes: sizeBytes,
       title: null,
-      expire_at: expireAt,
+      // The upload deadline, not the share expiry: completion starts that clock.
+      expire_at: new Date(nowMs + (UPLOAD_SESSION_TTL_SECONDS * 1000)).toISOString(),
       max_downloads: maxDownloads,
       created_ip_hash: ipHash,
       created_at: now,
@@ -366,7 +376,7 @@ async function initMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
       return c.json(error(ErrorCode.STORAGE_LIMIT_REACHED, 403, 'Storage soft limit reached'), 403)
     }
 
-    const uploadToken = await signUploadToken(c.env, session)
+    const uploadToken = await signUploadToken(c.env, session, shareLifetimeMs)
     const partCount = Math.ceil(sizeBytes / MULTIPART_PART_SIZE)
     await audit(db, c, 'multipart_file_init', shareId, 'success', ipHash, {
       config,
@@ -632,7 +642,8 @@ async function completeMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
       return c.json(error(ErrorCode.SIZE_MISMATCH, 400, 'File size mismatch validation failed'), 400)
     }
 
-    const now = new Date().toISOString()
+    const nowMs = Date.now()
+    const now = new Date(nowMs).toISOString()
     const completedShare: Share = {
       id: session.share_id,
       code_hash: session.code_hash,
@@ -643,7 +654,9 @@ async function completeMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
       size_bytes: session.size_bytes,
       title: session.title,
       created_at: now,
-      expire_at: session.expire_at,
+      expire_at: payload.share_lifetime_ms === undefined
+        ? session.expire_at
+        : expireAtAfter(payload.share_lifetime_ms, nowMs),
       deleted_at: null,
       max_downloads: session.max_downloads,
       download_count: 0,
@@ -991,7 +1004,11 @@ async function downloadWithSession(c: Context<{ Bindings: Bindings }>) {
     // would then report as a 206 that does not start where the client asked -
     // a resumable downloader would write those bytes at the wrong offset.
     // Resolving the range here keeps status, Content-Range, and body in step.
-    const requestedRange = parseByteRange(c.req.header('Range'), share.size_bytes)
+    // A failed If-Range means the client's partial copy is stale, so it gets
+    // the whole representation rather than a fragment to splice in.
+    const requestedRange = ifRangeAllowsRange(c.req.header('If-Range'), currentHttpEtag)
+      ? parseByteRange(c.req.header('Range'), share.size_bytes)
+      : { kind: 'none' } as const
     if (requestedRange.kind === 'unsatisfiable') {
       return new Response('Requested range not satisfiable', {
         status: 416,
@@ -1004,12 +1021,17 @@ async function downloadWithSession(c: Context<{ Bindings: Bindings }>) {
     }
 
     const r2 = new R2Storage(c.env.BUCKET)
-    const obj = await r2.getObject(
-      share.r2_key,
-      requestedRange.kind === 'range'
-        ? { range: { offset: requestedRange.offset, length: requestedRange.length } }
-        : undefined,
-    )
+    // Hono answers HEAD from this GET route and drops the body, so reading the
+    // object would pay for a transfer nobody receives.
+    const headOnly = c.req.method === 'HEAD'
+    const obj: R2Object | R2ObjectBody | null = headOnly
+      ? await r2.headObject(share.r2_key)
+      : await r2.getObject(
+        share.r2_key,
+        requestedRange.kind === 'range'
+          ? { range: { offset: requestedRange.offset, length: requestedRange.length } }
+          : undefined,
+      )
     if (!obj) {
       return new Response('Share code invalid or file unavailable', { status: 404 })
     }
@@ -1047,7 +1069,7 @@ async function downloadWithSession(c: Context<{ Bindings: Bindings }>) {
       headers.set('Content-Length', String(obj.size))
     }
 
-    return new Response(obj.body, { status, headers })
+    return new Response(headOnly ? null : (obj as R2ObjectBody).body, { status, headers })
   } catch (e: unknown) {
     if (e instanceof RuntimeConfigUnavailableError) {
       console.error('download share failed:', e)
@@ -1115,7 +1137,11 @@ async function verifyTurnstileIfRequired(
   }
 }
 
-async function signUploadToken(env: Env, session: UploadSession): Promise<string> {
+async function signUploadToken(
+  env: Env,
+  session: UploadSession,
+  shareLifetimeMs: number,
+): Promise<string> {
   return await signJWT({
     purpose: 'multipart-upload',
     session_id: session.id,
@@ -1125,7 +1151,8 @@ async function signUploadToken(env: Env, session: UploadSession): Promise<string
     r2_key: session.r2_key,
     fingerprint_algorithm: session.fingerprint_algorithm || undefined,
     content_fingerprint: session.content_fingerprint || undefined,
-    exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60),
+    share_lifetime_ms: shareLifetimeMs,
+    exp: Math.floor(Date.now() / 1000) + UPLOAD_SESSION_TTL_SECONDS,
   }, getRequiredSecret(env, 'SESSION_SECRET'))
 }
 
@@ -1149,6 +1176,10 @@ async function verifyUploadToken(c: Context<{ Bindings: Bindings }>, tokenOverri
     (
       payload.content_fingerprint !== undefined &&
       typeof payload.content_fingerprint !== 'string'
+    ) ||
+    (
+      payload.share_lifetime_ms !== undefined &&
+      !isValidShareLifetimeMs(payload.share_lifetime_ms)
     )
   ) {
     return null
@@ -1333,15 +1364,27 @@ async function reserveShareCode(
   throw new Error(`Could not allocate an unused share code after ${SHARE_CODE_ATTEMPTS} attempts`)
 }
 
-function getExpireAt(config: RuntimeConfig, body: Record<string, unknown>): string {
+function getShareLifetimeMs(config: RuntimeConfig, body: Record<string, unknown>): number {
   const expireValue = Number.parseInt(String(body.expire_value || '1'), 10)
   const expireStyle = String(body.expire_style || 'day')
-  return calculateExpireAt(
+  const hours = calculateExpireHours(
     expireValue,
     expireStyle,
     config.defaultExpireHours,
     config.maxExpireHours,
   )
+  return Math.round(hours * 60 * 60 * 1000)
+}
+
+function expireAtAfter(lifetimeMs: number, fromMs = Date.now()): string {
+  return new Date(fromMs + lifetimeMs).toISOString()
+}
+
+function isValidShareLifetimeMs(value: unknown): value is number {
+  return typeof value === 'number' &&
+    Number.isSafeInteger(value) &&
+    value > 0 &&
+    value <= MAX_SHARE_LIFETIME_MS
 }
 
 function getMaxDownloads(config: RuntimeConfig): number | null {
@@ -1427,6 +1470,18 @@ export function ifNoneMatchMatches(header: string, currentEtag: string): boolean
     const trimmed = candidate.trim()
     return trimmed === '*' || normalizeEntityTag(trimmed) === current
   })
+}
+
+/**
+ * RFC 9110 section 13.1.5: honour Range only when If-Range is absent or names
+ * the current representation by strong comparison. No Last-Modified is sent,
+ * so an HTTP-date validator can never match and yields the full body.
+ */
+export function ifRangeAllowsRange(header: string | undefined, currentEtag: string | null): boolean {
+  if (header === undefined) return true
+  const candidate = header.trim()
+  if (!currentEtag || !candidate.startsWith('"') || !candidate.endsWith('"')) return false
+  return candidate === currentEtag
 }
 
 function normalizeEntityTag(value: string): string {

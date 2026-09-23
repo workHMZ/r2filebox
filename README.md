@@ -45,7 +45,7 @@
 文件按 8 MiB 分片，进度存在本地。网断了、页面关了、手机切后台了，回来重选同一个文件就从断点继续。上传进度按字节走，不是一片一跳。
 
 **看视频不会把取件次数用光。**
-取件次数按「取件」算，不按 HTTP 请求算。输一次码换一份 1 小时的下载会话，这一小时里拖进度条、断点续传、浏览器自动重试，都不再扣次数。
+取件次数按「取件」算，不按 HTTP 请求算。输一次码换一份 1 小时的下载会话，这一小时里拖进度条、断点续传、浏览器自动重试，都不再扣次数；在同一个标签页里刷新取件页也不会再扣。
 
 **同样的内容只占一份空间，但每个分享各过各的。**
 两个人分享同一个文件，R2 里只有一份对象，但两个分享的取件码、有效期、次数互不相干。删掉其中一个不会影响另一个；只有最后一个引用也消失了，实体文件才真正删除。
@@ -192,7 +192,7 @@ Uploading the same file twice doesn't retransmit it. That part is common; the us
 Files go up in 8 MiB parts and progress is kept locally. Lose your network, close the tab, background the app on a phone — pick the same file again and it resumes where it stopped. The progress bar moves by bytes, not one jump per part.
 
 **Watching a video doesn't burn the pickup budget.**
-A pickup is counted once per pickup, not once per HTTP request. Entering the code opens a one-hour download session; within that hour, seeking through a video, resuming a download, or a browser retry all cost nothing extra.
+A pickup is counted once per pickup, not once per HTTP request. Entering the code opens a one-hour download session; within that hour, seeking through a video, resuming a download, or a browser retry all cost nothing extra, and neither does reloading the pickup page in the same tab.
 
 **Identical content is stored once, but shares stay independent.**
 Two people sharing the same file means one object in R2 — yet each share keeps its own code, expiry, and pickup count. The physical object is deleted only when the last reference to it goes away.
@@ -339,7 +339,7 @@ Cloudflare Workers + R2 + D1 で動きます。ワンクリックでデプロイ
 8 MiB ごとに分割し、進捗はローカルに保存します。回線が切れても、タブを閉じても、スマホでバックグラウンドに回っても、同じファイルを選び直せば途中から再開します。進捗バーはバイト単位で動き、パートごとに飛んだりしません。
 
 **動画を見ても受取回数は減りません。**
-回数は HTTP リクエストではなく「受け取り」単位です。コードを入力すると 1 時間有効なダウンロードセッションが開き、その間のシーク操作・レジューム・ブラウザの再試行は一切カウントされません。
+回数は HTTP リクエストではなく「受け取り」単位です。コードを入力すると 1 時間有効なダウンロードセッションが開き、その間のシーク操作・レジューム・ブラウザの再試行は一切カウントされず、同じタブで受け取りページを再読み込みしても減りません。
 
 **同じ内容の実体はひとつ、でも共有は独立。**
 同じファイルを二人が共有しても R2 上のオブジェクトはひとつですが、受取コード・有効期限・回数はそれぞれ別々です。最後の参照が消えて初めて実体を削除します。

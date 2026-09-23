@@ -94,10 +94,10 @@
             size="large"
             native-type="submit"
             class="login-button"
+            :icon="Promotion"
             :loading="loading"
             :aria-busy="loading"
           >
-            <el-icon v-if="!loading" aria-hidden="true"><Promotion /></el-icon>
             {{ loading ? t('admin.login.loading') : t('admin.login.button') }}
           </el-button>
         </el-form-item>
@@ -105,8 +105,7 @@
       </el-form>
 
       <div class="login-footer">
-        <el-button link class="back-home-btn" @click="$router.push('/')">
-          <el-icon aria-hidden="true"><Back /></el-icon>
+        <el-button link class="back-home-btn" :icon="Back" @click="$router.push('/')">
           {{ t('common.home') }}
         </el-button>
       </div>

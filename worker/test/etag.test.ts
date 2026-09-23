@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { ifNoneMatchMatches, isSafeInlinePreviewMime, parseByteRange } from '../src/routes/share'
+import {
+  ifNoneMatchMatches,
+  ifRangeAllowsRange,
+  isSafeInlinePreviewMime,
+  parseByteRange,
+} from '../src/routes/share'
 
 describe('If-None-Match handling', () => {
   it('matches quoted, weak, and comma-separated entity tags', () => {
@@ -11,6 +16,20 @@ describe('If-None-Match handling', () => {
 
   it('does not match a different entity tag', () => {
     expect(ifNoneMatchMatches('"abc1234"', '"abc123"')).toBe(false)
+  })
+})
+
+describe('If-Range handling', () => {
+  it('honours Range without If-Range or with the current strong entity tag', () => {
+    expect(ifRangeAllowsRange(undefined, '"abc123"')).toBe(true)
+    expect(ifRangeAllowsRange(' "abc123" ', '"abc123"')).toBe(true)
+  })
+
+  it('falls back to the full body for a stale, weak, or date validator', () => {
+    expect(ifRangeAllowsRange('"other"', '"abc123"')).toBe(false)
+    expect(ifRangeAllowsRange('W/"abc123"', '"abc123"')).toBe(false)
+    expect(ifRangeAllowsRange('Tue, 22 Sep 2026 10:00:00 GMT', '"abc123"')).toBe(false)
+    expect(ifRangeAllowsRange('"abc123"', null)).toBe(false)
   })
 })
 

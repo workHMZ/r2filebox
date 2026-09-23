@@ -138,3 +138,29 @@ export const inferMimeType = (
 
   return FILE_TYPE_BY_EXTENSION[getFileExtension(filename)]?.mimeType || FALLBACK_MIME_TYPE
 }
+
+const FILE_TYPE_KEY_BY_CATEGORY: Readonly<Record<FileCategory, string>> = {
+  image: 'fileType.image',
+  video: 'fileType.video',
+  audio: 'fileType.audio',
+  document: 'fileType.document',
+  archive: 'fileType.archive',
+  other: 'fileType.unknown',
+}
+
+const DETAILED_DOCUMENT_TYPE_KEY_BY_MIME: Readonly<Record<string, string>> = {
+  'application/pdf': 'fileType.pdf',
+  'application/msword': 'fileType.word',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'fileType.word',
+  'application/vnd.ms-excel': 'fileType.excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'fileType.excel',
+}
+
+/** The i18n key of a reader-facing type name such as "PDF document" or "Video". */
+export const fileTypeLabelKey = (
+  filename: string,
+  mimeType?: string | null,
+): string => {
+  return DETAILED_DOCUMENT_TYPE_KEY_BY_MIME[inferMimeType(filename, mimeType)]
+    || FILE_TYPE_KEY_BY_CATEGORY[classifyFile(filename, mimeType)]
+}

@@ -426,7 +426,10 @@ const typeOptions = computed(() => ({
       position: 'right' as const,
       labels: {
         usePointStyle: true,
-        padding: 20,
+        // The Worker returns at most ten types. At 20px they overflowed the
+        // 280px chart height, Chart.js opened a second column, and that column
+        // ran past the card's right edge and was clipped.
+        padding: 10,
         color: chartTheme.value.textSecondary,
       }
     },

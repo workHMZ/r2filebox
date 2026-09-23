@@ -1,6 +1,8 @@
+import { Buffer } from 'node:buffer'
 import { createExecutionContext, env, SELF } from 'cloudflare:test'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import worker from '../src/index'
+import { signJWT } from '../src/lib/auth'
 import {
   CONTENT_FINGERPRINT_ALGORITHM,
   CONTENT_FINGERPRINT_PART_SIZE,
@@ -506,6 +508,81 @@ describe('verified instant upload', () => {
       active_bytes: content.byteLength,
     })
     expect((await env.BUCKET.list()).objects).toHaveLength(1)
+  })
+
+  it('keeps a one-minute share uploadable and starts its expiry at completion', async () => {
+    const content = new TextEncoder().encode('short-lived share, slow link')
+    const initResponse = await SELF.fetch('https://example.test/api/share/file/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename: 'short-lived.bin',
+        mimeType: 'application/octet-stream',
+        size: content.byteLength,
+        expire_value: 1,
+        expire_style: 'minute',
+      }),
+    })
+    expect(initResponse.status).toBe(200)
+    const { data: init } = await initResponse.json<{ data: UploadInitData }>()
+
+    // The session deadline is the upload window, not the one-minute share.
+    const sessionExpireAt = await env.DB.prepare('SELECT expire_at FROM upload_sessions')
+      .first<string>('expire_at')
+    expect(Date.parse(sessionExpireAt || '') - Date.now()).toBeGreaterThan(23 * 60 * 60 * 1000)
+
+    const part = await uploadPart(init, content)
+    const completedAt = Date.now()
+    const completed = await SELF.fetch('https://example.test/api/share/file/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Upload-Token': init.uploadToken || '' },
+      body: JSON.stringify({ code: init.code, parts: [{ partNumber: part.partNumber, etag: part.etag }] }),
+    })
+    expect(completed.status).toBe(200)
+    const { data } = await completed.json<{ data: { expire_at: string } }>()
+    const lifetimeMs = Date.parse(data.expire_at) - completedAt
+    expect(lifetimeMs).toBeGreaterThanOrEqual(59_000)
+    expect(lifetimeMs).toBeLessThanOrEqual(61_000)
+  })
+
+  it('completes a session whose token predates share_lifetime_ms with the stored expiry', async () => {
+    const content = new TextEncoder().encode('token issued by 2.7')
+    const initResponse = await SELF.fetch('https://example.test/api/share/file/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename: 'pre-2.8.bin',
+        mimeType: 'application/octet-stream',
+        size: content.byteLength,
+        expire_value: 1,
+        expire_style: 'day',
+      }),
+    })
+    const { data: init } = await initResponse.json<{ data: UploadInitData }>()
+    const part = await uploadPart(init, content)
+
+    // A 2.7 Worker stored the share expiry on the session and signed no lifetime.
+    const legacyExpireAt = new Date(Date.now() + (2 * 60 * 60 * 1000)).toISOString()
+    await env.DB.prepare('UPDATE upload_sessions SET expire_at = ?').bind(legacyExpireAt).run()
+    const [, encodedPayload] = (init.uploadToken || '').split('.')
+    const legacyPayload = JSON.parse(
+      new TextDecoder().decode(Buffer.from(encodedPayload, 'base64url')),
+    ) as Record<string, unknown>
+    delete legacyPayload.share_lifetime_ms
+    // SESSION_SECRET from vitest.config.mts.
+    const legacyToken = await signJWT(
+      legacyPayload,
+      '2222222222222222222222222222222222222222222222222222222222222222',
+    )
+
+    const completed = await SELF.fetch('https://example.test/api/share/file/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Upload-Token': legacyToken },
+      body: JSON.stringify({ code: init.code, parts: [{ partNumber: part.partNumber, etag: part.etag }] }),
+    })
+    expect(completed.status).toBe(200)
+    const { data } = await completed.json<{ data: { expire_at: string } }>()
+    expect(data.expire_at).toBe(legacyExpireAt)
   })
 })
 

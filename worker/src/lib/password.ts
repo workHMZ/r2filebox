@@ -1,6 +1,11 @@
 import { Buffer } from 'node:buffer'
 
 const ITERATIONS = 100000
+// Production Workers reject PBKDF2 above 100,000 iterations with
+// NotSupportedError, while wrangler dev, Miniflare and Node accept any count.
+// A stronger-looking hash would therefore pass every local check and then turn
+// each production login into a silent "invalid credentials".
+export const MAX_WORKERS_PBKDF2_ITERATIONS = 100000
 const HASH_BYTES = 32
 const SALT_BYTES = 16
 
@@ -15,7 +20,14 @@ export async function verifyPassword(password: string, hashString: string): Prom
     if (parts.length !== 4) return false
 
     const iterations = Number.parseInt(parts[1], 10)
-    if (!Number.isInteger(iterations) || iterations < ITERATIONS || iterations > 1_000_000) return false
+    if (!Number.isInteger(iterations) || iterations < ITERATIONS) return false
+    if (iterations > MAX_WORKERS_PBKDF2_ITERATIONS) {
+      console.error(
+        `ADMIN_PASSWORD_HASH uses ${iterations} PBKDF2 iterations; Cloudflare Workers support at most ` +
+        `${MAX_WORKERS_PBKDF2_ITERATIONS}. Regenerate it with \`npm run hash-password\`.`,
+      )
+      return false
+    }
 
     const salt = decodeBase64(parts[2])
     const stored = decodeBase64(parts[3])

@@ -102,12 +102,17 @@ const isGenericMimeType = (mimeType: string): boolean => {
     mimeType === 'binary/octet-stream'
 }
 
-export const calculateExpireAt = (
+/**
+ * The requested share lifetime in hours, clamped to the configured bounds. It
+ * can be fractional (minutes). Callers add it to the moment the share is
+ * published, which for a multipart upload is completion rather than init.
+ */
+export const calculateExpireHours = (
   expireValue?: number,
   expireStyle?: string,
   defaultHours: number = 24,
   maxHours: number = 168
-): string => {
+): number => {
   let hoursToAdd = defaultHours
 
   if (expireValue !== undefined && expireStyle !== undefined) {
@@ -130,13 +135,7 @@ export const calculateExpireAt = (
   }
 
   if (!Number.isFinite(hoursToAdd) || hoursToAdd <= 0) hoursToAdd = defaultHours
-  hoursToAdd = Math.min(hoursToAdd, Math.max(maxHours, 1))
-
-  const expireDate = new Date()
-  // hoursToAdd can be fractional (e.g., for minutes).
-  expireDate.setTime(expireDate.getTime() + hoursToAdd * 60 * 60 * 1000)
-  
-  return expireDate.toISOString()
+  return Math.min(hoursToAdd, Math.max(maxHours, 1))
 }
 
 export const contentDispositionAttachment = (filename: string): string => {
