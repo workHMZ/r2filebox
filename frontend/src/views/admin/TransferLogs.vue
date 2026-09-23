@@ -3,10 +3,17 @@
     <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
       {{ loading ? t('common.loading') : '' }}
     </p>
-    <el-card v-loading="loading" :aria-busy="loading" shadow="never">
-      <template #header>
-        <div class="card-header">
-          <h3>{{ t('logs.title') }}</h3>
+    <div class="subpage-header-card">
+      <div class="subpage-header">
+        <div class="header-desc">
+          <span class="desc-text">{{ t('logs.subtitle') }}</span>
+          <span class="desc-divider" aria-hidden="true">·</span>
+          <div class="desc-meta">
+            <el-icon aria-hidden="true"><Clock /></el-icon>
+            <span>{{ t('common.lastRefresh', { time: lastRefreshTime }) }}</span>
+          </div>
+        </div>
+        <div class="header-actions">
           <ActionFeedbackButton
             type="primary"
             size="small"
@@ -18,7 +25,10 @@
             {{ t('common.refresh') }}
           </ActionFeedbackButton>
         </div>
-      </template>
+      </div>
+    </div>
+
+    <el-card v-loading="loading" :aria-busy="loading" shadow="never">
 
       <!-- 统计卡片 -->
       <el-row :gutter="20" class="stats-row">
@@ -115,9 +125,12 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="created_at" :label="t('logs.operationTime')" width="180">
+        <el-table-column prop="created_at" :label="t('logs.operationTime')" min-width="120">
           <template #default="{ row }">
-            {{ formatDate(row.created_at) }}
+            <div class="datetime-cell">
+              <span class="datetime-date">{{ formatSplitDateTime(row.created_at).date }}</span>
+              <span class="datetime-time">{{ formatSplitDateTime(row.created_at).time }}</span>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -140,19 +153,21 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { Refresh } from '@element-plus/icons-vue'
+import { Clock, Refresh } from '@element-plus/icons-vue'
 import { adminApi } from '@/api/admin'
 import type { AuditLog } from '@/api/admin'
 import ActionFeedbackButton from '@/components/ActionFeedbackButton.vue'
 import { useActionFeedback } from '@/composables/useActionFeedback'
+import { useLastRefresh } from '@/composables/useLastRefresh'
 import { getLocaleTag, useI18n } from '@/i18n'
-import { formatDateTime, formatFileSize } from '@/utils/format'
+import { formatFileSize, formatSplitDateTime } from '@/utils/format'
 
 const loading = ref(false)
 const logsList = ref<AuditLog[]>([])
 const { t, locale } = useI18n()
 let requestVersion = 0
 const { active: refreshSucceeded, show: showRefreshSucceeded } = useActionFeedback()
+const { lastRefreshTime, markRefreshed } = useLastRefresh()
 
 const pagination = reactive({
   page: 1,
@@ -166,10 +181,6 @@ const stats = reactive({
   completedRetrievals: 0,
   activeSources: 0
 })
-
-const formatDate = (dateStr: string): string => {
-  return formatDateTime(dateStr, getLocaleTag(locale.value))
-}
 
 const getActionLabel = (action: string): string => {
   const keys: Record<string, string> = {
@@ -241,6 +252,7 @@ const fetchLogs = async (): Promise<boolean> => {
       stats.completedShares = res.data.stats.completedShares
       stats.completedRetrievals = res.data.stats.completedRetrievals
       stats.activeSources = res.data.stats.activeSources
+      markRefreshed()
       return true
     }
     return false
@@ -275,27 +287,15 @@ onMounted(() => {
   padding: 0;
 }
 
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.card-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-}
-
 .stats-row {
   margin-bottom: 20px;
-  padding: 4px 0 18px;
+  padding: var(--space-3xs) 0 20px;
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .stat-item {
   text-align: center;
-  padding: 14px;
+  padding: var(--space-sm);
   border-right: 1px solid var(--border-subtle);
   height: 100%;
   display: flex;
@@ -312,13 +312,15 @@ onMounted(() => {
 }
 
 .stat-value {
-  font-size: 28px;
+  font-family: var(--font-code);
+  font-size: var(--fs-display-sm);
   font-weight: 600;
-  margin-bottom: 5px;
+  letter-spacing: -0.5px;
+  margin-bottom: var(--space-3xs);
 }
 
 .stat-label {
-  font-size: 14px;
+  font-size: var(--fs-body-sm);
   color: var(--text-secondary);
 }
 
@@ -330,7 +332,8 @@ onMounted(() => {
 
 .identifier-cell {
   color: inherit;
-  font-size: 12px;
+  font-family: var(--font-code);
+  font-size: var(--fs-caption-up);
 }
 
 .pagination-container {
@@ -357,7 +360,7 @@ onMounted(() => {
   .pagination-container {
     justify-content: flex-start;
     overflow-x: auto;
-    padding-bottom: 4px;
+    padding-bottom: var(--space-3xs);
   }
 
   .pagination-container :deep(.el-pagination__jump),

@@ -3,6 +3,32 @@
     <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
       {{ loading ? t('common.loading') : '' }}
     </p>
+
+    <div class="subpage-header-card">
+      <div class="subpage-header">
+        <div class="header-desc">
+          <span class="desc-text">{{ t('dashboard.subtitle') }}</span>
+          <span class="desc-divider" aria-hidden="true">·</span>
+          <div class="desc-meta">
+            <el-icon aria-hidden="true"><Clock /></el-icon>
+            <span>{{ t('common.lastRefresh', { time: lastRefreshTime }) }}</span>
+          </div>
+        </div>
+        <div class="header-actions">
+          <ActionFeedbackButton
+            type="primary"
+            size="small"
+            :icon="Refresh"
+            :loading="loading"
+            :success="refreshSucceeded"
+            @click="refreshDashboard"
+          >
+            {{ t('common.refreshData') }}
+          </ActionFeedbackButton>
+        </div>
+      </div>
+    </div>
+
     <div class="stats-grid" :aria-busy="loading">
       <div class="stat-card stat-card--teal">
         <div class="stat-icon"><el-icon><Monitor /></el-icon></div>
@@ -152,16 +178,19 @@
             :header-cell-style="{ background: 'transparent', fontWeight: '600' }"
           >
             <el-table-column prop="filename" :label="t('dashboard.fileName')" show-overflow-tooltip />
-            <el-table-column prop="file_size" :label="t('common.size')" width="120">
+            <el-table-column prop="file_size" :label="t('common.size')" width="100">
               <template #default="{ row }">
                 <el-tag type="info" size="small">
                   {{ formatFileSize(row.file_size) }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="created_at" :label="t('dashboard.uploadTime')" width="200">
+            <el-table-column prop="created_at" :label="t('dashboard.uploadTime')" min-width="120">
               <template #default="{ row }">
-                {{ formatDate(row.created_at) }}
+                <div class="datetime-cell">
+                  <span class="datetime-date">{{ formatSplitDateTime(row.created_at).date }}</span>
+                  <span class="datetime-time">{{ formatSplitDateTime(row.created_at).time }}</span>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -176,9 +205,12 @@
 import { computed, nextTick, ref, reactive, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { 
-  Folder, Coin, TrendCharts, ArrowRight, Document, Monitor, Delete 
+  Folder, Coin, TrendCharts, ArrowRight, Document, Monitor, Delete, Clock, Refresh 
 } from '@element-plus/icons-vue'
 import { adminApi } from '@/api/admin'
+import ActionFeedbackButton from '@/components/ActionFeedbackButton.vue'
+import { useActionFeedback } from '@/composables/useActionFeedback'
+import { useLastRefresh } from '@/composables/useLastRefresh'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -194,7 +226,7 @@ import {
 import { Line, Doughnut } from 'vue-chartjs'
 import { useTheme } from '@/composables/useTheme'
 import { getLocaleTag, useI18n } from '@/i18n'
-import { formatDateTime, formatFileSize } from '@/utils/format'
+import { formatFileSize, formatSplitDateTime } from '@/utils/format'
 
 ChartJS.register(
   CategoryScale,
@@ -211,6 +243,8 @@ ChartJS.register(
 const loading = ref(false)
 const { t, locale } = useI18n()
 const { isDark } = useTheme()
+const { active: refreshSucceeded, show: showRefreshSucceeded } = useActionFeedback()
+const { lastRefreshTime, markRefreshed } = useLastRefresh()
 const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
 let animationFrame: number | null = null
 
@@ -268,18 +302,16 @@ interface ChartThemeColors {
 }
 
 const fallbackChartTheme = (dark: boolean): ChartThemeColors => ({
-  primary: dark ? '#55d1c8' : '#086f68',
-  areaFill: dark ? 'rgba(85, 209, 200, 0.18)' : 'rgba(8, 111, 104, 0.12)',
-  pointBackground: dark ? '#162128' : '#ffffff',
-  grid: dark ? 'rgba(213, 228, 231, 0.1)' : 'rgba(0, 0, 0, 0.05)',
-  textPrimary: dark ? '#edf5f6' : '#182229',
-  textRegular: dark ? '#d3e0e3' : '#34434d',
-  textSecondary: dark ? '#a7b8bf' : '#5f7079',
-  border: dark ? '#2a3941' : '#dce4e8',
-  tooltipBackground: dark ? '#1b272e' : '#ffffff',
-  series: dark
-    ? ['#55d1c8', '#75a7ff', '#f7b267', '#62d58b', '#a7b8bf', '#ff8181']
-    : ['#086f68', '#2563eb', '#f6821f', '#20824a', '#64748b', '#c33a3a'],
+  primary: '#cc785c',
+  areaFill: dark ? 'rgba(204, 120, 92, 0.16)' : 'rgba(204, 120, 92, 0.14)',
+  pointBackground: dark ? '#252320' : '#efe9de',
+  grid: dark ? 'rgba(250, 249, 245, 0.08)' : 'rgba(20, 20, 19, 0.08)',
+  textPrimary: dark ? '#faf9f5' : '#141413',
+  textRegular: dark ? '#dfdeda' : '#3d3d3a',
+  textSecondary: dark ? '#a09d96' : '#6c6a64',
+  border: dark ? '#2d2b27' : '#e6dfd8',
+  tooltipBackground: dark ? '#252320' : '#ffffff',
+  series: ['#cc785c', '#e8a55a', '#5db8a6', '#6c6a64', '#d4a017', '#c64545'],
 })
 
 const chartTheme = ref<ChartThemeColors>(fallbackChartTheme(isDark.value))
@@ -296,7 +328,7 @@ const readChartTheme = (): ChartThemeColors => {
   return {
     primary: readThemeColor(styles, '--primary-color', fallback.primary),
     areaFill: readThemeColor(styles, '--chart-area-fill', fallback.areaFill),
-    pointBackground: readThemeColor(styles, '--surface-card-solid', fallback.pointBackground),
+    pointBackground: readThemeColor(styles, '--surface-card', fallback.pointBackground),
     grid: readThemeColor(styles, '--chart-grid', fallback.grid),
     textPrimary: readThemeColor(styles, '--text-primary', fallback.textPrimary),
     textRegular: readThemeColor(styles, '--text-regular', fallback.textRegular),
@@ -425,9 +457,6 @@ watch(isDark, async () => {
   applyChartTheme()
 }, { immediate: true, flush: 'post' })
 
-const formatDate = (dateStr: string): string => {
-  return formatDateTime(dateStr, getLocaleTag(locale.value))
-}
 
 const formatChartDate = (dateStr: string): string => {
   if (!dateStr) return '-'
@@ -533,6 +562,21 @@ const fetchRecentFiles = async () => {
   }
 }
 
+const refreshDashboard = async () => {
+  loading.value = true
+  try {
+    await Promise.all([
+      fetchDashboardStats(),
+      fetchCharts(),
+      fetchRecentFiles(),
+    ])
+    markRefreshed()
+    showRefreshSucceeded()
+  } finally {
+    loading.value = false
+  }
+}
+
 onMounted(async () => {
   loading.value = true
   try {
@@ -541,6 +585,7 @@ onMounted(async () => {
       fetchCharts(),
       fetchRecentFiles(),
     ])
+    markRefreshed()
   } finally {
     loading.value = false
   }
@@ -556,6 +601,8 @@ onBeforeUnmount(() => {
   animation: fadeIn 0.28s ease-out;
 }
 
+
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
@@ -563,29 +610,29 @@ onBeforeUnmount(() => {
 
 .stats-grid {
   display: grid;
-  margin-bottom: 24px;
+  margin-bottom: var(--space-md);
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  gap: var(--space-sm);
 }
 
 .stat-card {
   display: flex;
   min-width: 0;
-  min-height: 116px;
-  padding: 20px;
+  min-height: 110px;
+  padding: 20px 20px;
   align-items: center;
-  gap: 15px;
+  gap: var(--space-sm);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-xl);
-  background: var(--surface-card-solid);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
   color: var(--text-primary);
-  box-shadow: var(--glass-shadow);
+  box-shadow: var(--shadow-card);
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .stat-card:hover {
   border-color: var(--border-strong);
-  box-shadow: var(--glass-shadow-lg);
+  box-shadow: var(--shadow-raised);
 }
 
 .stat-icon {
@@ -595,16 +642,16 @@ onBeforeUnmount(() => {
   flex: 0 0 42px;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-lg);
-  font-size: 21px;
+  border-radius: var(--radius-md);
+  font-size: var(--fs-title-lg);
 }
 
 .stat-card--teal .stat-icon { background: var(--primary-soft); color: var(--primary-color); }
 .stat-card--blue .stat-icon { background: var(--info-soft); color: var(--info-color); }
-.stat-card--slate .stat-icon { background: var(--primary-soft); color: var(--primary-active); }
-.stat-card--green .stat-icon { background: var(--success-soft); color: var(--success-color); }
-.stat-card--orange .stat-icon { background: var(--warning-soft); color: var(--warning-color); }
-.stat-card--red .stat-icon { background: var(--danger-soft); color: var(--danger-color); }
+.stat-card--slate .stat-icon { background: var(--primary-soft); color: var(--primary-ink); }
+.stat-card--green .stat-icon { background: var(--success-soft); color: var(--success-ink); }
+.stat-card--orange .stat-icon { background: var(--warning-soft); color: var(--warning-ink); }
+.stat-card--red .stat-icon { background: var(--danger-soft); color: var(--danger-ink); }
 
 .stat-content { min-width: 0; }
 
@@ -612,28 +659,30 @@ onBeforeUnmount(() => {
   overflow: hidden;
   margin-bottom: 3px;
   color: var(--text-primary);
-  font-size: 25px;
-  font-weight: 740;
-  line-height: 1.25;
+  font-family: var(--font-code);
+  font-size: var(--fs-title-lg);
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .stat-label {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-caption-up);
 }
 
 .charts-row {
-  margin-bottom: 24px;
+  margin-bottom: var(--space-md);
 }
 
 .chart-card {
   height: 100%;
   border-color: var(--border-subtle) !important;
-  background: var(--surface-card-solid) !important;
+  background: var(--surface-card) !important;
   color: var(--text-primary) !important;
-  box-shadow: var(--glass-shadow) !important;
+  box-shadow: var(--shadow-card) !important;
 }
 
 .card-header {
@@ -644,11 +693,13 @@ onBeforeUnmount(() => {
 
 .card-header h3 {
   margin: 0;
-  font-size: 16px;
+  font-family: var(--font-primary);
+  font-size: var(--fs-title-md);
   font-weight: 600;
+  letter-spacing: -0.2px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2xs);
   color: var(--text-primary);
 }
 
@@ -672,15 +723,15 @@ onBeforeUnmount(() => {
 }
 
 .recent-row {
-  margin-bottom: 24px;
+  margin-bottom: var(--space-md);
 }
 
 .recent-card {
   overflow: hidden;
   border-color: var(--border-subtle) !important;
-  background: var(--surface-card-solid) !important;
+  background: var(--surface-card) !important;
   color: var(--text-primary) !important;
-  box-shadow: var(--glass-shadow) !important;
+  box-shadow: var(--shadow-card) !important;
 }
 
 .chart-card :deep(.el-card__header),
@@ -698,14 +749,14 @@ onBeforeUnmount(() => {
 
 :deep(.el-card__header) {
   border-bottom: 1px solid var(--border-subtle);
-  padding: 16px 20px;
+  padding: var(--space-sm) 20px;
 }
 
 :deep(.el-card__body) {
   padding: 20px;
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1023px) {
   .stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -715,19 +766,19 @@ onBeforeUnmount(() => {
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 767px) {
   .stats-grid {
     grid-template-columns: 1fr;
-    gap: 10px;
+    gap: var(--space-xs);
   }
 
   .stat-card {
     min-height: 92px;
-    padding: 16px;
+    padding: var(--space-sm);
   }
 
   .stat-value {
-    font-size: 22px;
+    font-size: var(--fs-title-lg);
   }
 
   .chart-container {

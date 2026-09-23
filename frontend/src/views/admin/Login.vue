@@ -5,13 +5,11 @@
     tabindex="-1"
     aria-labelledby="admin-login-title"
   >
-    <div class="bg-decoration" aria-hidden="true"></div>
-
     <div class="login-toolbar">
       <InterfaceControls />
     </div>
 
-    <div class="login-card glass-card">
+    <div class="login-card">
       <div class="login-header">
         <AppLogo size="large" />
         <h1 id="admin-login-title">{{ configStore.siteName }}</h1>
@@ -99,7 +97,7 @@
             :loading="loading"
             :aria-busy="loading"
           >
-            <el-icon v-if="!loading" style="margin-right: 4px;" aria-hidden="true"><Promotion /></el-icon>
+            <el-icon v-if="!loading" aria-hidden="true"><Promotion /></el-icon>
             {{ loading ? t('admin.login.loading') : t('admin.login.button') }}
           </el-button>
         </el-form-item>
@@ -196,83 +194,71 @@ const handleLogin = async () => {
 
 <style scoped>
 .login-container {
-  position: relative;
+  display: flex;
   min-height: 100vh;
   min-height: 100dvh;
-  display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
+  padding: max(var(--space-2xl), env(safe-area-inset-top, 0px)) var(--space-sm)
+    max(var(--space-lg), env(safe-area-inset-bottom, 0px));
   overflow-x: hidden;
-  overflow-y: auto;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
 }
 
 .login-toolbar {
   position: absolute;
-  top: 22px;
-  right: 24px;
+  top: var(--space-md);
+  right: var(--space-md);
   z-index: 2;
 }
 
+/* A single card on paper: the coral head rule is the binding edge the rest of
+   the app carries down its left side. */
 .login-card {
   width: 100%;
-  max-width: 420px;
-  margin: auto 20px;
-  padding: 42px 34px 30px;
-  border-top: 3px solid var(--primary-color);
+  max-width: 400px;
+  padding: var(--space-lg) var(--space-md) var(--space-md);
+  border: 1px solid var(--border-subtle);
+  border-top: 2px solid var(--primary-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-page);
 }
 
 .login-header {
-  text-align: center;
-  margin-bottom: 32px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-2xs);
+  margin-bottom: var(--space-lg);
+  text-align: center;
 }
 
 .login-header h1 {
   max-width: 100%;
-  margin: 0;
-  font-size: 26px;
-  font-weight: 760;
   color: var(--text-primary);
-  letter-spacing: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-display-sm);
+  font-weight: 500;
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-display);
   overflow-wrap: anywhere;
 }
 
 .login-header p {
-  margin: 0;
-  font-size: 13px;
-  color: var(--glass-text-secondary);
-}
-
-.login-form {
-  margin-top: 10px;
+  color: var(--text-secondary);
+  font-size: var(--fs-body-sm);
 }
 
 .password-toggle {
   display: inline-flex;
   width: 24px;
   height: 24px;
-  padding: 0;
   align-items: center;
   justify-content: center;
+  padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: transparent;
-  color: var(--glass-text-secondary);
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
@@ -281,49 +267,51 @@ const handleLogin = async () => {
 }
 
 .password-toggle:focus-visible {
-  outline: 2px solid var(--primary-color);
+  outline: 2px solid var(--primary-strong);
   outline-offset: 2px;
 }
 
 .form-item-glass {
-  margin-bottom: 22px;
+  margin-bottom: var(--space-md);
 }
 
 .actions-row {
-  margin-top: 28px;
-  margin-bottom: 16px;
+  margin: var(--space-md) 0 var(--space-2xs);
 }
 
 .login-button {
   width: 100%;
-  height: 48px;
-  font-weight: 700;
+  min-height: 48px;
+  font-size: var(--fs-title-sm);
 }
 
 .login-footer {
+  margin-top: var(--space-xs);
   text-align: center;
-  margin-top: 16px;
 }
 
 .back-home-btn {
-  color: var(--glass-text-secondary) !important;
+  color: var(--text-secondary) !important;
+  font-size: var(--fs-body-sm);
   font-weight: 500;
-  font-size: 13px;
-  
-  &:hover {
-    color: var(--primary-color) !important;
-  }
 }
 
-@media (max-width: 480px) {
+.back-home-btn:hover {
+  color: var(--primary-ink) !important;
+}
+
+@media (max-width: 767px) {
+  .login-container {
+    align-items: flex-start;
+  }
+
   .login-toolbar {
-    top: 12px;
-    right: 12px;
+    top: var(--space-xs);
+    right: var(--space-xs);
   }
 
   .login-card {
-    margin: 74px 12px 20px;
-    padding: 34px 20px 24px;
+    padding: var(--space-md) var(--space-sm);
   }
 }
 </style>

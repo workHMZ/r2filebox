@@ -5,20 +5,26 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 
+/*
+ * Every raster icon is rendered from frontend/public/favicon.svg, so the brand
+ * mark only has to be maintained in one place. The previous pipeline rasterised
+ * a separate 1024px PNG master, which is how the app icons kept the pre-redesign
+ * artwork long after the SVG had moved to the warm editorial mark.
+ */
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const source = resolve(root, 'frontend/assets/branding/icon-source-1024.png')
 const publicDir = resolve(root, 'frontend/public')
-const faviconSource = resolve(publicDir, 'favicon.svg')
-const lightBackground = { r: 243, g: 246, b: 248, alpha: 1 }
-const regularCrop = { left: 40, top: 40, width: 944, height: 944 }
+const markSource = resolve(publicDir, 'favicon.svg')
+
+// The mark's own plate colour, so a maskable icon can bleed past the rounded
+// corners the SVG draws without showing a seam.
+const markPlate = { r: 24, g: 23, b: 21, alpha: 1 }
+// Android masks crop to roughly the middle 80%; 336/512 keeps the vault inside
+// the safe zone on every mask shape.
 const maskableArtworkSize = 336
+const maskableCanvasSize = 512
 
 await mkdir(publicDir, { recursive: true })
-
-const metadata = await sharp(source).metadata()
-if (metadata.width !== 1024 || metadata.height !== 1024) {
-  throw new Error(`Icon source must be 1024x1024; received ${metadata.width ?? '?'}x${metadata.height ?? '?'}`)
-}
 
 await Promise.all([
   writeRegularIcon(192, 'app-icon-192.png'),
@@ -27,7 +33,7 @@ await Promise.all([
   writeMaskableIcon(),
 ])
 
-console.log('Generated the browser favicon from favicon.svg and PWA icons from the 1024px branding source.')
+console.log('Generated the favicon and PWA icons from frontend/public/favicon.svg.')
 
 function pngOptions() {
   return {
@@ -40,37 +46,34 @@ function pngOptions() {
   }
 }
 
-async function writeRegularIcon(size, filename) {
-  await sharp(source)
-    .extract(regularCrop)
+function renderMark(size) {
+  // Render above the target size, then downsample: rasterising the SVG at the
+  // exact pixel size leaves the 1.2px hairlines of the R2 wordmark ragged.
+  return sharp(markSource, { density: Math.ceil((size / 48) * 96) })
     .resize(size, size, { fit: 'fill', kernel: sharp.kernel.lanczos3 })
-    .png(pngOptions())
-    .toFile(resolve(publicDir, filename))
+}
+
+async function writeRegularIcon(size, filename) {
+  await renderMark(size).png(pngOptions()).toFile(resolve(publicDir, filename))
 }
 
 async function writeFavicon() {
-  await sharp(faviconSource, { density: 384 })
-    .resize(32, 32, { fit: 'fill', kernel: sharp.kernel.lanczos3 })
-    .png(pngOptions())
-    .toFile(resolve(publicDir, 'favicon-32.png'))
+  await renderMark(32).png(pngOptions()).toFile(resolve(publicDir, 'favicon-32.png'))
 }
 
 async function writeMaskableIcon() {
-  const padding = Math.floor((512 - maskableArtworkSize) / 2)
+  const padding = Math.floor((maskableCanvasSize - maskableArtworkSize) / 2)
+  const artwork = await renderMark(maskableArtworkSize).png().toBuffer()
 
-  await sharp(source)
-    .extract(regularCrop)
-    .resize(maskableArtworkSize, maskableArtworkSize, {
-      fit: 'fill',
-      kernel: sharp.kernel.lanczos3,
-    })
-    .extend({
-      top: padding,
-      bottom: padding,
-      left: padding,
-      right: padding,
-      background: lightBackground,
-    })
+  await sharp({
+    create: {
+      width: maskableCanvasSize,
+      height: maskableCanvasSize,
+      channels: 4,
+      background: markPlate,
+    },
+  })
+    .composite([{ input: artwork, top: padding, left: padding }])
     .png(pngOptions())
     .toFile(resolve(publicDir, 'app-icon-maskable-512.png'))
 }

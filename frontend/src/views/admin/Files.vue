@@ -3,25 +3,32 @@
     <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
       {{ loading ? t('common.loading') : '' }}
     </p>
-    <el-card shadow="never" class="files-card" :aria-busy="loading">
-      <div class="card-header">
-        <div class="header-title">
-          <h2>{{ t('files.title') }}</h2>
-          <p>{{ t('files.subtitle') }}</p>
+    <div class="subpage-header-card">
+      <div class="subpage-header">
+        <div class="header-desc">
+          <span class="desc-text">{{ t('files.subtitle') }}</span>
+          <span class="desc-divider" aria-hidden="true">·</span>
+          <div class="desc-meta">
+            <el-icon aria-hidden="true"><Clock /></el-icon>
+            <span>{{ t('common.lastRefresh', { time: lastRefreshTime }) }}</span>
+          </div>
         </div>
-        <ActionFeedbackButton
-          type="primary"
-          class="refresh-btn"
-          :icon="Refresh"
-          :loading="loading"
-          :success="refreshSucceeded"
-          @click="refreshFiles"
-        >
-          {{ t('common.refreshData') }}
-        </ActionFeedbackButton>
+        <div class="header-actions">
+          <ActionFeedbackButton
+            type="primary"
+            size="small"
+            :icon="Refresh"
+            :loading="loading"
+            :success="refreshSucceeded"
+            @click="refreshFiles"
+          >
+            {{ t('common.refreshData') }}
+          </ActionFeedbackButton>
+        </div>
       </div>
+    </div>
 
-      <el-divider />
+    <el-card shadow="never" class="files-card" :aria-busy="loading">
 
       <el-table 
         :data="filesList" 
@@ -43,8 +50,8 @@
                 <div class="file-name">
                   {{ row.display_name || row.id }}
                 </div>
-                <div class="share-id">
-                  <span class="share-id-label">{{ t('files.shareId') }}</span>
+                <div class="record-id">
+                  <span class="record-id-label">{{ t('files.shareId') }}</span>
                   <el-tag size="small" type="info">
                     {{ row.id }}
                   </el-tag>
@@ -80,16 +87,22 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="created_at" :label="t('files.createdAt')" width="180">
+        <el-table-column prop="created_at" :label="t('files.createdAt')" min-width="120">
           <template #default="{ row }">
-            {{ formatDate(row.created_at) }}
+            <div class="datetime-cell">
+              <span class="datetime-date">{{ formatSplitDateTime(row.created_at).date }}</span>
+              <span class="datetime-time">{{ formatSplitDateTime(row.created_at).time }}</span>
+            </div>
           </template>
         </el-table-column>
 
-        <el-table-column prop="expire_at" :label="t('files.expiredAt')" width="220">
+        <el-table-column prop="expire_at" :label="t('files.expiredAt')" min-width="130">
           <template #default="{ row }">
             <div :class="['expire-time', { expired: isExpired(row.expire_at) }]">
-              <span>{{ formatDate(row.expire_at) }}</span>
+              <div class="datetime-cell">
+                <span class="datetime-date">{{ formatSplitDateTime(row.expire_at).date }}</span>
+                <span class="datetime-time">{{ formatSplitDateTime(row.expire_at).time }}</span>
+              </div>
               <el-tag
                 v-if="isExpired(row.expire_at)"
                 type="danger"
@@ -109,8 +122,9 @@
               size="small"
               :icon="Delete"
               :loading="deletingFileId === row.id"
-              :success="deleteSucceeded && deletedFileId === row.id"
-              :disabled="Boolean(deletingFileId) && deletingFileId !== row.id"
+              :success="deletedFileId === row.id && deleteSucceeded"
+              :aria-label="t('common.delete')"
+              :title="t('common.delete')"
               @click="deleteFile(row)"
             >
               {{ t('common.delete') }}
@@ -123,12 +137,11 @@
         <el-pagination
           v-model:current-page="pagination.page"
           v-model:page-size="pagination.pageSize"
-          :total="pagination.total"
           :page-sizes="[10, 20, 50, 100]"
+          :total="pagination.total"
           layout="total, sizes, prev, pager, next, jumper"
           @size-change="handleSizeChange"
           @current-change="handleCurrentChange"
-          background
         />
       </div>
     </el-card>
@@ -140,15 +153,16 @@ import { ref, reactive, onMounted } from 'vue'
 import type { Component } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Refresh, Document, Picture, Download, Delete,
+  Clock, Refresh, Document, Picture, Download, Delete,
   VideoPlay, Headset, Files
 } from '@element-plus/icons-vue'
 import { adminApi } from '@/api/admin'
 import type { AdminShare } from '@/api/admin'
 import ActionFeedbackButton from '@/components/ActionFeedbackButton.vue'
 import { useActionFeedback } from '@/composables/useActionFeedback'
+import { useLastRefresh } from '@/composables/useLastRefresh'
 import { getLocaleTag, useI18n } from '@/i18n'
-import { formatDateTime, formatFileSize } from '@/utils/format'
+import { formatFileSize, formatSplitDateTime } from '@/utils/format'
 import { pageAfterRemoval } from '@/utils/pagination'
 import { classifyFile, type FileCategory } from '@/utils/file-type'
 
@@ -159,6 +173,7 @@ let requestVersion = 0
 const deletingFileId = ref('')
 const deletedFileId = ref('')
 const { active: refreshSucceeded, show: showRefreshSucceeded } = useActionFeedback()
+const { lastRefreshTime, markRefreshed } = useLastRefresh()
 const {
   active: deleteSucceeded,
   reset: resetDeleteSucceeded,
@@ -171,9 +186,6 @@ const pagination = reactive({
   total: 0
 })
 
-const formatDate = (dateStr: string): string => {
-  return formatDateTime(dateStr, getLocaleTag(locale.value))
-}
 
 const isExpired = (dateStr: string): boolean => {
   if (!dateStr) return false
@@ -218,6 +230,7 @@ const fetchFiles = async (): Promise<boolean> => {
     if (currentVersion === requestVersion && res.code === 200) {
       filesList.value = res.data.items
       pagination.total = res.data.total
+      markRefreshed()
       return true
     }
     return false
@@ -304,36 +317,30 @@ onMounted(() => {
 
 .card-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
 }
 
-.header-title h2 {
-  margin: 0 0 4px;
-  font-size: 22px;
-  font-weight: 740;
-  color: var(--text-primary);
-}
-
-.header-title p {
+/* The page name lives once, in the admin header bar. This carries only the
+   line that bar has no room for. */
+.card-lead {
+  min-width: 0;
   margin: 0;
-  font-size: 14px;
   color: var(--text-secondary);
+  font-size: var(--fs-body-sm);
 }
 
-.refresh-btn {
-  min-height: 38px;
-  border-radius: var(--radius-md);
-}
+
 
 .files-table {
-  margin-top: 20px;
+  width: 100%;
 }
 
 .file-info {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-sm);
 }
 
 .file-icon {
@@ -355,38 +362,42 @@ onMounted(() => {
 .file-name {
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 6px;
-  font-size: 15px;
+  margin-bottom: var(--space-2xs);
+  font-size: var(--fs-body-sm);
 }
 
-.share-id {
+.record-id {
   display: flex;
   align-items: center;
   min-width: 0;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2xs);
 }
 
-.share-id :deep(.el-tag) {
+.record-id :deep(.el-tag) {
   max-width: 100%;
   height: auto;
+  font-family: var(--font-code);
+  font-weight: 600;
+  letter-spacing: 0.5px;
 }
 
-.share-id :deep(.el-tag__content) {
+.record-id :deep(.el-tag__content) {
   overflow-wrap: anywhere;
   white-space: normal;
 }
 
-.share-id-label {
+.record-id-label {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-caption-up);
 }
 
 .download-count {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: var(--space-3xs);
+  font-family: var(--font-code);
   font-weight: 600;
   color: var(--primary-color);
 }
@@ -394,18 +405,18 @@ onMounted(() => {
 .expire-time {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2xs);
   color: var(--text-regular);
   white-space: nowrap;
 }
 
 .expire-time.expired {
-  color: var(--danger-color);
+  color: var(--danger-ink);
   font-weight: 600;
 }
 
 .pagination-wrapper {
-  margin-top: 24px;
+  margin-top: var(--space-md);
   display: flex;
   justify-content: center;
 }
@@ -422,28 +433,18 @@ onMounted(() => {
 }
 
 :deep(.el-table td) {
-  padding: 16px 0;
+  padding: var(--space-sm) 0;
 }
 
 :deep(.el-table--striped .el-table__body tr.el-table__row--striped td) {
   background: var(--surface-page);
 }
 
-@media (max-width: 720px) {
-  .card-header {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 14px;
-  }
-
-  .refresh-btn {
-    align-self: stretch;
-  }
-
+@media (max-width: 767px) {
   .pagination-wrapper {
     justify-content: flex-start;
     overflow-x: auto;
-    padding-bottom: 4px;
+    padding-bottom: var(--space-3xs);
   }
 
   .pagination-wrapper :deep(.el-pagination__jump),

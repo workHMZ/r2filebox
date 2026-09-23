@@ -1,0 +1,245 @@
+/*
+ * Design tokens — the single source of truth for the visual layer.
+ *
+ * Values track DESIGN.md (the Claude warm-editorial system). Where DESIGN.md's
+ * literal pairing fails WCAG AA, the token resolves to another colour from the
+ * same palette rather than a new hue: white on `primary` (#cc785c) is only
+ * 3.28:1, so every control that carries white text uses `primary-active`
+ * (#a9583e, 5.06:1). Nothing here introduces a colour DESIGN.md does not list.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* ---- Type families -------------------------------------------------- */
+  /* Copernicus / StyreneB are licensed; DESIGN.md names these substitutes. */
+  --font-display: 'Cormorant Garamond', 'Iowan Old Style', Georgia, -apple-system,
+    BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
+    'Noto Sans SC', sans-serif;
+  --font-primary: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI',
+    'PingFang SC', 'Hiragino Sans', 'Noto Sans', sans-serif;
+  --font-code: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, monospace;
+
+  /* ---- Type scale (DESIGN.md typography roles) ------------------------ */
+  /* The full scale is declared even where this app has no surface large enough
+     to use the top rungs yet; DESIGN.md is the contract, not the usage. */
+  --fs-display-xl: 64px;
+  --fs-display-lg: 48px;
+  --fs-display-md: 36px;
+  --fs-display-sm: 28px;
+  --fs-title-lg: 22px;
+  --fs-title-md: 18px;
+  --fs-title-sm: 16px;
+  --fs-body-md: 16px;
+  --fs-body-sm: 14px;
+  --fs-caption: 13px;
+  --fs-caption-up: 12px;
+
+  --leading-display: 1.15;
+  --leading-title: 1.4;
+  --leading-body: 1.55;
+  --tracking-display: -0.02em;
+  --tracking-caption-up: 0.125em;
+
+  /* ---- Spacing (4px base, DESIGN.md scale) ---------------------------- */
+  --space-3xs: 4px;
+  --space-2xs: 8px;
+  --space-xs: 12px;
+  --space-sm: 16px;
+  --space-md: 24px;
+  --space-lg: 32px;
+  --space-xl: 48px;
+  --space-2xl: 64px;
+  --space-section: 96px;
+
+  /* ---- Radii (DESIGN.md exact) ---------------------------------------- */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 9999px;
+
+  /* ---- Brand ---------------------------------------------------------- */
+  /* Three coral stops with distinct jobs:
+     --primary-color  brand fill: rules, marks, large coral areas, no text on it
+     --primary-strong interactive fill; white on it is 5.06:1
+     --primary-fill-press pressed fill; white on it is 6.81:1, both themes
+     --primary-ink    coral *text*; inverts between themes, never a fill */
+  --primary-color: #cc785c;
+  --primary-strong: #a9583e;
+  --primary-fill-press: #8f462f;
+  --primary-ink: #8f462f;
+  --primary-soft: rgba(204, 120, 92, 0.12);
+  --primary-border: rgba(169, 88, 62, 0.3);
+  --accent-color: #e8a55a;
+
+  /* ---- Semantic ------------------------------------------------------- */
+  /* `*-color` tints surfaces and icons; `*-ink` is the AA-safe text colour
+     for that state's soft background. */
+  --success-color: #5db872;
+  --success-ink: #356c42;
+  --success-soft: rgba(93, 184, 114, 0.12);
+  --success-border: rgba(93, 184, 114, 0.3);
+  --warning-color: #d4a017;
+  --warning-ink: #7a5b0d;
+  --warning-soft: rgba(212, 160, 23, 0.12);
+  --danger-color: #c64545;
+  --danger-ink: #8f2828;
+  /* A destructive button is a fill carrying white text, so it cannot reuse
+     --danger-ink: that stop inverts between themes. */
+  --danger-fill: #b03838;
+  --danger-fill-press: #8f2828;
+  --danger-soft: rgba(198, 69, 69, 0.12);
+  --danger-border: rgba(198, 69, 69, 0.3);
+  --info-color: #6c6a64;
+  --info-soft: rgba(108, 106, 100, 0.12);
+
+  --text-on-primary: #ffffff;
+  --text-on-danger: #ffffff;
+
+  /* ---- Surfaces ------------------------------------------------------- */
+  --surface-canvas: #faf9f5;
+  --surface-page: #f5f0e8;
+  --surface-card: #efe9de;
+  --surface-muted: #e8e0d2;
+  --surface-raised: #f5f0e8;
+  --surface-overlay: #ffffff;
+  --surface-translucent: rgba(250, 249, 245, 0.94);
+  --surface-dark: #181715;
+  --surface-dark-line: rgba(250, 249, 245, 0.14);
+  --text-on-dark: #faf9f5;
+  --text-on-dark-soft: #a09d96;
+
+  --border-subtle: #e6dfd8;
+  --border-strong: #d8cebf;
+  --control-border: #d0c5b7;
+  --control-border-hover: #a9583e;
+
+  /* ---- Text ----------------------------------------------------------- */
+  /* Ratios below are the worst case across the cream surfaces, i.e. measured
+     on --surface-card, not on the lighter canvas. Every stop here clears AA for
+     body text, so there is no rung that needs a size caveat at the call site. */
+  --text-primary: #141413; /* 14.5:1 */
+  --text-regular: #3d3d3a; /* 8.6:1  */
+  --text-secondary: #615f5a; /* 6.05:1 */
+  /* Disabled controls sit on --surface-muted, which is darker than the canvas;
+     --text-secondary only reaches 4.13:1 there. */
+  --text-disabled: #5c5a55; /* 5.26:1 on --surface-muted */
+
+  /* ---- Depth (colour-block first, shadow rare) ------------------------ */
+  --shadow-card: 0 1px 3px rgba(20, 20, 19, 0.04), 0 12px 32px rgba(20, 20, 19, 0.06);
+  --shadow-raised: 0 2px 5px rgba(20, 20, 19, 0.05), 0 18px 42px rgba(20, 20, 19, 0.08);
+  --shadow-color: rgba(20, 20, 19, 0.08);
+  --overlay-scrim: rgba(20, 20, 19, 0.45);
+
+  /* ---- Component-scoped ----------------------------------------------- */
+  --chart-grid: rgba(20, 20, 19, 0.08);
+  --chart-area-fill: rgba(204, 120, 92, 0.14);
+  --media-preview-bg: rgba(20, 20, 19, 0.035);
+  --scrollbar-thumb: #d8cebf;
+  --scrollbar-thumb-hover: #b8ac9a;
+  --share-content-height: 240px;
+
+  /* ---- Element Plus theme bridge -------------------------------------- */
+  --el-color-primary: var(--primary-strong);
+  --el-color-primary-light-3: #c06f56;
+  --el-color-primary-light-5: #d49881;
+  --el-color-primary-light-7: #e6c0b0;
+  --el-color-primary-light-8: #f0d6cb;
+  --el-color-primary-light-9: var(--primary-soft);
+  --el-color-primary-dark-2: var(--primary-fill-press);
+  --el-border-radius-base: var(--radius-md);
+  --el-bg-color: var(--surface-card);
+  --el-bg-color-page: var(--surface-canvas);
+  --el-bg-color-overlay: var(--surface-overlay);
+  --el-fill-color: var(--surface-muted);
+  --el-fill-color-light: var(--surface-raised);
+  --el-fill-color-lighter: var(--surface-page);
+  --el-fill-color-extra-light: var(--surface-page);
+  --el-fill-color-dark: var(--border-subtle);
+  --el-fill-color-blank: var(--surface-card);
+  --el-border-color: var(--border-subtle);
+  --el-border-color-light: var(--border-subtle);
+  --el-border-color-lighter: var(--border-subtle);
+  --el-border-color-extra-light: var(--border-subtle);
+  --el-border-color-dark: var(--border-strong);
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-regular);
+  --el-text-color-secondary: var(--text-secondary);
+  --el-text-color-placeholder: var(--text-secondary);
+  --el-text-color-disabled: var(--text-disabled);
+  --el-mask-color: var(--overlay-scrim);
+  --el-mask-color-extra-light: color-mix(in srgb, var(--overlay-scrim) 45%, transparent);
+}
+
+html.dark {
+  color-scheme: dark;
+
+  --primary-color: #cc785c;
+  --primary-strong: #a9583e;
+  --primary-fill-press: #8f462f;
+  /* Inverted for dark: the coral that carries text has to be lighter than the
+     surface, not darker. 5.84:1 on a 16% coral tint over --surface-card. */
+  --primary-ink: #e0a48e;
+  --primary-soft: rgba(204, 120, 92, 0.16);
+  --primary-border: rgba(204, 120, 92, 0.35);
+  --accent-color: #e8a55a;
+
+  --success-color: #5db872;
+  --success-ink: #7dd491;
+  --success-soft: rgba(93, 184, 114, 0.14);
+  --success-border: rgba(93, 184, 114, 0.35);
+  --warning-color: #d4a017;
+  --warning-ink: #e8bc45;
+  --warning-soft: rgba(212, 160, 23, 0.14);
+  --danger-color: #e87070;
+  --danger-ink: #ff9191;
+  --danger-fill: #b03838;
+  --danger-fill-press: #8f2828;
+  --danger-soft: rgba(224, 91, 91, 0.14);
+  --danger-border: rgba(224, 91, 91, 0.35);
+  --info-color: #a09d96;
+  --info-soft: rgba(160, 157, 150, 0.14);
+
+  --surface-canvas: #181715;
+  --surface-page: #1f1e1b;
+  --surface-card: #252320;
+  --surface-muted: #1f1e1b;
+  --surface-raised: #2a2825;
+  --surface-overlay: #252320;
+  --surface-translucent: rgba(24, 23, 21, 0.94);
+  --surface-dark: #0f0e0d;
+  --surface-dark-line: rgba(250, 249, 245, 0.12);
+
+  --border-subtle: #2d2b27;
+  --border-strong: #3d3a34;
+  --control-border: #423f39;
+  --control-border-hover: #cc785c;
+
+  /* Measured on --surface-card (#252320). */
+  --text-primary: #faf9f5; /* 14.9:1 */
+  --text-regular: #dfdeda; /* 11.6:1 */
+  --text-secondary: #a09d96; /* 5.79:1 */
+  --text-disabled: #a09d96; /* 6.16:1 on --surface-muted */
+
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3), 0 14px 36px rgba(0, 0, 0, 0.25);
+  --shadow-raised: 0 2px 6px rgba(0, 0, 0, 0.35), 0 20px 48px rgba(0, 0, 0, 0.32);
+  --shadow-color: rgba(0, 0, 0, 0.5);
+  --overlay-scrim: rgba(0, 0, 0, 0.72);
+
+  --chart-grid: rgba(250, 249, 245, 0.08);
+  --chart-area-fill: rgba(204, 120, 92, 0.16);
+  --media-preview-bg: rgba(255, 255, 255, 0.04);
+  --scrollbar-thumb: #383530;
+  --scrollbar-thumb-hover: #4e4a43;
+
+  --el-color-primary: var(--primary-color);
+  --el-color-primary-light-3: #db8a6e;
+  --el-color-primary-light-5: #e6a58f;
+  --el-color-primary-light-7: #f0c3b3;
+  --el-color-primary-light-8: #f7ddd4;
+  --el-color-primary-light-9: var(--primary-soft);
+  --el-color-primary-dark-2: var(--primary-fill-press);
+}

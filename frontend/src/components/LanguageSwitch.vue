@@ -42,11 +42,11 @@ const selectedLocale = computed({
   display: inline-flex;
   height: 38px;
   align-items: center;
-  gap: 4px;
-  padding-left: 10px;
+  gap: var(--space-3xs);
+  padding-left: var(--space-xs);
   border: 1px solid var(--control-border);
   border-radius: var(--radius-md);
-  background: var(--surface-card-solid);
+  background: var(--surface-card);
   color: var(--text-secondary);
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
@@ -63,7 +63,7 @@ const selectedLocale = computed({
 
 .language-icon {
   flex: 0 0 auto;
-  font-size: 16px;
+  font-size: var(--fs-title-sm);
 }
 
 .language-select {
@@ -72,7 +72,7 @@ const selectedLocale = computed({
 
 .language-select :deep(.el-select__wrapper) {
   min-height: 36px !important;
-  padding-left: 4px !important;
+  padding-left: var(--space-3xs) !important;
   border: 0 !important;
   background: transparent !important;
 }

@@ -12,7 +12,7 @@
           :max="currentMax"
           :aria-label="t('a11y.expireValue')"
           :aria-describedby="`${idPrefix}-expire-limit`"
-          controls-position="right"
+          :controls-position="stepperPosition"
           class="number-input"
         />
         <el-select
@@ -34,23 +34,29 @@
     </div>
 
     <div
-      :class="['setting-row', 'setting-row--guide', { 'setting-row--warning': showSecurityTip }]"
+      class="setting-row"
       role="note"
       :aria-labelledby="`${idPrefix}-guide-label`"
     >
-      <div :id="`${idPrefix}-guide-label`" class="setting-title">
+      <div
+        :id="`${idPrefix}-guide-label`"
+        :class="['setting-title', { 'setting-title--warning': showSecurityTip }]"
+      >
         <el-icon class="label-icon" aria-hidden="true"><Lock /></el-icon>
         {{ t(showSecurityTip ? 'upload.securityTipTitle' : 'upload.shareGuideTitle') }}
       </div>
-      <p class="share-guide">
-        {{ t(showSecurityTip ? 'upload.securityTip' : 'upload.shareGuide') }}
-      </p>
+      <div :class="['setting-note', { 'setting-note--warning': showSecurityTip }]">
+        <p class="setting-note-text">
+          {{ t(showSecurityTip ? 'upload.securityTip' : 'upload.shareGuide') }}
+        </p>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, watch } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { Clock, Lock } from '@element-plus/icons-vue'
 import { useI18n } from '@/i18n'
 import { maxExpireValue, type ExpireStyle } from '@/utils/expiration'
@@ -65,6 +71,11 @@ const props = defineProps<{
 const expireValue = defineModel<number>('expireValue', { required: true })
 const expireStyle = defineModel<ExpireStyle>('expireStyle', { required: true })
 const { t } = useI18n()
+
+// Stacked steppers are 32x15 on touch, under the 24x24 floor in WCAG 2.5.8.
+// The split layout gives each control the full 40px height of the field.
+const isCompact = useMediaQuery('(max-width: 767px)')
+const stepperPosition = computed(() => (isCompact.value ? '' : 'right'))
 
 const supportedStyles: ExpireStyle[] = ['minute', 'hour', 'day', 'week']
 const availableStyles = computed(() => {
@@ -85,14 +96,16 @@ watch([availableStyles, currentMax], ([styles, maximum]) => {
 </script>
 
 <style scoped>
+/* Two ruled entries on the sheet: the expiry control and the standing note.
+   Both fill their own track, so the control and the note are the same width by
+   construction. Capping them narrower and pushing them to opposite edges left
+   a void down the middle of the panel and read as two mismatched blocks. */
 .upload-settings-panel {
-  --settings-control-width: 300px;
   display: grid;
-  margin-bottom: 22px;
-  padding: 20px 0 0;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
-  gap: 10px 24px;
+  gap: var(--space-md) var(--space-lg);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding-top: var(--space-md);
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -100,45 +113,43 @@ watch([availableStyles, currentMax], ([styles, maximum]) => {
   display: grid;
   min-width: 0;
   align-content: start;
-  gap: 10px;
+  gap: var(--space-2xs);
   text-align: left;
-}
-
-.setting-row--guide {
-  width: min(100%, var(--settings-control-width));
-  max-width: 100%;
-  justify-self: end;
 }
 
 .setting-title {
   display: flex;
   min-height: 20px;
   align-items: center;
-  gap: 8px;
-  color: var(--glass-text-regular);
-  font-size: 13px;
+  gap: var(--space-3xs);
+  color: var(--text-secondary);
+  font-size: var(--fs-caption-up);
   font-weight: 600;
+  letter-spacing: var(--tracking-caption-up);
   line-height: 20px;
-  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .label-icon {
   flex: 0 0 auto;
-  color: var(--primary-color);
+  color: var(--text-secondary);
 }
 
-.setting-row--warning .setting-title,
-.setting-row--warning .label-icon {
-  color: var(--warning-color);
+.setting-title--warning {
+  color: var(--warning-ink);
+}
+
+.setting-title--warning .label-icon {
+  color: var(--warning-ink);
 }
 
 .expire-inputs {
   display: grid;
-  width: min(100%, var(--settings-control-width));
+  width: 100%;
   min-width: 0;
-  grid-template-columns: minmax(0, 1.15fr) minmax(96px, 1fr);
   align-items: stretch;
-  gap: 12px;
+  gap: var(--space-2xs);
+  grid-template-columns: minmax(0, 1.15fr) minmax(96px, 1fr);
 }
 
 .number-input,
@@ -152,47 +163,44 @@ watch([availableStyles, currentMax], ([styles, maximum]) => {
   min-height: 40px;
 }
 
-.share-guide {
+/* Matches the field height next to it so a one-line note sits level with the
+   expiry control instead of reading as a shorter, lighter block. */
+.setting-note {
   display: flex;
+  box-sizing: border-box;
   width: 100%;
-  max-width: 100%;
   min-height: 40px;
-  margin: 0;
-  padding: 7px 12px;
   align-items: center;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--surface-page);
-  color: var(--glass-text-secondary);
-  font-size: 13px;
-  line-height: 1.45;
+  padding: var(--space-2xs) var(--space-xs);
+  border-left: 2px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: var(--fs-body-sm);
+  line-height: var(--leading-title);
 }
 
-.setting-row--warning .share-guide {
-  border-color: var(--warning-border);
+.setting-note-text {
+  margin: 0;
+  font-size: var(--fs-body-sm);
+  line-height: 1.4;
+  text-align: left;
+}
+
+.setting-note--warning {
+  padding: var(--space-2xs) var(--space-sm);
+  border: 1px solid var(--warning-border);
+  border-left: 3px solid var(--warning-color);
+  border-radius: var(--radius-md);
   background: var(--warning-soft);
-  color: var(--warning-color);
+  color: var(--warning-ink);
 }
 
+.setting-note--warning .setting-note-text {
+  color: var(--warning-ink);
+}
 
-@media (max-width: 640px) {
+@media (max-width: 767px) {
   .upload-settings-panel {
     grid-template-columns: minmax(0, 1fr);
-    gap: 18px;
-  }
-
-  .expire-inputs,
-  .share-guide {
-    width: 100%;
-  }
-
-  .setting-row--guide {
-    width: 100%;
-    justify-self: stretch;
-  }
-
-  .expire-inputs {
-    grid-template-columns: minmax(0, 1fr) minmax(96px, 112px);
   }
 }
 </style>

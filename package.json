@@ -1,6 +1,6 @@
 {
   "name": "r2filebox",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "private": true,
   "license": "LGPL-3.0-or-later",
   "engines": {
@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "icons:generate": "node scripts/generate-icons.mjs",
+    "screenshots": "node scripts/capture-screenshots.mjs",
     "build": "npm --prefix frontend ci && npm --prefix frontend run build",
     "deploy": "node scripts/deploy-worker.mjs",
     "deploy:dry-run": "npm run build && node scripts/deploy-worker.mjs --dry-run",
@@ -24,20 +25,21 @@
     "verify:config": "node scripts/verify-config.mjs",
     "verify:assets": "node scripts/verify-assets.mjs",
     "verify:i18n": "node scripts/verify-i18n.mjs",
-    "verify": "npm run verify:config && npm run verify:assets && npm run verify:i18n && npm run cf-typegen:check && npm run typecheck && npm run typecheck:test && npm run test:scripts && npm test",
+    "verify:selectors": "node scripts/verify-selectors.mjs",
+    "verify": "npm run verify:config && npm run verify:assets && npm run verify:i18n && npm run verify:selectors && npm run cf-typegen:check && npm run typecheck && npm run typecheck:test && npm run test:scripts && npm test",
     "hash-password": "node worker/scripts/hash-password.mjs"
   },
   "dependencies": {
-    "hono": "^4.13.1"
+    "hono": "^4.13.8"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "0.20.3",
-    "@cloudflare/workers-types": "5.20260810.1",
-    "@types/node": "^26.2.0",
-    "sharp": "0.35.3",
+    "@cloudflare/vitest-pool-workers": "0.22.0",
+    "@cloudflare/workers-types": "5.20260922.1",
+    "@types/node": "^26.6.2",
+    "sharp": "0.35.4",
     "typescript": "~5.9.3",
-    "vitest": "4.1.10",
-    "wrangler": "4.120.0"
+    "vitest": "4.1.11",
+    "wrangler": "4.136.2"
   },
   "cloudflare": {
     "bindings": {

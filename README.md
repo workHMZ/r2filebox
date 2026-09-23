@@ -15,11 +15,14 @@
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/workHMZ/r2filebox)
 
-| | |
+| 用户端 · 分享与取件 | 管理端 · 监控与运维 |
 |:---:|:---:|
-| [![上传文件](./docs/screenshots/home-file-share.png)](./docs/screenshots/home-file-share.png)<br>放一个文件进去 | [![输入取件码](./docs/screenshots/home-get-share.png)](./docs/screenshots/home-get-share.png)<br>对方输入取件码 |
-| [![分享已创建](./docs/screenshots/share-created.png)](./docs/screenshots/share-created.png)<br>取件码 · 链接 · 二维码 | [![取件页](./docs/screenshots/pickup-file.png)](./docs/screenshots/pickup-file.png)<br>取件页，可直接预览 |
-| [![管理后台](./docs/screenshots/admin-dashboard.png)](./docs/screenshots/admin-dashboard.png)<br>管理后台 | [![维护与存储](./docs/screenshots/admin-maintenance.png)](./docs/screenshots/admin-maintenance.png)<br>维护与存储 |
+| [![上传文件](./docs/screenshots/home-file-share.png)](./docs/screenshots/home-file-share.png) | [![管理后台](./docs/screenshots/admin-dashboard.png)](./docs/screenshots/admin-dashboard.png) |
+| 放一个文件进去（中文 · 浅色） | 系统仪表盘（English · Light） |
+| [![分享已创建](./docs/screenshots/share-created.png)](./docs/screenshots/share-created.png) | [![文件管理](./docs/screenshots/admin-files.png)](./docs/screenshots/admin-files.png) |
+| 取件凭据 · 二维码（日本語 · ライト） | 文件与凭据管理（中文 · 深色） |
+| [![取件页](./docs/screenshots/pickup-file.png)](./docs/screenshots/pickup-file.png) | [![维护与存储](./docs/screenshots/admin-maintenance.png)](./docs/screenshots/admin-maintenance.png) |
+| 取件提取 · 在线预览（English · Dark） | 系统维护与存储架构（日本語 · ダーク） |
 
 ---
 

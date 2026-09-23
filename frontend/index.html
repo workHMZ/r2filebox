@@ -6,8 +6,25 @@
     <link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg?v=2" />
     <link rel="apple-touch-icon" sizes="192x192" href="/app-icon-192.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#086f68" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#faf9f5" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- Fonts are self-hosted (see src/styles/_fonts.scss): the app CSP keeps
+         style-src and font-src at 'self', so a Google Fonts link would be
+         blocked and every face would fall back to a system stack. -->
+    <link
+      rel="preload"
+      href="/fonts/plus-jakarta-sans-v12-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/cormorant-garamond-v21-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <script src="/theme-init.js"></script>
     <title>R2FileBox</title>
   </head>

@@ -99,7 +99,7 @@ export async function reconcileUploadCleanupJob(
   return { aborted: true, deletedObject: false }
 }
 
-export function isMissingMultipartUploadError(error: unknown): boolean {
+function isMissingMultipartUploadError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false
   const candidate = error as { code?: unknown; name?: unknown; message?: unknown }
   if (candidate.code === 10024 || candidate.code === '10024') return true

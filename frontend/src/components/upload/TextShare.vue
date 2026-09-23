@@ -1,9 +1,9 @@
 <template>
-  <form class="text-share-container" @submit.prevent="handleShare">
+  <form class="text-entry-form" @submit.prevent="handleShare">
     <div class="text-input-area">
-      <label class="sr-only" for="text-share-content">{{ t('a11y.textContent') }}</label>
+      <label class="sr-only" for="text-entry-content">{{ t('a11y.textContent') }}</label>
       <el-input
-        id="text-share-content"
+        id="text-entry-content"
         v-model="textContent"
         type="textarea"
         :rows="8"
@@ -18,7 +18,7 @@
     </div>
 
     <ShareSettings
-      id-prefix="text-share"
+      id-prefix="text-entry"
       v-model:expire-value="form.expire_value"
       v-model:expire-style="form.expire_style"
       :max-expire-hours="maxExpireHours"
@@ -37,7 +37,7 @@
       type="primary"
       size="large"
       native-type="submit"
-      class="text-share-submit"
+      class="text-entry-submit"
       :loading="sharing"
       :aria-busy="sharing"
       :disabled="!textContent.trim() || textTooLarge || (requiresTurnstile && !turnstileToken)"
@@ -167,40 +167,39 @@ const handleShare = async () => {
 </script>
 
 <style scoped>
-.text-share-container {
-  padding: 0;
+.text-entry-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
 }
 
-
-.text-input-area {
-  margin-bottom: 22px;
+.text-area :deep(.el-textarea__inner) {
+  height: var(--share-content-height) !important;
+  min-height: var(--share-content-height) !important;
+  padding: var(--space-sm) !important;
+  border-radius: var(--radius-lg) !important;
+  background: var(--surface-page) !important;
+  font-family: var(--font-code) !important;
+  font-size: var(--fs-body-sm) !important;
+  line-height: var(--leading-body) !important;
 }
 
 .text-size-hint {
-  margin: 6px 2px 0;
+  margin-top: var(--space-3xs);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-family: var(--font-code);
+  font-size: var(--fs-caption-up);
   text-align: right;
 }
 
 .text-size-hint.is-over {
-  color: var(--danger-color);
+  color: var(--danger-ink);
+  font-weight: 600;
 }
 
-.text-area :deep(.el-textarea__inner) {
-  height: var(--share-content-height, 230px) !important;
-  min-height: var(--share-content-height, 230px) !important;
-  padding: 16px !important;
-  font-size: 16px !important;
-  line-height: 1.7 !important;
-}
-
-.text-share-submit {
+.text-entry-submit {
   width: 100%;
-  height: 52px;
-  font-size: 16px;
-  font-weight: 700;
-  border-radius: var(--radius-md);
+  min-height: 52px;
+  font-size: var(--fs-title-sm);
 }
-
 </style>

@@ -1,12 +1,10 @@
 <template>
-  <div class="home-container">
-    <div class="bg-decoration" aria-hidden="true"></div>
-
-    <div class="main-wrapper">
-      <header class="top-nav">
-        <div class="logo-section">
+  <div class="home-page">
+    <div class="ledger">
+      <header class="masthead">
+        <div class="masthead-brand">
           <AppLogo />
-          <div class="logo-text">
+          <div class="masthead-name">
             <h1>{{ configStore.siteName }}</h1>
             <p>{{ configStore.siteDescription }}</p>
           </div>
@@ -16,21 +14,28 @@
 
       <main
         id="main-content"
-        class="content-area glass-card"
+        class="sheet"
         tabindex="-1"
         aria-labelledby="home-main-title"
       >
-        <div class="intro-section">
-          <h2 id="home-main-title">{{ t('home.title') }}</h2>
+        <div class="lede">
+          <h2 id="home-main-title" class="display-type">{{ t('home.title') }}</h2>
           <p>{{ t('home.subtitle') }}</p>
         </div>
 
-        <el-tabs v-model="activeTab" class="function-tabs" @tab-click="tabChosenByUser = true">
+        <hr class="sheet-rule" />
+
+        <el-tabs
+          v-model="activeTab"
+          class="function-tabs"
+          :tab-position="tabPosition"
+          @tab-click="tabChosenByUser = true"
+        >
           <el-tab-pane v-if="fileShareEnabled" name="file" lazy>
             <template #label>
               <span class="tab-label">
-                <el-icon><Upload /></el-icon>
-                {{ t('home.tab.file') }}
+                <span class="tab-index" aria-hidden="true">{{ tabIndex('file') }}</span>
+                <span class="tab-name">{{ t('home.tab.file') }}</span>
               </span>
             </template>
             <FileUpload @success="handleShareSuccess" />
@@ -39,8 +44,8 @@
           <el-tab-pane v-if="textShareEnabled" name="text" lazy>
             <template #label>
               <span class="tab-label">
-                <el-icon><Document /></el-icon>
-                {{ t('home.tab.text') }}
+                <span class="tab-index" aria-hidden="true">{{ tabIndex('text') }}</span>
+                <span class="tab-name">{{ t('home.tab.text') }}</span>
               </span>
             </template>
             <TextShare @success="handleShareSuccess" />
@@ -49,8 +54,8 @@
           <el-tab-pane name="get" lazy>
             <template #label>
               <span class="tab-label">
-                <el-icon><Download /></el-icon>
-                {{ t('home.tab.get') }}
+                <span class="tab-index" aria-hidden="true">{{ tabIndex('get') }}</span>
+                <span class="tab-name">{{ t('home.tab.get') }}</span>
               </span>
             </template>
             <GetShare />
@@ -58,20 +63,16 @@
         </el-tabs>
       </main>
 
-      <footer class="footer-section">
-        <el-alert type="info" :closable="false">
-          <template #title>
-            <p>{{ t('home.legal') }}</p>
-          </template>
-        </el-alert>
+      <footer class="colophon">
+        <p class="colophon-legal">{{ t('home.legal') }}</p>
         <a
-          class="github-link"
+          class="colophon-link"
           href="https://github.com/workHMZ/r2filebox"
           target="_blank"
           rel="noopener noreferrer"
           :aria-label="t('a11y.githubNewWindow')"
         >
-          <el-icon><Link /></el-icon>
+          <el-icon aria-hidden="true"><Link /></el-icon>
           {{ t('common.github') }}
         </a>
       </footer>
@@ -80,69 +81,67 @@
     <el-dialog
       v-model="showShareDialog"
       :title="t('share.success.title')"
-      width="560px"
+      width="520px"
       :close-on-click-modal="false"
       @closed="handleDialogClosed"
     >
-      <div class="share-result">
-        <el-result icon="success" :title="t('share.success.title')" :sub-title="t('share.success.subtitle')">
-          <template #extra>
-            <div class="share-code-card">
-              <div class="code-header">
-                <el-icon><Key /></el-icon>
-                <span>{{ t('share.code.label') }}</span>
-              </div>
-              <div class="code-body">
-                <span class="code-text" :title="t('a11y.selectShareCode')">{{ shareCode }}</span>
-                <ActionFeedbackButton
-                  type="primary"
-                  size="small"
-                  :icon="CopyDocument"
-                  :success="codeCopied"
-                  @click="copyShareCode"
-                >
-                  {{ t('share.code.copy') }}
-                </ActionFeedbackButton>
-              </div>
-            </div>
+      <div class="receipt">
+        <p class="receipt-lede">{{ t('share.success.subtitle') }}</p>
 
-            <div class="share-terms-card">
-              <div class="share-term">
-                <span class="share-term-key">{{ t('share.success.expire') }}</span>
-                <span class="share-term-val">{{ shareExpireText }}</span>
-              </div>
-              <div class="share-term">
-                <span class="share-term-key">{{ t('share.success.maxDownloads') }}</span>
-                <span class="share-term-val">{{ shareMaxDownloadsText }}</span>
-              </div>
-            </div>
-
-            <div v-if="qrCodeDataUrl" class="qrcode-section">
-              <img :src="qrCodeDataUrl" alt="" aria-hidden="true" class="qrcode-image" />
-              <p class="qrcode-tip">{{ t('share.qr.tip') }}</p>
-            </div>
-
-            <div class="share-link-box">
-              <el-input
-                v-model="shareUrl"
-                readonly
-                size="large"
-                :aria-label="t('a11y.shareLink')"
+        <div class="stub stub--perforated">
+          <div class="stub-code">
+            <span class="eyebrow stub-eyebrow">{{ t('share.code.label') }}</span>
+            <div class="stub-code-row">
+              <span class="stub-code-value" :title="t('a11y.selectShareCode')">{{ shareCode }}</span>
+              <ActionFeedbackButton
+                type="primary"
+                size="small"
+                :icon="CopyDocument"
+                :success="codeCopied"
+                @click="copyShareCode"
               >
-                <template #append>
-                  <ActionFeedbackButton
-                    type="primary"
-                    :icon="CopyDocument"
-                    :success="urlCopied"
-                    @click="copyShareUrl"
-                  >
-                    {{ t('share.link.copy') }}
-                  </ActionFeedbackButton>
-                </template>
-              </el-input>
+                {{ t('share.code.copy') }}
+              </ActionFeedbackButton>
             </div>
+          </div>
+
+          <dl class="stub-terms">
+            <div class="stub-term">
+              <dt>{{ t('share.success.expire') }}</dt>
+              <dd>{{ shareExpireText }}</dd>
+            </div>
+            <div class="stub-term">
+              <dt>{{ t('share.success.maxDownloads') }}</dt>
+              <dd>{{ shareMaxDownloadsText }}</dd>
+            </div>
+          </dl>
+
+          <div v-if="qrCodeDataUrl" class="receipt-qr">
+            <div class="receipt-qr-card">
+              <img :src="qrCodeDataUrl" alt="" aria-hidden="true" class="receipt-qr-image" />
+            </div>
+            <p class="receipt-qr-tip">{{ t('share.qr.tip') }}</p>
+          </div>
+        </div>
+
+        <el-input
+          v-model="shareUrl"
+          readonly
+          size="large"
+          class="receipt-link"
+          :aria-label="t('a11y.shareLink')"
+        >
+          <template #append>
+            <ActionFeedbackButton
+              type="primary"
+              :icon="CopyDocument"
+              :success="urlCopied"
+              @click="copyShareUrl"
+            >
+              {{ t('share.link.copy') }}
+            </ActionFeedbackButton>
           </template>
-        </el-result>
+        </el-input>
       </div>
     </el-dialog>
   </div>
@@ -151,15 +150,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useMediaQuery } from '@vueuse/core'
 import { ElMessage } from 'element-plus'
-import {
-  CopyDocument,
-  Document,
-  Download,
-  Key,
-  Link,
-  Upload,
-} from '@element-plus/icons-vue'
+import { CopyDocument, Link } from '@element-plus/icons-vue'
 
 import { useConfigStore } from '@/stores/config'
 import ActionFeedbackButton from '@/components/ActionFeedbackButton.vue'
@@ -184,6 +177,21 @@ const textShareEnabled = computed(() => {
   const config = configStore.config
   return Boolean(config && config.openUpload && config.enableTextShare !== false)
 })
+
+// One list drives the rail order, the ledger numerals and the fallback when a
+// share mode is switched off in admin, so they can never disagree.
+const enabledTabs = computed(() => [
+  ...(fileShareEnabled.value ? ['file'] : []),
+  ...(textShareEnabled.value ? ['text'] : []),
+  'get',
+])
+const tabIndex = (name: string) =>
+  String(enabledTabs.value.indexOf(name) + 1).padStart(2, '0')
+
+// The rail reads as a bound index on wide screens and as a tab row on phones.
+const isCompact = useMediaQuery('(max-width: 767px)')
+const tabPosition = computed(() => (isCompact.value ? 'top' : 'left'))
+
 const activeTab = ref('get')
 const tabChosenByUser = ref(false)
 const showShareDialog = ref(false)
@@ -208,19 +216,19 @@ const shareMaxDownloadsText = computed(() => (
 const route = useRoute()
 
 watch(
-  [fileShareEnabled, textShareEnabled, () => route.path],
-  ([fileEnabled, textEnabled, path]) => {
-    const isShareTarget = path === '/share-target'
-    if (isShareTarget && textEnabled) {
+  [enabledTabs, () => route.path],
+  ([tabs, path]) => {
+    if (path === '/share-target' && tabs.includes('text')) {
       activeTab.value = 'text'
       tabChosenByUser.value = true
       return
     }
 
-    const enabledTabs = [fileEnabled && 'file', textEnabled && 'text', 'get'].filter(Boolean)
-    if (!enabledTabs.includes(activeTab.value)) activeTab.value = enabledTabs[0] as string
-    if (!tabChosenByUser.value && activeTab.value === 'get' && fileEnabled) activeTab.value = 'file'
-    else if (!tabChosenByUser.value && activeTab.value === 'get' && textEnabled) activeTab.value = 'text'
+    if (!tabs.includes(activeTab.value)) activeTab.value = tabs[0]
+    // Landing on "get" is only the default when nothing can be shared.
+    if (!tabChosenByUser.value && activeTab.value === 'get' && tabs.length > 1) {
+      activeTab.value = tabs[0]
+    }
   },
   { immediate: true },
 )
@@ -258,9 +266,11 @@ const handleShareSuccess = async (result: ShareCreatedResult) => {
     const generatedQrCode = await QRCode.toDataURL(qrData, {
       width: 180,
       margin: 2,
+      // Scanners need a light quiet zone, so the code stays ink-on-paper even
+      // though it sits inside the dark receipt.
       color: {
-        dark: '#182229',
-        light: '#ffffff',
+        dark: '#141413',
+        light: '#faf9f5',
       },
     })
     if (version === qrGenerationVersion) qrCodeDataUrl.value = generatedQrCode
@@ -272,11 +282,6 @@ const handleShareSuccess = async (result: ShareCreatedResult) => {
 
 const { active: codeCopied, reset: resetCodeCopied, show: showCodeCopied } = useActionFeedback()
 const { active: urlCopied, reset: resetUrlCopied, show: showUrlCopied } = useActionFeedback()
-
-const resetCopyFeedback = () => {
-  resetCodeCopied()
-  resetUrlCopied()
-}
 
 const copyShareUrl = async () => {
   try {
@@ -298,114 +303,137 @@ const copyShareCode = async () => {
   }
 }
 
-const focusActiveShareTab = () => {
+const handleDialogClosed = () => {
+  resetCodeCopied()
+  resetUrlCopied()
   document
     .querySelector<HTMLElement>('.function-tabs .el-tabs__item[aria-selected="true"]')
     ?.focus()
 }
-
-const handleDialogClosed = () => {
-  resetCopyFeedback()
-  focusActiveShareTab()
-}
-
 </script>
 
 <style scoped>
-.home-container {
-  position: relative;
+/* viewport-fit=cover puts the page under the status bar and the home
+   indicator, so the outer padding has to clear both. env() resolves to 0px
+   everywhere else, which leaves the desktop rhythm untouched. */
+/* viewport-fit=cover puts the page under the status bar and the home
+   indicator. The safe-area guard is written once here and the breakpoints
+   only retune the variables — declaring `padding` again in a media query
+   would silently drop the guard on exactly the viewports that need it. */
+.home-page {
+  --page-inset-top: var(--space-lg);
+  --page-inset-bottom: var(--space-md);
   min-height: 100vh;
   min-height: 100dvh;
+  padding-block: max(var(--page-inset-top), env(safe-area-inset-top, 0px))
+    max(var(--page-inset-bottom), env(safe-area-inset-bottom, 0px));
+  padding-inline: 0;
   overflow-x: hidden;
 }
 
-.main-wrapper {
-  position: relative;
-  z-index: 1;
+.ledger {
   display: flex;
-  width: min(100% - 40px, 960px);
-  min-height: 100vh;
-  min-height: 100dvh;
-  margin: 0 auto;
-  padding: 28px 0 24px;
+  min-height: calc(100dvh - var(--space-xl));
   flex-direction: column;
-  gap: 20px;
+  gap: var(--space-md);
 }
 
-.top-nav {
+/* ---- Masthead ---------------------------------------------------------- */
+.masthead {
   display: flex;
-  min-height: 54px;
+  min-height: 48px;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  padding: 0 2px;
+  gap: var(--space-sm);
 }
 
-.logo-section {
+.masthead-brand {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-xs);
 }
 
-.logo-text {
+.masthead-name {
   min-width: 0;
 }
 
-.logo-text h1 {
+.masthead-name h1 {
   overflow: hidden;
-  margin: 0;
   color: var(--text-primary);
-  font-size: 18px;
-  font-weight: 760;
-  letter-spacing: 0;
-  line-height: 1.3;
+  font-family: var(--font-display);
+  font-size: var(--fs-title-lg);
+  font-weight: 600;
+  letter-spacing: var(--tracking-display);
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.logo-text p {
+.masthead-name p {
   overflow: hidden;
-  margin: 2px 0 0;
+  margin-top: 2px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-family: var(--font-code);
+  font-size: var(--fs-caption-up);
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.content-area {
+/* ---- Lede -------------------------------------------------------------- */
+.sheet {
+  display: flex;
   flex: 1;
-  padding: 30px 34px 34px;
-  border-top: 3px solid var(--primary-color);
+  flex-direction: column;
+  gap: var(--space-md);
+  padding-top: var(--space-xs);
 }
 
-.intro-section {
-  margin-bottom: 24px;
-  text-align: left;
-}
-
-.intro-section h2 {
-  margin: 0 0 5px;
+/* Display measure is per-script work: a line of hanzi carries far more meaning
+   per em than a line of Latin, and the two scripts want different line lengths
+   for the same headline. The app sets <html lang>, so :lang() can carry that.
+   `balance` is deliberately avoided — on a 15-glyph line it ties between a
+   7/8 and an 8/7 split and Chromium builds resolve the tie differently, which
+   put the break mid-word. These measures are arithmetic instead. */
+.lede h2 {
+  max-width: 18em;
   color: var(--text-primary);
-  font-size: 26px;
-  font-weight: 760;
-  letter-spacing: 0;
-  line-height: 1.3;
+  font-size: var(--fs-display-md);
+  line-break: strict;
+  overflow-wrap: normal;
+  text-wrap: pretty;
 }
 
-.intro-section p {
-  margin: 0;
+/* Eight hanzi per line (advance is ~0.98em), so the break lands after a word. */
+:lang(zh) .lede h2 {
+  max-width: 8.3em;
+}
+
+/* Kana runs longer for the same sentence; below ~9em it orphans its last word. */
+:lang(ja) .lede h2 {
+  max-width: 9.5em;
+}
+
+.lede p {
+  max-width: 62ch;
+  margin-top: var(--space-xs);
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: var(--fs-body-sm);
 }
 
+/* ---- Tab rail ---------------------------------------------------------- */
 .function-tabs {
-  min-height: 420px;
+  flex: 1;
 }
 
+/* Element Plus gives a left rail no intrinsic width, so the column has to be
+   bounded here. The floor keeps short labels (zh/en) from cramping the rule,
+   the ceiling stops a long localisation from eating the workspace. */
 .function-tabs :deep(.el-tabs__header) {
-  margin: 0 0 26px;
+  min-width: 164px;
+  max-width: 232px;
+  margin: 0 var(--space-lg) 0 0;
 }
 
 .function-tabs :deep(.el-tabs__nav-wrap::after),
@@ -413,281 +441,298 @@ const handleDialogClosed = () => {
   display: none;
 }
 
-.function-tabs :deep(.el-tabs__nav-scroll) {
-  padding: 4px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--surface-muted);
-}
-
 .function-tabs :deep(.el-tabs__nav) {
-  display: grid;
-  width: 100%;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  float: none;
+  border: 0;
 }
 
 .function-tabs :deep(.el-tabs__item) {
-  height: 40px;
-  padding: 0 12px !important;
-  border-radius: var(--radius-md);
+  height: auto;
+  padding: var(--space-xs) var(--space-sm) !important;
+  white-space: normal;
+  border-bottom: 1px solid var(--border-subtle);
+  border-left: 2px solid transparent;
   color: var(--text-secondary) !important;
-  font-size: 14px !important;
-  font-weight: 600 !important;
+  font-size: var(--fs-body-sm) !important;
+  font-weight: 500 !important;
+  justify-content: flex-start;
+  text-align: left;
+  transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 }
 
 .function-tabs :deep(.el-tabs__item.is-active) {
-  background: var(--surface-card-solid);
-  color: var(--primary-color) !important;
-  box-shadow: var(--glass-shadow);
+  border-left-color: var(--primary-color);
+  background: var(--surface-page);
+  color: var(--text-primary) !important;
+  font-weight: 600 !important;
+}
+
+.function-tabs :deep(.el-tabs__content) {
+  overflow: visible;
 }
 
 .tab-label {
-  display: inline-flex;
+  display: grid;
   min-width: 0;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
+  align-items: baseline;
+  gap: var(--space-xs);
+  grid-template-columns: auto minmax(0, 1fr);
+  line-height: var(--leading-title);
 }
 
-.share-result {
-  padding: 0;
+.tab-index {
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-size: var(--fs-title-md);
+  font-variant-numeric: lining-nums tabular-nums;
+  font-weight: 500;
+  letter-spacing: var(--tracking-display);
+  transition: color 0.18s ease;
 }
 
-.share-code-card {
-  display: flex;
-  width: 100%;
-  max-width: 460px;
-  box-sizing: border-box;
-  margin: 0 auto 20px;
-  padding: 16px 18px;
-  align-items: stretch;
-  flex-direction: column;
-  gap: 10px;
-  border: 1px solid var(--primary-border);
-  border-radius: var(--radius-lg);
-  background: var(--primary-soft);
+/* The active row is tinted, so the numeral steps one shade darker to keep
+   4.5:1 against it. */
+.is-active .tab-index {
+  color: var(--primary-ink);
 }
 
-.code-header {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 6px;
-  color: var(--primary-active);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.4;
-  white-space: nowrap;
-}
-
-.code-body {
-  display: flex;
+.tab-name {
   min-width: 0;
-  flex: 1 1 auto;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  line-break: strict;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
-.code-text {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--text-primary);
-  font-family: var(--font-accent);
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: 2px;
-  line-height: 1;
-  user-select: all;
-  cursor: pointer;
-  transition: opacity 0.2s ease;
-}
-
-.code-text:hover {
-  opacity: 0.88;
-}
-
-.code-body :deep(.el-button) {
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
-
-.share-terms-card {
-  display: flex;
-  width: 100%;
-  max-width: 460px;
-  box-sizing: border-box;
-  margin: 0 auto 20px;
-  padding: 12px 18px;
-  flex-direction: column;
-  gap: 8px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--surface-raised);
-}
-
-.share-term {
+/* ---- Colophon ---------------------------------------------------------- */
+.colophon {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--border-subtle);
 }
 
-.share-term-key {
+.colophon-legal {
+  max-width: 72ch;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-caption-up);
+  line-height: var(--leading-body);
 }
 
-.share-term-val {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--text-primary);
-  font-size: 13px;
-  font-weight: 700;
-  text-align: right;
-}
-
-.qrcode-section {
-  width: fit-content;
-  margin: 0 auto 20px;
-  padding: 10px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: #ffffff;
-}
-
-.qrcode-image {
-  display: block;
-  width: 180px;
-  height: 180px;
-  border-radius: var(--radius-sm);
-}
-
-.qrcode-tip {
-  margin: 7px 0 0;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
-.share-link-box {
-  max-width: 460px;
-  margin: 0 auto;
-}
-
-.footer-section {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 2px;
-}
-
-.footer-section :deep(.el-alert) {
-  flex: 1;
-  padding: 9px 12px !important;
-  background: var(--surface-translucent) !important;
-}
-
-.footer-section p {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
-.github-link {
+.colophon-link {
   display: inline-flex;
-  min-height: 36px;
+  min-height: 32px;
   flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
-  padding: 0 10px;
+  gap: var(--space-3xs);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-body-sm);
   font-weight: 600;
   transition: color 0.18s ease;
 }
 
-.github-link:hover {
-  color: var(--primary-color);
+.colophon-link:hover {
+  color: var(--primary-ink);
 }
 
-@media (max-width: 768px) {
-  .main-wrapper {
-    width: min(100% - 24px, 960px);
-    padding: 16px 0 18px;
-    gap: 14px;
+/* ---- Receipt dialog ---------------------------------------------------- */
+.receipt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.receipt-lede {
+  color: var(--text-secondary);
+  font-size: var(--fs-body-sm);
+}
+
+.stub {
+  /* The receipt is torn from the dialog sheet, not from the page floor. */
+  --stub-notch: var(--surface-overlay);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background: var(--surface-page);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+}
+
+.stub-eyebrow {
+  color: var(--text-secondary);
+}
+
+.stub-code {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
+.stub-code-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.stub-code-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: var(--font-code);
+  font-size: var(--fs-display-sm);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  line-height: 1.1;
+  user-select: all;
+}
+
+.stub-terms {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  padding-top: var(--space-sm);
+  border-top: 1px dashed var(--border-subtle);
+}
+
+.stub-term {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-xs);
+}
+
+.stub-term dt {
+  color: var(--text-secondary);
+  font-size: var(--fs-caption);
+}
+
+.stub-term dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  text-align: right;
+}
+
+.receipt-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2xs);
+  padding-top: var(--space-sm);
+  border-top: 1px dashed var(--border-subtle);
+}
+
+.receipt-qr-card {
+  display: inline-flex;
+  padding: var(--space-2xs);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: #ffffff;
+}
+
+.receipt-qr-image {
+  display: block;
+  width: 148px;
+  height: 148px;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: #ffffff;
+}
+
+.receipt-qr-tip {
+  color: var(--text-secondary);
+  font-size: var(--fs-caption-up);
+}
+
+/* ---- Breakpoints ------------------------------------------------------- */
+@media (max-width: 767px) {
+  .home-page {
+    --page-inset-top: var(--space-sm);
+    --page-inset-bottom: var(--space-sm);
   }
 
-  .top-nav {
-    min-height: 46px;
+  .ledger {
+    gap: var(--space-sm);
   }
 
-  .logo-text p {
+  /* The wordmark competes with the theme and language controls for a 320px
+     row, so it steps down rather than truncating to a few glyphs. */
+  .masthead-name h1 {
+    font-size: var(--fs-title-md);
+  }
+
+  .masthead-name p {
     display: none;
   }
 
-  .content-area {
-    padding: 24px 16px 26px;
+  .lede h2 {
+    max-width: none;
+    font-size: var(--fs-display-sm);
   }
 
-  .intro-section {
-    margin-bottom: 20px;
+  /* Top rail: the numerals sit above the labels so three tabs still fit a
+     360px viewport without the old icon-hiding hack. */
+  .function-tabs :deep(.el-tabs__header) {
+    min-width: 0;
+    max-width: none;
+    margin: 0 0 var(--space-md);
   }
 
-  .intro-section h2 {
-    font-size: 22px;
+  .function-tabs :deep(.el-tabs__nav) {
+    display: grid;
+    width: 100%;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
   }
 
   .function-tabs :deep(.el-tabs__item) {
-    padding: 0 6px !important;
-    font-size: 13px !important;
+    min-height: 56px;
+    padding: var(--space-2xs) var(--space-3xs) !important;
+    border-bottom: 2px solid var(--border-subtle);
+    justify-content: center;
+    text-align: center;
+  }
+
+  .function-tabs :deep(.el-tabs__item.is-active) {
+    border-bottom-color: var(--primary-color);
   }
 
   .tab-label {
-    gap: 5px;
+    justify-items: center;
+    gap: 2px;
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .code-body {
-    align-items: stretch;
+  .tab-index {
+    font-size: var(--fs-body-sm);
+  }
+
+  .colophon {
+    align-items: center;
     flex-direction: column;
-  }
-
-  .share-code-card {
+    gap: var(--space-xs);
     text-align: center;
   }
 
-  .code-header,
-  .code-body {
+  .colophon-legal {
+    text-align: center;
+  }
+
+  .colophon-link {
     justify-content: center;
   }
 
-  .code-text {
-    text-align: center;
-  }
-
-  .footer-section {
+  .stub-code-row {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .github-link {
-    align-self: center;
-  }
-}
-
-@media (max-width: 420px) {
-  .top-nav {
-    gap: 8px;
-  }
-
-  .logo-text h1 {
-    max-width: 100px;
-  }
-
-  .tab-label .el-icon {
-    display: none;
+    gap: var(--space-2xs);
   }
 }
 </style>

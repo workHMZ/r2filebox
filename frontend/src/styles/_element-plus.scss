@@ -1,0 +1,549 @@
+/*
+ * Element Plus surface overrides.
+ *
+ * Element Plus ships its own chalk theme, so these rules re-skin the widgets
+ * the app actually renders. Everything resolves through the tokens in
+ * _tokens.scss — no literal colours, sizes or radii below.
+ */
+
+/* ---- Inputs ----------------------------------------------------------- */
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  min-height: 40px;
+  background: var(--surface-card) !important;
+  border: 1px solid var(--control-border) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: none !important;
+  color: var(--text-primary) !important;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease !important;
+
+  .el-input__inner,
+  .el-select__selected-item {
+    color: var(--text-primary) !important;
+    font-family: var(--font-primary) !important;
+  }
+
+  .el-input__inner::placeholder,
+  &::placeholder {
+    color: var(--text-secondary) !important;
+  }
+
+  &:hover {
+    border-color: var(--control-border-hover) !important;
+  }
+
+  &.is-focus,
+  &.is-focused,
+  &:focus,
+  &:focus-within {
+    border-color: var(--primary-ink) !important;
+    box-shadow: 0 0 0 3px var(--primary-soft) !important;
+  }
+}
+
+.el-input__inner:focus-visible {
+  outline: none;
+}
+
+.el-textarea__inner {
+  padding: var(--space-xs) var(--space-sm) !important;
+}
+
+.el-input-number {
+  .el-input-number__decrease,
+  .el-input-number__increase {
+    background: var(--surface-page) !important;
+    border-color: var(--border-subtle) !important;
+    color: var(--text-secondary) !important;
+
+    &:hover {
+      background: var(--primary-soft) !important;
+      color: var(--primary-ink) !important;
+    }
+  }
+}
+
+.el-input-group {
+  display: flex !important;
+  overflow: hidden;
+  background: var(--surface-card) !important;
+  border: 1px solid var(--control-border) !important;
+  border-radius: var(--radius-md) !important;
+
+  .el-input__wrapper {
+    flex: 1;
+    border: none !important;
+    border-radius: 0 !important;
+  }
+
+  .el-input-group__append {
+    display: flex !important;
+    align-items: stretch;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    border-left: 1px solid var(--control-border) !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+
+    .el-button {
+      height: 100% !important;
+      margin: 0 !important;
+      padding: 0 var(--space-md) !important;
+      border: none !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+    }
+  }
+
+  &:hover {
+    border-color: var(--control-border-hover) !important;
+  }
+
+  &.is-focus,
+  &:focus-within {
+    border-color: var(--primary-ink) !important;
+    box-shadow: 0 0 0 3px var(--primary-soft) !important;
+  }
+}
+
+/* ---- Dropdowns -------------------------------------------------------- */
+.el-select-dropdown,
+.el-picker-panel,
+.el-popper {
+  background: var(--surface-overlay) !important;
+  border-color: var(--border-subtle) !important;
+  color: var(--text-regular) !important;
+}
+
+.el-select-dropdown__wrap {
+  background: var(--surface-overlay) !important;
+}
+
+.el-select-dropdown__item {
+  color: var(--text-regular) !important;
+
+  &.is-hovering {
+    background: var(--primary-soft) !important;
+    color: var(--primary-ink) !important;
+  }
+
+  &.is-selected {
+    background: var(--primary-soft) !important;
+    color: var(--primary-ink) !important;
+    font-weight: 600 !important;
+  }
+}
+
+/* ---- Buttons ---------------------------------------------------------- */
+/* DESIGN.md pairs white on #cc785c, which measures 3.28:1. Interactive fills
+   step down to --primary-strong (#a9583e, 5.06:1) so button labels clear AA. */
+.el-button {
+  border-radius: var(--radius-md);
+  font-family: var(--font-primary);
+  font-weight: 600;
+  letter-spacing: 0 !important;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+
+  &.el-button--primary {
+    background: var(--primary-strong) !important;
+    border: 1px solid var(--primary-strong) !important;
+    color: var(--text-on-primary) !important;
+    box-shadow: none !important;
+
+    &:hover:not(.is-disabled),
+    &:focus:not(.is-disabled) {
+      background: var(--primary-fill-press) !important;
+      border-color: var(--primary-fill-press) !important;
+    }
+  }
+
+  &.el-button--default {
+    background: var(--surface-card) !important;
+    border: 1px solid var(--control-border) !important;
+    color: var(--text-primary) !important;
+
+    &:hover:not(.is-disabled),
+    &:focus:not(.is-disabled) {
+      background: var(--surface-page) !important;
+      border-color: var(--primary-ink) !important;
+      color: var(--primary-ink) !important;
+    }
+  }
+
+  &.el-button--danger {
+    background: var(--danger-fill) !important;
+    border-color: var(--danger-fill) !important;
+    color: var(--text-on-danger) !important;
+
+    &:hover:not(.is-disabled),
+    &:focus:not(.is-disabled) {
+      background: var(--danger-fill-press) !important;
+      border-color: var(--danger-fill-press) !important;
+    }
+  }
+}
+
+/* Element Plus pins every button label to `white-space: nowrap`. In this app a
+   large button is always a full-width action, so a long localisation does not
+   widen the button — it spills out of the box and clips against the viewport,
+   which reads as the button being misaligned with everything around it. Let
+   those labels wrap and let the button grow instead. */
+.el-button--large {
+  height: auto;
+  min-height: 52px;
+  line-height: var(--leading-title);
+  white-space: normal;
+}
+
+/* Element Plus spaces adjacent buttons with margin-left. Every button row this
+   app lays out uses `gap` instead, so that margin is drift — and once a row
+   stacks on mobile it shoves the second button 12px sideways, out of line with
+   everything above and below it. */
+.el-button + .el-button {
+  margin-left: 0;
+}
+
+/* Except in the overlays Element Plus lays out itself. */
+.el-message-box__btns .el-button + .el-button,
+.el-dialog__footer .el-button + .el-button {
+  margin-left: var(--space-xs);
+}
+
+.el-button.is-disabled,
+.el-button.is-disabled:hover,
+.el-input.is-disabled .el-input__wrapper,
+.el-select .el-select__wrapper.is-disabled,
+.el-textarea.is-disabled .el-textarea__inner {
+  background: var(--surface-muted) !important;
+  border-color: var(--border-subtle) !important;
+  color: var(--text-disabled) !important;
+}
+
+.el-button.is-disabled span,
+.el-button.is-disabled .el-icon {
+  color: var(--text-disabled) !important;
+}
+
+/* ---- Tabs ------------------------------------------------------------- */
+.el-tabs__nav-wrap::after {
+  background-color: var(--border-subtle) !important;
+}
+
+.el-tabs__active-bar {
+  background: var(--primary-color) !important;
+  box-shadow: none !important;
+}
+
+.el-tabs__item {
+  color: var(--text-secondary) !important;
+  font-size: var(--fs-title-sm) !important;
+  font-weight: 500 !important;
+
+  &:hover,
+  &.is-active {
+    color: var(--primary-ink) !important;
+    text-shadow: none !important;
+  }
+}
+
+/* ---- Overlays --------------------------------------------------------- */
+.el-dialog {
+  background: var(--surface-overlay) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--radius-xl) !important;
+  box-shadow: var(--shadow-raised) !important;
+
+  .el-dialog__title {
+    color: var(--text-primary) !important;
+    font-family: var(--font-display) !important;
+    font-size: var(--fs-title-lg) !important;
+    font-weight: 600 !important;
+    letter-spacing: var(--tracking-display) !important;
+  }
+
+  .el-dialog__headerbtn .el-dialog__close {
+    color: var(--text-secondary) !important;
+
+    &:hover {
+      color: var(--primary-ink) !important;
+    }
+  }
+}
+
+.el-overlay {
+  background: var(--overlay-scrim) !important;
+  backdrop-filter: blur(3px);
+}
+
+/* A toast is a notice, not a surface to interact with. On a phone it spans
+   nearly the whole width at the top of the page, and Element Plus leaves it
+   hit-testable, so for the seconds it is up it swallowed taps meant for the
+   controls underneath — the close and logout buttons sit exactly there, and a
+   toast cannot be swiped away. Let pointer events fall through to the page and
+   keep only the close affordance clickable. */
+.el-message {
+  background: var(--surface-overlay) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-card) !important;
+  pointer-events: none;
+  /* Clears the status bar when the page runs under viewport-fit=cover. Each
+     message carries its own inline `top` for stacking, so the offset has to be
+     a margin or the stack collapses. */
+  margin-top: env(safe-area-inset-top, 0px);
+
+  .el-message__content {
+    color: var(--text-primary) !important;
+    font-weight: 500 !important;
+  }
+
+  .el-message__closeBtn {
+    pointer-events: auto;
+  }
+}
+
+.el-message-box,
+.el-notification,
+.el-drawer {
+  background: var(--surface-overlay) !important;
+  border-color: var(--border-subtle) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--shadow-raised) !important;
+
+  .el-message-box__title,
+  .el-message-box__message,
+  .el-notification__title,
+  .el-notification__content,
+  .el-drawer__title {
+    color: var(--text-primary) !important;
+  }
+}
+
+.el-tooltip__popper,
+.el-popper.is-dark {
+  background: var(--text-primary) !important;
+  border-color: var(--text-primary) !important;
+  color: var(--surface-card) !important;
+}
+
+.el-loading-mask {
+  background: color-mix(in srgb, var(--surface-card) 78%, transparent) !important;
+}
+
+/* ---- Data display ----------------------------------------------------- */
+.el-alert {
+  background: var(--surface-page) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--radius-lg) !important;
+  color: var(--text-regular) !important;
+
+  .el-alert__title {
+    color: var(--text-regular) !important;
+  }
+}
+
+.el-result {
+  padding: var(--space-md) 0 !important;
+
+  .el-result__title p {
+    color: var(--text-primary) !important;
+    font-weight: 700 !important;
+  }
+}
+
+.el-table {
+  background: transparent !important;
+  color: var(--text-regular) !important;
+  font-family: var(--font-primary) !important;
+
+  tr,
+  td.el-table__cell {
+    background: transparent !important;
+  }
+
+  th.el-table__cell {
+    background: var(--surface-page) !important;
+    border-bottom: 1px solid var(--border-subtle) !important;
+    color: var(--text-primary) !important;
+    font-weight: 700 !important;
+  }
+
+  td.el-table__cell {
+    border-bottom: 1px solid var(--border-subtle) !important;
+    color: var(--text-regular) !important;
+  }
+
+  .el-table__row:hover > td.el-table__cell {
+    background: var(--surface-raised) !important;
+  }
+
+  .el-table__fixed,
+  .el-table__fixed-right,
+  .el-table-fixed-column--left,
+  .el-table-fixed-column--right,
+  .el-table__border-left-patch {
+    background: var(--surface-card) !important;
+  }
+
+  th.el-table__cell.el-table-fixed-column--left,
+  th.el-table__cell.el-table-fixed-column--right {
+    background: var(--surface-page) !important;
+  }
+
+  td.el-table__cell.el-table-fixed-column--left,
+  td.el-table__cell.el-table-fixed-column--right {
+    background: var(--surface-card) !important;
+  }
+
+  th.el-table__cell.el-table-fixed-column--right,
+  td.el-table__cell.el-table-fixed-column--right {
+    box-shadow: -8px 0 14px -12px var(--shadow-color);
+  }
+
+  .el-table__row:hover > td.el-table__cell.el-table-fixed-column--left,
+  .el-table__row:hover > td.el-table__cell.el-table-fixed-column--right {
+    background: var(--surface-raised) !important;
+  }
+
+  .el-table__inner-wrapper::before {
+    background: var(--border-subtle) !important;
+  }
+}
+
+.el-pagination {
+  color: var(--text-secondary) !important;
+
+  .btn-prev,
+  .btn-next,
+  .el-pager li {
+    background: var(--surface-card) !important;
+    border: 1px solid var(--border-subtle) !important;
+    border-radius: var(--radius-sm) !important;
+    color: var(--text-regular) !important;
+
+    &:hover {
+      border-color: var(--primary-ink) !important;
+      color: var(--primary-ink) !important;
+    }
+
+    &.is-active {
+      background: var(--primary-strong) !important;
+      border-color: var(--primary-ink) !important;
+      color: var(--text-on-primary) !important;
+    }
+  }
+}
+
+.el-tag {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: var(--space-3xs) !important;
+  vertical-align: middle !important;
+  background: var(--primary-soft) !important;
+  border: 1px solid var(--primary-border) !important;
+  border-radius: var(--radius-sm) !important;
+  color: var(--primary-ink) !important;
+  font-weight: 600 !important;
+
+  .el-icon {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+  }
+
+  &.el-tag--success {
+    background: var(--success-soft) !important;
+    border-color: var(--success-border) !important;
+    color: var(--success-ink) !important;
+  }
+
+  &.el-tag--danger {
+    background: var(--danger-soft) !important;
+    border-color: var(--danger-border) !important;
+    color: var(--danger-ink) !important;
+  }
+
+  &.el-tag--info {
+    background: var(--surface-page) !important;
+    border-color: var(--border-subtle) !important;
+    color: var(--text-regular) !important;
+  }
+}
+
+.el-card {
+  background: var(--surface-card) !important;
+  border-color: var(--border-subtle) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: none !important;
+  color: var(--text-primary) !important;
+}
+
+.el-card__header {
+  border-bottom: 1px solid var(--border-subtle) !important;
+}
+
+.el-divider {
+  border-color: var(--border-subtle) !important;
+}
+
+.el-switch {
+  --el-switch-on-color: var(--primary-ink);
+  --el-switch-off-color: var(--text-secondary);
+}
+
+.el-form-item__label {
+  color: var(--text-regular) !important;
+}
+
+.el-descriptions,
+.el-descriptions__body {
+  --el-descriptions-bg-color: transparent !important;
+  --el-descriptions-border-color: var(--border-subtle) !important;
+  background: transparent !important;
+
+  .el-descriptions__cell {
+    border-color: var(--border-subtle) !important;
+    color: var(--text-primary) !important;
+
+    &.el-descriptions__label {
+      background: var(--surface-page) !important;
+      color: var(--text-secondary) !important;
+      font-weight: 600;
+    }
+
+    &.el-descriptions__content {
+      color: var(--text-primary) !important;
+    }
+  }
+}
+
+.el-empty__description,
+.el-progress__text,
+.el-checkbox__label,
+.el-radio__label {
+  color: var(--text-regular) !important;
+}
+
+/* Element Plus pins every tag to `vertical-align: middle !important`, so
+   specificity alone cannot move it. In a subpage header the tag sits inline
+   with the description sentence, and middle alignment drops its label off that
+   sentence's baseline — which is what reads as the badge floating. */
+.subpage-header .desc-meta .el-tag {
+  vertical-align: baseline !important;
+}
+
+/* iOS Safari zooms the whole page in when a focused field is set below 16px,
+   and it does not zoom back out afterwards. Element Plus leaves the textarea
+   at its 14px base size, so tapping into the text-share box left mobile users
+   on a zoomed, side-scrolling page. Every other field in the app is already
+   16px or larger; this is the one that was not. */
+@media (pointer: coarse) {
+  .el-textarea__inner {
+    font-size: 16px;
+  }
+}

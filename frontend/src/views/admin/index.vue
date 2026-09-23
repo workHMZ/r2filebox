@@ -1,7 +1,5 @@
 <template>
   <div class="admin-layout">
-    <div class="bg-decoration" aria-hidden="true"></div>
-
     <el-container class="admin-container">
       <el-aside
         id="admin-sidebar"
@@ -127,9 +125,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import { RouterLink, useRouter, useRoute } from 'vue-router'
+import { useMediaQuery } from '@vueuse/core'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Close,
@@ -155,11 +154,12 @@ const userStore = useUserStore()
 const configStore = useConfigStore()
 const { t } = useI18n()
 const sidebarOpen = ref(false)
-const isMobile = ref(false)
+// Matches the drawer breakpoint in this file's stylesheet: above it the aside
+// is a static column, below it a modal drawer that traps focus.
+const isMobile = useMediaQuery('(max-width: 1023px)')
 const loggingOut = ref(false)
 const sidebarRef = ref<HTMLElement | ComponentPublicInstance | null>(null)
 const menuToggleRef = ref<HTMLElement | ComponentPublicInstance | null>(null)
-let mobileMediaQuery: MediaQueryList | null = null
 
 const sidebarInactive = computed(() => isMobile.value && !sidebarOpen.value)
 const backgroundInactive = computed(() => isMobile.value && sidebarOpen.value)
@@ -257,25 +257,10 @@ const handleSidebarKeydown = (event: KeyboardEvent) => {
   }
 }
 
-const syncMobileState = (event: MediaQueryList | MediaQueryListEvent) => {
-  isMobile.value = event.matches
-  if (!event.matches) {
-    void closeSidebar(false)
-  }
-}
-
-watch(() => route.path, () => {
+// Growing past the breakpoint would leave the drawer open over a static
+// column, and navigating should never leave it covering the page it moved to.
+watch([isMobile, () => route.path], () => {
   void closeSidebar(false)
-})
-
-onMounted(() => {
-  mobileMediaQuery = window.matchMedia('(max-width: 900px)')
-  syncMobileState(mobileMediaQuery)
-  mobileMediaQuery.addEventListener('change', syncMobileState)
-})
-
-onUnmounted(() => {
-  mobileMediaQuery?.removeEventListener('change', syncMobileState)
 })
 
 const confirmLogout = async () => {
@@ -304,42 +289,45 @@ const confirmLogout = async () => {
 </script>
 
 <style scoped>
+/* The shell owns the full viewport under viewport-fit=cover, so it carries the
+   status-bar inset itself; box-sizing keeps 100dvh inclusive of it. */
 .admin-layout {
+  position: relative;
   height: 100vh;
   height: 100dvh;
-  position: relative;
+  padding-top: env(safe-area-inset-top, 0px);
   overflow: hidden;
   background: var(--surface-canvas);
 }
 
 .admin-container {
-  height: 100%;
   position: relative;
+  height: 100%;
   z-index: 1;
 }
 
 .main-container {
+  display: flex;
   min-width: 0;
   height: 100%;
-  display: flex;
   flex-direction: column;
 }
 
+/* ---- Sidebar ----------------------------------------------------------- */
 .admin-aside {
-  background: var(--surface-card-solid) !important;
-  border-right: 1px solid var(--border-subtle);
   display: flex;
-  flex-direction: column;
-  box-shadow: var(--glass-shadow);
   z-index: 20;
+  flex-direction: column;
+  background: var(--surface-page) !important;
+  border-right: 1px solid var(--border-subtle);
 }
 
 .admin-logo {
-  height: 64px;
   display: flex;
+  height: 64px;
   align-items: center;
-  padding: 0 18px;
-  gap: 11px;
+  gap: var(--space-2xs);
+  padding: 0 var(--space-sm);
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -350,11 +338,12 @@ const confirmLogout = async () => {
 
 .logo-text h2 {
   overflow: hidden;
-  margin: 0;
-  font-size: 15px;
-  font-weight: 760;
   color: var(--text-primary);
-  letter-spacing: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-title-md);
+  font-weight: 600;
+  letter-spacing: var(--tracking-display);
+  line-height: 1.2;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -362,20 +351,17 @@ const confirmLogout = async () => {
 
 .logo-text p {
   overflow: hidden;
-  margin: 1px 0 0;
-  font-size: 10px;
-  color: var(--glass-text-secondary);
+  color: var(--text-secondary);
+  font-family: var(--font-code);
+  font-size: var(--fs-caption-up);
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .admin-menu {
-  margin: 0;
-  border: none;
-  background: transparent;
   flex: 1;
-  padding: 14px 0;
+  padding: var(--space-xs) 0;
   list-style: none;
 }
 
@@ -383,70 +369,60 @@ const confirmLogout = async () => {
   list-style: none;
 }
 
+/* Each entry is a ledger line; the active one grows the coral binding mark. */
 .admin-menu-link {
   display: flex;
-  padding: 0 20px;
+  height: 40px;
   align-items: center;
+  padding: 0 var(--space-sm);
+  border-left: 2px solid transparent;
   color: var(--text-secondary);
-  height: 42px;
-  line-height: 42px;
-  margin: 3px 10px;
-  border-radius: var(--radius-md);
-  font-weight: 600;
-  font-size: 13px;
-  transition: color 0.18s ease, background 0.18s ease;
+  font-size: var(--fs-body-sm);
+  font-weight: 500;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
 
 .admin-menu-link:hover {
-  background: var(--surface-page) !important;
+  background: var(--surface-card);
   color: var(--text-primary);
 }
 
 .admin-menu-link.is-active {
-  background: var(--primary-soft) !important;
-  color: var(--primary-color) !important;
-  box-shadow: none;
+  border-left-color: var(--primary-color);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 .admin-menu :deep(.el-icon) {
-  font-size: 16px;
-  margin-right: 10px;
+  margin-right: var(--space-2xs);
+  font-size: var(--fs-title-sm);
 }
 
 .sidebar-footer {
-  padding: 14px;
+  padding: var(--space-xs);
+  padding-bottom: max(var(--space-xs), env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--border-subtle);
 }
 
 .user-page-btn {
   width: 100%;
-  background: var(--surface-card-solid) !important;
-  border: 1px solid var(--border-subtle) !important;
-  color: var(--text-primary) !important;
-  border-radius: var(--radius-md);
-  transition: border-color 0.18s ease, color 0.18s ease;
-  font-weight: 600;
-  font-size: 12px;
-  height: 38px;
+  height: 36px;
+  font-size: var(--fs-caption);
 }
 
-.user-page-btn:hover {
-  background: var(--surface-page) !important;
-  border-color: var(--primary-color) !important;
-  color: var(--primary-color) !important;
-}
-
+/* ---- Header ------------------------------------------------------------ */
 .admin-header {
-  background: var(--surface-translucent) !important;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--border-subtle);
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 22px;
   height: 64px;
   flex: 0 0 64px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-md);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-translucent) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .header-left {
@@ -454,17 +430,17 @@ const confirmLogout = async () => {
   min-width: 0;
   flex: 1;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2xs);
 }
 
 .header-left h3 {
   min-width: 0;
   overflow: hidden;
-  margin: 0;
-  font-size: 18px;
-  font-weight: 740;
   color: var(--text-primary);
-  letter-spacing: 0;
+  font-family: var(--font-primary);
+  font-size: var(--fs-title-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -473,48 +449,52 @@ const confirmLogout = async () => {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2xs);
 }
 
 .menu-toggle {
   display: none;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0 !important;
-  font-size: 20px;
+  font-size: var(--fs-title-lg);
 }
 
 .sidebar-close {
   display: none;
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  flex: 0 0 44px;
   margin-left: auto;
   padding: 0 !important;
-  flex: 0 0 34px;
-  font-size: 18px;
+  font-size: var(--fs-title-md);
 }
 
 .user-info {
-  appearance: none;
   display: flex;
   min-width: 0;
+  min-height: 36px;
   max-width: min(252px, 30vw);
   align-items: center;
-  min-height: 38px;
-  gap: 9px;
-  padding: 3px 7px 3px 5px;
-  border-radius: var(--radius-md);
-  background: transparent;
-  border: 1px solid transparent;
-  cursor: pointer;
+  gap: var(--space-2xs);
+  padding: var(--space-3xs) var(--space-xs) var(--space-3xs) var(--space-3xs);
+  appearance: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--surface-page);
   color: inherit;
+  cursor: pointer;
   font: inherit;
   transition: background 0.18s ease, border-color 0.18s ease;
 }
 
 .user-info:hover {
-  background: var(--surface-page);
-  border-color: var(--border-subtle);
+  border-color: var(--control-border);
+  background: var(--surface-card);
 }
 
 .user-info:disabled {
@@ -524,9 +504,9 @@ const confirmLogout = async () => {
 
 .user-avatar {
   flex: 0 0 auto;
-  background: var(--accent-soft);
-  color: var(--warning-color);
-  font-weight: 800;
+  background: var(--primary-strong) !important;
+  color: var(--text-on-primary) !important;
+  font-weight: 600;
 }
 
 .user-details {
@@ -540,28 +520,29 @@ const confirmLogout = async () => {
 .user-name {
   display: block;
   overflow: hidden;
-  font-size: 13px;
-  font-weight: 700;
   color: var(--text-primary);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .user-role {
-  font-size: 10px;
-  color: var(--glass-text-secondary);
+  color: var(--text-secondary);
+  font-size: var(--fs-caption-up);
+  line-height: 1.3;
 }
 
 .logout-icon {
   flex: 0 0 auto;
-  color: var(--glass-text-secondary);
-  font-size: 15px;
-  transition: color 0.18s ease, transform 0.18s ease;
+  color: var(--text-secondary);
+  font-size: var(--fs-title-sm);
+  transition: color 0.18s ease;
 }
 
 .user-info:hover .logout-icon {
-  color: var(--danger-color);
-  transform: translateX(1px);
+  color: var(--danger-ink);
 }
 
 .logout-icon.is-loading {
@@ -569,15 +550,20 @@ const confirmLogout = async () => {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-/* 内容区 */
+/* ---- Content ----------------------------------------------------------- */
 .admin-main {
+  --main-inset: var(--space-md);
   flex: 1 1 auto;
   min-height: 0;
-  padding: 22px;
+  padding: var(--main-inset);
+  padding-bottom: max(var(--main-inset), env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .admin-content {
@@ -588,10 +574,17 @@ const confirmLogout = async () => {
   display: none;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1023px) {
+  /* As a drawer it is not competing with the content for width, and 224px
+     clipped the Japanese subtitle to 'コントロールセン…'. */
   .admin-aside {
     position: fixed;
     inset: 0 auto 0 0;
+    width: min(272px, 84vw) !important;
+    /* position: fixed resolves against the viewport, so this drawer never
+       inherits the shell's status-bar inset and has to carry its own. */
+    padding-top: env(safe-area-inset-top, 0px);
+    box-shadow: var(--shadow-raised);
     transform: translateX(-100%);
     transition: transform 0.22s ease;
   }
@@ -612,26 +605,25 @@ const confirmLogout = async () => {
     background: var(--overlay-scrim);
   }
 
-  .menu-toggle {
-    display: inline-flex;
-  }
-
+  .menu-toggle,
   .sidebar-close {
     display: inline-flex;
   }
+}
 
+@media (max-width: 767px) {
   .admin-header {
-    padding: 0 14px;
+    padding: 0 var(--space-xs);
   }
 
   .admin-main {
-    padding: 16px;
+    --main-inset: var(--space-sm);
   }
-}
 
-@media (max-width: 640px) {
+  /* 'ダッシュボード' needs 125px at 18px but the row only frees 129px once the
+     menu toggle and the right-hand controls are placed. */
   .header-left h3 {
-    font-size: 16px;
+    font-size: var(--fs-title-sm);
   }
 
   .user-details,
@@ -640,15 +632,8 @@ const confirmLogout = async () => {
   }
 
   .user-info {
-    padding-right: 4px;
+    padding-right: var(--space-3xs);
   }
-}
-
-@media (max-width: 460px) {
-  .header-right {
-    gap: 2px;
-  }
-
 }
 
 @media (prefers-reduced-motion: reduce) {

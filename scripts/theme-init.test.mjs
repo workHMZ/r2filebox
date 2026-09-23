@@ -12,7 +12,7 @@ function runThemeInit({ stored = null, systemDark = false, storageError = false 
   const classes = new Set()
   const style = {}
   const meta = {
-    content: '#086f68',
+    content: '#faf9f5',
     setAttribute(name, value) {
       if (name === 'content') this.content = value
     },
@@ -52,14 +52,14 @@ test('uses the operating-system theme when no manual preference exists', () => {
   const result = runThemeInit({ systemDark: true })
   assert.equal(result.classes.has('dark'), true)
   assert.equal(result.style.colorScheme, 'dark')
-  assert.equal(result.meta.content, '#0b1115')
+  assert.equal(result.meta.content, '#181715')
 })
 
 test('a saved manual preference overrides the operating-system theme', () => {
   const result = runThemeInit({ stored: 'light', systemDark: true })
   assert.equal(result.classes.has('dark'), false)
   assert.equal(result.style.colorScheme, 'light')
-  assert.equal(result.meta.content, '#086f68')
+  assert.equal(result.meta.content, '#faf9f5')
 })
 
 test('falls back to the operating-system theme when storage is unavailable', () => {

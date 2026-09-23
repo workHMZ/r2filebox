@@ -3,12 +3,19 @@
     <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
       {{ loading || saving ? t('common.loading') : '' }}
     </p>
-    <el-card v-loading="loading" :aria-busy="loading || saving" shadow="never">
-      <template #header>
-        <div class="card-header">
-          <h3>{{ t('config.title') }}</h3>
+    <div class="subpage-header-card">
+      <div class="subpage-header">
+        <div class="header-desc">
+          <span class="desc-text">{{ t('config.subtitle') }}</span>
+          <span class="desc-divider" aria-hidden="true">·</span>
+          <div class="desc-meta">
+            <el-tag size="small" type="info" effect="plain">{{ t('config.liveApply') }}</el-tag>
+          </div>
+        </div>
+        <div class="header-actions">
           <ActionFeedbackButton
             type="primary"
+            size="small"
             :icon="DocumentChecked"
             :loading="saving"
             :success="saveSucceeded"
@@ -17,7 +24,10 @@
             {{ t('config.save') }}
           </ActionFeedbackButton>
         </div>
-      </template>
+      </div>
+    </div>
+
+    <el-card v-loading="loading" :aria-busy="loading || saving" shadow="never">
 
       <el-tabs v-model="activeTab">
         <!-- 基础配置 -->
@@ -330,21 +340,16 @@ onMounted(() => {
   padding: 0;
 }
 
+/* Holds only the save action now: the page name is in the admin header bar. */
 .card-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-}
-
-.card-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
+  justify-content: flex-end;
 }
 
 .config-form {
   max-width: 620px;
-  padding-top: 12px;
+  padding-top: var(--space-xs);
 }
 
 .config-form--wide {
@@ -352,9 +357,9 @@ onMounted(() => {
 }
 
 .field-hint {
-  margin-left: 10px;
+  margin-left: var(--space-xs);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-caption-up);
 }
 
 .config-number-field {
@@ -363,7 +368,7 @@ onMounted(() => {
   min-width: 0;
   flex-direction: column;
   align-items: flex-start;
-  gap: 7px;
+  gap: var(--space-2xs);
 }
 
 .config-number-control {
@@ -371,7 +376,7 @@ onMounted(() => {
   width: min(100%, 232px);
   min-width: 0;
   grid-template-columns: minmax(0, 190px) 32px;
-  column-gap: 10px;
+  column-gap: var(--space-xs);
   align-items: center;
 }
 
@@ -388,7 +393,7 @@ onMounted(() => {
   display: block;
   width: 32px;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: var(--fs-body-sm);
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
@@ -399,13 +404,7 @@ onMounted(() => {
   line-height: 1.5;
 }
 
-@media (max-width: 768px) {
-  .card-header {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 12px;
-  }
-
+@media (max-width: 767px) {
   .config-form :deep(.el-form-item) {
     display: block;
   }
@@ -413,7 +412,7 @@ onMounted(() => {
   .config-form :deep(.el-form-item__label) {
     width: auto !important;
     height: auto;
-    margin-bottom: 7px;
+    margin-bottom: var(--space-2xs);
     line-height: 1.4;
   }
 
@@ -424,7 +423,7 @@ onMounted(() => {
   .field-hint {
     display: block;
     width: 100%;
-    margin: 7px 0 0;
+    margin: var(--space-2xs) 0 0;
   }
 
   .config-number-field {
@@ -434,9 +433,7 @@ onMounted(() => {
   .config-number-field .field-hint {
     margin-top: 0;
   }
-}
 
-@media (max-width: 480px) {
   .config-number-control {
     width: 100%;
     grid-template-columns: minmax(0, 1fr) 32px;

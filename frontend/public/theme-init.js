@@ -18,5 +18,5 @@
   root.style.colorScheme = theme
 
   const themeColor = document.querySelector('meta[name="theme-color"]')
-  if (themeColor) themeColor.setAttribute('content', dark ? '#0b1115' : '#086f68')
+  if (themeColor) themeColor.setAttribute('content', dark ? '#181715' : '#faf9f5')
 })()

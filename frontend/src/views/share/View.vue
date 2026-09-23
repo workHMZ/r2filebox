@@ -1,17 +1,15 @@
 <template>
-  <div class="share-view-container">
-    <div class="bg-decoration" aria-hidden="true"></div>
-
+  <div class="pickup-page">
     <main
       id="main-content"
-      class="main-wrapper"
+      class="ledger"
       tabindex="-1"
       :aria-label="t('nav.share')"
     >
       <div class="page-toolbar">
         <InterfaceControls />
       </div>
-      <div class="glass-card">
+      <div class="sheet">
         <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
           {{ shareStatus }}
         </p>
@@ -25,7 +23,7 @@
           <el-result icon="error" :title="t('shareView.invalid')" :sub-title="error">
             <template #extra>
               <el-button type="primary" @click="$router.push('/')">
-                <el-icon style="margin-right: 4px;"><HomeFilled /></el-icon>
+                <el-icon aria-hidden="true"><HomeFilled /></el-icon>
                 {{ t('common.home') }}
               </el-button>
             </template>
@@ -33,7 +31,7 @@
         </div>
 
         <div v-else-if="shareData" class="content-section">
-          <div class="share-header">
+          <div class="pickup-header">
             <div class="logo-section">
               <AppLogo />
               <div class="logo-text">
@@ -50,9 +48,8 @@
             </el-button>
           </div>
 
-          <el-divider class="glass-divider" />
 
-          <div v-if="shareData.type === 'text'" class="text-share-content">
+          <div v-if="shareData.type === 'text'" class="pickup-text">
             <div class="content-label">
               <el-icon><Document /></el-icon>
               <span>{{ t('shareView.textContent') }}</span>
@@ -73,7 +70,7 @@
             </div>
           </div>
 
-          <div v-else class="file-share-content">
+          <div v-else class="pickup-file">
             <div class="file-card">
               <!-- 音视频/图片流式在线预览区 -->
               <div v-if="downloadUrl && (isMediaVideo || isMediaAudio || isMediaImage) && !mediaPreviewFailed" class="media-preview-box">
@@ -145,7 +142,7 @@
             </div>
           </div>
 
-          <div class="share-info">
+          <div class="pickup-info">
             <div class="info-table-card">
               <div class="info-row">
                 <span class="info-key">{{ t('share.code.label') }}</span>
@@ -334,157 +331,183 @@ watch(() => route.params.code, (value) => {
 </script>
 
 <style scoped>
-.share-view-container {
-  position: relative;
+/* The root class is deliberately not called `share-page`. Ad blockers ship
+   generic cosmetic filters for social share widgets that hide `.share-page`,
+   `.share-box`, `.share-panel` and friends with a user-origin
+   `display: none !important` — which outranks even an inline style, so the
+   whole route rendered as a blank cream page for anyone running one. Keep
+   route roots out of that namespace; scripts/verify-selectors.mjs enforces it. */
+/* viewport-fit=cover puts the page under the status bar and the home
+   indicator. The safe-area guard is written once here and the breakpoints
+   only retune the variables — declaring `padding` again in a media query
+   would silently drop the guard on exactly the viewports that need it. */
+.pickup-page {
+  --page-inset-top: var(--space-lg);
+  --page-inset-bottom: var(--space-md);
   min-height: 100vh;
   min-height: 100dvh;
+  padding-block: max(var(--page-inset-top), env(safe-area-inset-top, 0px))
+    max(var(--page-inset-bottom), env(safe-area-inset-bottom, 0px));
+  padding-inline: 0;
   overflow-x: hidden;
+  /* One measure for the slip, the toolbar and the ledger that carries them,
+     so they cannot drift apart again. */
+  --slip-measure: 720px;
 }
 
-/* 主容器 */
-.main-wrapper {
-  position: relative;
-  z-index: 1;
-  width: min(100% - 40px, 760px);
-  margin: 0 auto;
-  padding: 28px 0;
-  min-height: 100vh;
-  min-height: 100dvh;
+/* The ledger was centred but the slip inside it was not: at the shared 1040px
+   measure the 720px slip sat flush against the binding edge and left a third
+   of the viewport empty to its right. This route carries nothing but the slip,
+   so the ledger takes the slip measure and the whole block centres as one. */
+.ledger {
   display: flex;
+  width: min(
+    calc(100% - var(--space-lg) * 2),
+    calc(var(--slip-measure) + var(--space-lg) * 2)
+  );
+  min-height: calc(100dvh - var(--space-xl));
   flex-direction: column;
-  gap: 14px;
-  align-items: center;
-  justify-content: center;
+  gap: var(--space-sm);
 }
 
+/* Aligned to the slip's measure, not the full ledger, so the controls stay
+   attached to the content instead of drifting to the page edge. */
 .page-toolbar {
   display: flex;
   width: 100%;
+  max-width: var(--slip-measure);
   justify-content: flex-end;
 }
 
-.glass-card {
+/* A pickup slip, not a spread: the measure stays readable even though the
+   ledger and its binding edge run the full page width. */
+.sheet {
+  display: flex;
   width: 100%;
-  padding: 32px;
-  border-top: 3px solid var(--primary-color);
+  max-width: var(--slip-measure);
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding-top: var(--space-2xs);
 }
 
-/* 加载状态 */
+/* ---- States ------------------------------------------------------------ */
 .loading-section {
+  padding: var(--space-2xl) var(--space-md);
   text-align: center;
-  padding: 60px 20px;
 }
 
 .loading-icon {
+  color: var(--primary-ink);
   animation: spin 1s linear infinite;
-  color: var(--primary-color);
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .loading-section p {
-  margin-top: 24px;
-  font-size: 16px;
-  color: var(--glass-text-secondary);
-  font-weight: 500;
+  margin-top: var(--space-md);
+  color: var(--text-secondary);
+  font-size: var(--fs-body-md);
 }
 
-/* 头部 */
-.share-header {
+.content-section {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+/* ---- Masthead ---------------------------------------------------------- */
+.pickup-header {
+  display: flex;
   align-items: center;
-  margin-bottom: 22px;
-  gap: 16px;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .logo-section {
   display: flex;
+  min-width: 0;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-xs);
 }
 
 .logo-text h1 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 760;
   color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: var(--fs-display-sm);
+  font-weight: 500;
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-display);
 }
 
 .logo-text p {
-  margin: 4px 0 0;
-  font-size: 13px;
-  color: var(--glass-text-secondary);
+  margin-top: var(--space-3xs);
+  color: var(--text-secondary);
+  font-size: var(--fs-body-sm);
   text-align: left;
 }
 
 .badge-code {
-  color: var(--primary-active);
-  font-weight: 700;
-  background: var(--primary-soft);
-  border: 1px solid var(--primary-border);
-  padding: 1px 6px;
-  border-radius: 4px;
-  user-select: all;
+  padding: 2px var(--space-3xs);
+  border-bottom: 2px solid var(--primary-color);
+  color: var(--text-primary);
   cursor: pointer;
+  font-family: var(--font-code);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  user-select: all;
 }
 
 .home-btn {
-  background: var(--surface-card-solid) !important;
-  border: 1px solid var(--border-subtle) !important;
-  color: var(--text-primary) !important;
-  border-radius: var(--radius-md);
-  transition: border-color 0.18s ease, color 0.18s ease;
+  flex: 0 0 auto;
 }
 
-
-.home-btn:hover {
-  background: var(--surface-page) !important;
-  border-color: var(--primary-color) !important;
-  color: var(--primary-color) !important;
-}
-
-.glass-divider {
-  border-color: var(--border-subtle) !important;
-  margin: 0 0 28px !important;
-}
-
-/* 文本提取 */
-.text-share-content {
+/* ---- Text share -------------------------------------------------------- */
+.pickup-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
   text-align: left;
 }
 
 .content-label {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
-  font-weight: 700;
-  font-size: 15px;
-  color: var(--glass-text-regular);
+  gap: var(--space-3xs);
+  color: var(--text-secondary);
+  font-size: var(--fs-caption-up);
+  font-weight: 600;
+  letter-spacing: var(--tracking-caption-up);
+  text-transform: uppercase;
 }
 
 .text-box {
-  background: var(--surface-page);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  padding: 24px;
-  margin-bottom: 24px;
   max-height: 380px;
+  padding: var(--space-sm);
   overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-left: 2px solid var(--primary-color);
+  border-radius: var(--radius-md);
+  background: var(--surface-page);
 }
 
 .text-box pre {
-  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-code);
+  font-size: var(--fs-body-sm);
+  line-height: var(--leading-body);
   white-space: pre-wrap;
   word-break: break-all;
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 14px;
-  line-height: 1.8;
-  color: var(--text-primary);
 }
 
 .actions {
@@ -492,188 +515,170 @@ watch(() => route.params.code, (value) => {
   justify-content: flex-end;
 }
 
-/* 媒体流式在线预览样式 */
+/* ---- Media preview ----------------------------------------------------- */
 .media-preview-box {
-  width: 100%;
-  margin-bottom: 24px;
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  background: var(--media-preview-bg);
   display: flex;
-  justify-content: center;
+  width: 100%;
   align-items: center;
+  justify-content: center;
+  margin-bottom: var(--space-sm);
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--media-preview-bg);
 }
 
 .video-preview-wrapper,
 .audio-preview-wrapper,
 .image-preview-wrapper {
-  width: 100%;
   display: flex;
+  width: 100%;
   justify-content: center;
 }
 
 .preview-video {
   width: 100%;
   max-height: 420px;
-  border-radius: var(--radius-lg);
-  background: #000;
+  border-radius: var(--radius-md);
+  background: var(--surface-dark);
 }
 
 .preview-audio {
   width: 100%;
-  padding: 12px;
+  padding: var(--space-xs);
 }
 
 .preview-video:focus-visible,
 .preview-audio:focus-visible {
-  outline: 2px solid var(--primary-color);
+  outline: 2px solid var(--primary-strong);
   outline-offset: 3px;
 }
 
 .preview-image {
   max-width: 100%;
   max-height: 400px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
 }
 
-/* 文件提取 */
+/* ---- File share -------------------------------------------------------- */
 .file-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 34px 20px;
+  padding: var(--space-lg) var(--space-md);
+  border: 1px dashed var(--control-border);
+  border-radius: var(--radius-lg);
   background: var(--surface-page);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-xl);
-  margin-bottom: 28px;
 }
 
 .file-icon {
-  margin-bottom: 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
+  margin-bottom: var(--space-sm);
 }
 
 .icon-glow-ring {
-  width: 72px;
-  height: 72px;
-  background: var(--primary-soft);
-  border: 1px solid var(--primary-border);
-  border-radius: var(--radius-lg);
   display: flex;
+  width: 64px;
+  height: 64px;
   align-items: center;
   justify-content: center;
-  color: var(--primary-color);
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-md);
+  color: var(--primary-ink);
 }
 
 .preview-fallback-status {
-  margin: 12px 0 0;
-  color: var(--glass-text-secondary);
-  font-size: 13px;
-  line-height: 1.5;
+  margin-top: var(--space-xs);
+  color: var(--text-secondary);
+  font-size: var(--fs-body-sm);
   text-align: center;
 }
 
 .file-info {
-  text-align: center;
-  margin-bottom: 28px;
   width: 100%;
+  margin-bottom: var(--space-md);
+  text-align: center;
 }
 
 .file-name {
-  margin: 0 0 12px;
-  font-size: 19px;
-  font-weight: 760;
+  margin-bottom: var(--space-2xs);
   color: var(--text-primary);
-  line-height: 1.4;
+  font-size: var(--fs-title-md);
+  font-weight: 600;
+  line-height: var(--leading-title);
   word-break: break-all;
 }
 
 .file-meta {
   display: flex;
-  gap: 10px;
   justify-content: center;
+  gap: var(--space-2xs);
 }
 
 .meta-tag {
-  font-size: 12px !important;
-  padding: 2px 8px !important;
+  padding: 2px var(--space-3xs) !important;
+  font-size: var(--fs-caption-up) !important;
 }
 
 .download-btn {
-  height: 52px;
-  padding: 0 40px !important;
+  min-height: 52px;
+  /* Vertical padding, not zero: the label may wrap to two lines. */
+  padding: var(--space-2xs) var(--space-lg) !important;
 }
 
-/* 分享属性信息 */
-.share-info {
-  margin-top: 24px;
-}
-
+/* ---- Terms ------------------------------------------------------------- */
 .info-table-card {
-  background: var(--surface-card-solid);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .info-row {
   display: flex;
+  align-items: baseline;
   justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
+  gap: var(--space-xs);
+  padding: var(--space-xs) 0;
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.info-row:last-child {
-  border-bottom: none;
-}
-
 .info-key {
-  font-size: 13px;
-  color: var(--glass-text-secondary);
-  font-weight: 500;
+  color: var(--text-secondary);
+  font-size: var(--fs-body-sm);
 }
 
 .info-val {
-  font-size: 13px;
   color: var(--text-primary);
+  font-size: var(--fs-body-sm);
   font-weight: 600;
+  text-align: right;
 }
 
 .code-tag {
-  background: var(--primary-soft) !important;
-  border-color: var(--primary-border) !important;
-  color: var(--primary-active) !important;
-}
-
-.type-indicator {
-  font-size: 12px;
+  font-family: var(--font-code) !important;
+  letter-spacing: 0.1em !important;
 }
 
 .expire-time {
-  color: var(--warning-color);
-  font-family: var(--font-accent);
+  color: var(--text-primary);
+  font-family: var(--font-code);
 }
 
-/* 响应式 */
-@media (max-width: 768px) {
-  .main-wrapper {
-    width: min(100% - 24px, 760px);
-    padding: 16px 0;
+@media (max-width: 767px) {
+  .pickup-page {
+    --page-inset-top: var(--space-sm);
+    --page-inset-bottom: var(--space-sm);
   }
 
-  .glass-card {
-    padding: 24px 16px;
+  .logo-text h1 {
+    font-size: var(--fs-title-lg);
   }
 
-  .share-header {
-    flex-direction: column;
-    gap: 16px;
+  .pickup-header {
     align-items: stretch;
+    flex-direction: column;
+    gap: var(--space-xs);
   }
 
   .home-btn {
@@ -681,17 +686,7 @@ watch(() => route.params.code, (value) => {
   }
 
   .file-card {
-    padding: 28px 16px;
-  }
-
-  .info-row {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 6px;
-  }
-
-  .info-val {
-    align-self: flex-end;
+    padding: var(--space-md) var(--space-sm);
   }
 }
 </style>

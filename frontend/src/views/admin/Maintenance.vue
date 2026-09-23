@@ -3,6 +3,32 @@
     <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
       {{ loadingSystemInfo ? t('common.loading') : '' }}
     </p>
+
+    <div class="subpage-header-card">
+      <div class="subpage-header">
+        <div class="header-desc">
+          <span class="desc-text">{{ t('maintenance.subtitle') }}</span>
+          <span class="desc-divider" aria-hidden="true">·</span>
+          <div class="desc-meta">
+            <el-icon aria-hidden="true"><Clock /></el-icon>
+            <span>{{ t('common.lastCheck', { time: lastRefreshTime }) }}</span>
+          </div>
+        </div>
+        <div class="header-actions">
+          <ActionFeedbackButton
+            type="primary"
+            size="small"
+            :icon="Refresh"
+            :loading="loadingSystemInfo"
+            :success="refreshSucceeded"
+            @click="refreshMaintenance"
+          >
+            {{ t('maintenance.refreshStatus') }}
+          </ActionFeedbackButton>
+        </div>
+      </div>
+    </div>
+
     <el-row :gutter="20" class="status-row" :aria-busy="loadingSystemInfo">
       <el-col :xs="24" :sm="8">
         <el-card class="status-card" shadow="never">
@@ -193,12 +219,15 @@ import {
   Monitor,
   TrendCharts,
   Delete,
-  DocumentChecked
+  DocumentChecked,
+  Clock,
+  Refresh
 } from '@element-plus/icons-vue'
 import { adminApi } from '@/api/admin'
 import { publicApi, type VersionInfo } from '@/api/public'
 import ActionFeedbackButton from '@/components/ActionFeedbackButton.vue'
 import { useActionFeedback } from '@/composables/useActionFeedback'
+import { useLastRefresh } from '@/composables/useLastRefresh'
 import { getLocaleTag, useI18n } from '@/i18n'
 import { formatDateTime, formatFileSize } from '@/utils/format'
 
@@ -207,9 +236,11 @@ const loadingSystemInfo = ref(false)
 const isMobile = useMediaQuery('(max-width: 767px)')
 const { locale, t } = useI18n()
 const { active: cleanupSucceeded, show: showCleanupSucceeded } = useActionFeedback()
+const { active: refreshSucceeded, show: showRefreshSucceeded } = useActionFeedback()
+const { lastRefreshTime, markRefreshed } = useLastRefresh()
 
 const versionInfo = ref<VersionInfo>({
-  version: '2.5.0',
+  version: '2.7.0',
   commit_hash: 'dev',
   short_hash: 'dev',
   build_time: null,
@@ -295,11 +326,17 @@ const fetchSystemInfo = async () => {
     } else {
       console.error('Failed to load deployment metadata:', versionResult.reason)
     }
+    markRefreshed()
   } catch (error) {
     console.error('Failed to load system info:', error)
   } finally {
     loadingSystemInfo.value = false
   }
+}
+
+const refreshMaintenance = async () => {
+  await fetchSystemInfo()
+  showRefreshSucceeded()
 }
 
 onMounted(() => {
@@ -312,6 +349,8 @@ onMounted(() => {
   padding: 0;
 }
 
+
+
 .status-row {
   margin-bottom: 20px;
 }
@@ -323,37 +362,40 @@ onMounted(() => {
 .status-item {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-xs);
 }
 
 .status-icon {
   width: 38px;
   height: 38px;
   flex: 0 0 38px;
-  padding: 8px;
+  padding: var(--space-2xs);
   border-radius: var(--radius-lg);
-  font-size: 22px;
+  font-size: var(--fs-title-lg);
 }
 
-.status-icon--success { background: var(--success-soft); color: var(--success-color); }
-.status-icon--warning { background: var(--warning-soft); color: var(--warning-color); }
-.status-icon--danger { background: var(--danger-soft); color: var(--danger-color); }
+/* On a 12% tint over --surface-card the bright semantic hues drop under 2:1,
+   so the glyphs use the ink stops; the tint still carries the hue. */
+.status-icon--success { background: var(--success-soft); color: var(--success-ink); }
+.status-icon--warning { background: var(--warning-soft); color: var(--warning-ink); }
+.status-icon--danger { background: var(--danger-soft); color: var(--danger-ink); }
 
 .status-info h4 {
-  margin: 0 0 5px;
-  font-size: 14px;
+  margin: 0 0 var(--space-3xs);
+  font-size: var(--fs-body-sm);
   color: var(--text-secondary);
 }
 
 .status-info p {
   margin: 0;
-  font-size: 18px;
+  font-family: var(--font-code);
+  font-size: var(--fs-title-md);
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .text-success {
-  color: var(--success-color) !important;
+  color: var(--success-ink) !important;
 }
 
 .tool-card {
@@ -365,11 +407,11 @@ onMounted(() => {
 }
 
 .code-font {
-  font-family: 'Courier New', Courier, monospace;
-  font-weight: 700;
+  font-family: var(--font-code);
+  font-weight: 600;
 }
 
-@media (min-width: 1200px) {
+@media (min-width: 1024px) {
   .maintenance-grid > .el-col {
     display: flex;
   }
@@ -383,31 +425,49 @@ onMounted(() => {
 .card-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 16px;
+  gap: var(--space-xs);
+  font-size: var(--fs-title-sm);
   font-weight: 600;
 }
 
 .tool-list {
-  padding: 10px 0;
+  padding: var(--space-xs) 0;
 }
 
+/* The only flex row in this view that had no gap: the description ran flush
+   into the button, which reads as the two overlapping. Wrapping lets the
+   button drop below the text instead of squeezing it to a few glyphs per
+   line once the card is a third of the grid. */
 .tool-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 15px 0;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-xs) var(--space-sm);
+  padding: var(--space-sm) 0;
+}
+
+/* The basis is what makes the row wrap at the right moment: with `auto` the
+   hypothetical size is the sentence's max-content width, so the button would
+   drop below even in a roomy card. */
+.tool-info {
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.tool-item :deep(.el-button) {
+  flex-shrink: 0;
 }
 
 .tool-info h4 {
-  margin: 0 0 5px;
-  font-size: 16px;
+  margin: 0 0 var(--space-3xs);
+  font-size: var(--fs-title-sm);
   font-weight: 600;
 }
 
 .tool-info p {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--fs-body-sm);
   color: var(--text-secondary);
 }
 
@@ -421,33 +481,36 @@ onMounted(() => {
 }
 
 .section-heading {
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 }
 
 .section-heading h3 {
-  margin: 0 0 6px;
+  margin: 0 0 var(--space-2xs);
   color: var(--text-primary);
-  font-size: 17px;
+  font-family: var(--font-display);
+  font-size: var(--fs-title-md);
+  font-weight: 500;
+  letter-spacing: -0.2px;
 }
 
 .section-heading p {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-caption);
   line-height: 1.6;
 }
 
 .architecture-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: var(--space-sm);
 }
 
 .architecture-card {
   display: flex;
   min-width: 0;
-  gap: 14px;
-  padding: 18px;
+  gap: var(--space-sm);
+  padding: 20px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   background: var(--surface-page);
@@ -457,23 +520,23 @@ onMounted(() => {
   width: 42px;
   height: 42px;
   flex: 0 0 42px;
-  padding: 10px;
+  padding: var(--space-xs);
   border-radius: 12px;
-  font-size: 22px;
+  font-size: var(--fs-title-lg);
 }
 
 .architecture-card--r2 .architecture-icon {
-  color: var(--success-color);
+  color: var(--success-ink);
   background: var(--success-soft);
 }
 
 .architecture-card--d1 .architecture-icon {
-  color: var(--primary-color);
+  color: var(--primary-ink);
   background: var(--primary-soft);
 }
 
 .architecture-card--worker .architecture-icon {
-  color: var(--warning-color);
+  color: var(--warning-ink);
   background: var(--warning-soft);
 }
 
@@ -486,36 +549,36 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 7px;
+  gap: var(--space-2xs);
+  margin-bottom: var(--space-2xs);
 }
 
 .architecture-title h4 {
   margin: 0;
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: var(--fs-body-sm);
 }
 
 .architecture-card p {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-caption);
   line-height: 1.65;
 }
 
-@media (max-width: 1199px) {
+@media (max-width: 1023px) {
   .tool-card {
-    margin-bottom: 14px;
+    margin-bottom: var(--space-sm);
   }
 }
 
 @media (max-width: 767px) {
   .status-row {
-    margin-bottom: 6px;
+    margin-bottom: var(--space-2xs);
   }
 
   .status-row .el-col {
-    margin-bottom: 14px;
+    margin-bottom: var(--space-sm);
   }
 
   .status-item {
@@ -526,7 +589,19 @@ onMounted(() => {
   .tool-item {
     align-items: stretch;
     flex-direction: column;
-    gap: 16px;
+    gap: var(--space-sm);
+  }
+
+  /* Once the row is a column, flex-basis resolves against the *height*, and a
+     220px basis leaves a void between the text and the action. */
+  .tool-info {
+    flex: 0 1 auto;
+  }
+
+  /* One destructive action does not need the full card width; keep it at the
+     end of the block the way it sits at the end of the row on desktop. */
+  .tool-item :deep(.el-button) {
+    align-self: flex-end;
   }
 
   .architecture-grid {
@@ -534,9 +609,9 @@ onMounted(() => {
   }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 767px) {
   .architecture-card {
-    padding: 15px;
+    padding: var(--space-sm);
   }
 }
 </style>

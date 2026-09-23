@@ -13,9 +13,16 @@ const expectedIcons = new Map([
   ['/app-icon-512.png', { width: 512, height: 512, purpose: 'any', maxBytes: 400_000 }],
   ['/app-icon-maskable-512.png', { width: 512, height: 512, purpose: 'maskable', maxBytes: 400_000 }],
 ])
+const expectedFonts = [
+  'cormorant-garamond-v21-latin.woff2',
+  'cormorant-garamond-v21-latin-ext.woff2',
+  'plus-jakarta-sans-v12-latin.woff2',
+  'plus-jakarta-sans-v12-latin-ext.woff2',
+  'jetbrains-mono-v24-latin.woff2',
+  'jetbrains-mono-v24-latin-ext.woff2',
+]
 
 checkPng('/favicon-32.png', 32, 32, 20_000)
-checkPng('/app-logo-dark.png', 192, 192, 120_000)
 
 for (const icon of manifest.icons || []) {
   const expected = expectedIcons.get(icon.src)
@@ -38,7 +45,10 @@ if (manifest.share_target?.action !== '/#/share-target' || manifest.share_target
   failures.push('The Web Share Target must use GET /#/share-target')
 }
 if (manifest.share_target?.params?.files) failures.push('The manifest must not claim unsupported file share targets')
-if (manifest.background_color !== '#f3f6f8') failures.push('The PWA splash background must stay light')
+// The splash and browser chrome have to match the app canvas in DESIGN.md;
+// they lagged a release behind the palette the last time this drifted.
+if (manifest.background_color !== '#faf9f5') failures.push('The PWA splash background must be the cream canvas (#faf9f5)')
+if (manifest.theme_color !== '#faf9f5') failures.push('The PWA theme colour must be the cream canvas (#faf9f5)')
 if (existsSync(resolve(publicDir, 'icon.png'))) failures.push('The 1024px source icon must not be served as a public UI asset')
 
 const themeInitPath = resolve(publicDir, 'theme-init.js')
@@ -47,6 +57,18 @@ if (!existsSync(themeInitPath)) failures.push('Missing pre-render theme initiali
 const indexHtml = readFileSync(resolve(root, 'frontend/index.html'), 'utf8')
 if (!indexHtml.includes('<script src="/theme-init.js"></script>')) {
   failures.push('The theme initializer must run before the Vue module script')
+}
+
+// The app CSP keeps style-src and font-src at 'self'. A remote font link is
+// blocked at runtime and silently drops the whole type system to system
+// fallbacks, which is how the editorial faces went missing once already.
+if (/https?:\/\/fonts\.(googleapis|gstatic)\.com/.test(indexHtml)) {
+  failures.push('Fonts must be self-hosted: the CSP blocks fonts.googleapis.com and fonts.gstatic.com')
+}
+for (const font of expectedFonts) {
+  if (!existsSync(resolve(publicDir, 'fonts', font))) {
+    failures.push(`Missing self-hosted font: /fonts/${font}`)
+  }
 }
 
 if (failures.length) {

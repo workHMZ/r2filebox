@@ -1,6 +1,6 @@
 <template>
   <form class="get-share-container" @submit.prevent="handleGetShare">
-    <div class="input-section">
+    <div>
       <div class="lookup-row">
         <label class="sr-only" for="share-code-input">{{ t('a11y.shareCode') }}</label>
         <el-input
@@ -10,7 +10,7 @@
           size="large"
           :placeholder="t('get.placeholder')"
           :aria-invalid="lookupError"
-          :aria-describedby="lookupError ? 'share-code-error' : undefined"
+          :aria-describedby="lookupError ? 'code-lookup-error' : undefined"
           autocomplete="off"
           autocapitalize="off"
           spellcheck="false"
@@ -34,22 +34,20 @@
           {{ t('get.button') }}
         </el-button>
       </div>
-      <p v-if="lookupError" id="share-code-error" class="sr-only">{{ t('get.empty') }}</p>
+      <p v-if="lookupError" id="code-lookup-error" class="sr-only">{{ t('get.empty') }}</p>
     </div>
 
-    <div class="tips-section">
-      <div class="tips-card">
-        <p class="tips-title">
-          <el-icon class="tip-spark" aria-hidden="true"><HelpFilled /></el-icon>
-          {{ t('get.tips.title') }}
-        </p>
-        <ul class="tips-list">
-          <li>{{ t('get.tips.one') }}</li>
-          <li>{{ t('get.tips.two') }}</li>
-          <li>{{ t('get.tips.three') }}</li>
-          <li>{{ t('get.tips.four') }}</li>
-        </ul>
-      </div>
+    <div class="tips-card">
+      <p class="tips-title">
+        <el-icon class="tip-spark" aria-hidden="true"><HelpFilled /></el-icon>
+        {{ t('get.tips.title') }}
+      </p>
+      <ul class="tips-list">
+        <li>{{ t('get.tips.one') }}</li>
+        <li>{{ t('get.tips.two') }}</li>
+        <li>{{ t('get.tips.three') }}</li>
+        <li>{{ t('get.tips.four') }}</li>
+      </ul>
     </div>
   </form>
 </template>
@@ -89,99 +87,110 @@ const handleGetShare = () => {
 
 <style scoped>
 .get-share-container {
-  padding: 8px 0 0;
-}
-
-
-.input-section {
-  margin: 8px 0 36px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
 }
 
 .lookup-row {
   display: flex;
-  width: 100%;
-  max-width: 640px;
-  margin: 0 auto;
   align-items: stretch;
-  gap: 10px;
+  gap: var(--space-xs);
 }
 
 .code-input {
   flex: 1;
+  min-width: 0;
 }
 
 .code-input :deep(.el-input__wrapper) {
-  height: 50px !important;
-  min-height: 50px !important;
-  padding: 5px 16px !important;
-  font-size: 16px !important;
+  height: 52px !important;
+  min-height: 52px !important;
+  padding: 0 var(--space-sm) !important;
+}
+
+.code-input :deep(.el-input__inner) {
+  font-family: var(--font-code) !important;
+  font-size: var(--fs-title-md) !important;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* The wide tracking is for the code itself; the placeholder is a sentence and
+   has to stay readable. */
+.code-input :deep(.el-input__inner)::placeholder {
+  font-family: var(--font-primary);
+  font-size: var(--fs-body-md);
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .input-key-icon {
-  font-size: 18px;
-  color: var(--primary-color);
+  color: var(--text-secondary);
+  font-size: var(--fs-title-md);
 }
 
 .get-btn {
-  width: 150px;
-  height: 50px;
-  flex: 0 0 150px;
-  font-size: 15px;
-  font-weight: 700;
-  border-radius: var(--radius-md);
+  width: 148px;
+  min-height: 52px;
+  flex: 0 0 148px;
+  font-size: var(--fs-title-sm);
 }
 
-.tips-section {
-  max-width: 540px;
-  margin: 0 auto;
-}
-
+/* The tips read as a ruled footnote on the sheet, not a second card. */
 .tips-card {
-  padding: 20px 0 0;
+  padding-top: var(--space-md);
   border-top: 1px solid var(--border-subtle);
-  text-align: left;
 }
 
 .tips-title {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-weight: 700;
-  font-size: 15px;
+  gap: var(--space-2xs);
+  margin-bottom: var(--space-xs);
   color: var(--text-primary);
-  margin-bottom: 12px;
+  font-size: var(--fs-body-sm);
+  font-weight: 600;
 }
 
 .tip-spark {
-  color: var(--accent-color);
+  color: var(--primary-ink);
 }
 
 .tips-list {
+  display: grid;
+  gap: var(--space-2xs);
   margin: 0;
-  padding-left: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  padding: 0;
+  list-style: none;
 }
 
 .tips-list li {
-  font-size: 13px;
-  color: var(--glass-text-secondary);
-  line-height: 1.6;
+  position: relative;
+  padding-left: var(--space-sm);
+  color: var(--text-secondary);
+  font-size: var(--fs-body-sm);
+  line-height: var(--leading-body);
 }
 
-.tips-list li strong {
-  color: var(--primary-color);
+.tips-list li::before {
+  content: '';
+  position: absolute;
+  top: 0.65em;
+  left: 0;
+  width: var(--space-2xs);
+  height: 1px;
+  background: var(--primary-color);
 }
 
-@media (max-width: 560px) {
+@media (max-width: 767px) {
   .lookup-row {
     flex-direction: column;
   }
 
   .get-btn {
     width: 100%;
-    flex-basis: 50px;
+    flex-basis: 52px;
   }
 }
 </style>

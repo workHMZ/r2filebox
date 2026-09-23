@@ -18,7 +18,7 @@ import ThemeSwitch from '@/components/ThemeSwitch.vue'
   gap: 8px;
 }
 
-@media (max-width: 460px) {
+@media (max-width: 767px) {
   .interface-controls {
     gap: 4px;
   }

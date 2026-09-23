@@ -39,10 +39,10 @@ const toggleLabel = computed(() => (
   justify-content: center;
   border: 1px solid var(--control-border);
   border-radius: var(--radius-md);
-  background: var(--surface-card-solid);
+  background: var(--surface-card);
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 17px;
+  font-size: var(--fs-title-sm);
   transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
 }
 
@@ -57,10 +57,4 @@ const toggleLabel = computed(() => (
   outline-offset: 3px;
 }
 
-@media (max-width: 460px) {
-  .theme-switch {
-    width: 38px;
-    flex-basis: 38px;
-  }
-}
 </style>

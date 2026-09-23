@@ -56,17 +56,17 @@ withDefaults(defineProps<{
 }
 
 .action-feedback-button :deep(.el-icon) {
-  margin-right: 7px;
+  margin-right: var(--space-2xs);
 }
 
 .action-feedback-button.is-success-feedback {
-  --el-button-text-color: var(--success-color);
+  --el-button-text-color: var(--success-ink);
   --el-button-bg-color: var(--success-soft);
   --el-button-border-color: var(--success-border);
-  --el-button-hover-text-color: var(--success-color);
+  --el-button-hover-text-color: var(--success-ink);
   --el-button-hover-bg-color: var(--success-soft);
   --el-button-hover-border-color: var(--success-color);
-  --el-button-active-text-color: var(--success-color);
+  --el-button-active-text-color: var(--success-ink);
   --el-button-active-bg-color: var(--success-soft);
   --el-button-active-border-color: var(--success-color);
 }

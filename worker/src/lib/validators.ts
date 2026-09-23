@@ -68,7 +68,7 @@ export const sanitizeFilename = (filename: string): string => {
   return [...safe].slice(0, 200).join('')
 }
 
-export const sanitizeMimeType = (mimeType: string): string => {
+const sanitizeMimeType = (mimeType: string): string => {
   const value = mimeType
     .split(';', 1)[0]
     .trim()

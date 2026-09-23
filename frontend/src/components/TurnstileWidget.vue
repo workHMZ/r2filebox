@@ -198,11 +198,11 @@ function loadTurnstile(): Promise<void> {
 
 .turnstile-error {
   margin: 0;
-  color: var(--danger-color);
-  font-size: 13px;
+  color: var(--danger-ink);
+  font-size: var(--fs-caption);
 }
 
-@media (max-width: 360px) {
+@media (max-width: 767px) {
   .turnstile-field {
     overflow-x: auto;
     justify-content: flex-start;
