@@ -291,7 +291,7 @@ app.get('/admin/logs/audit', async (c) => {
     const db = new DB(c.env.DB)
     const [logs, stats] = await Promise.all([
       db.getAuditLogs(pageSize, offset),
-      db.getAuditStats(),
+      c.req.query('include_stats') === 'false' ? Promise.resolve(undefined) : db.getAuditStats(),
     ])
     const items = logs.items.map((log) => ({
       id: log.id,
@@ -319,7 +319,7 @@ app.get('/admin/maintenance/system-info', (c) => {
     runtime: 'Cloudflare Workers',
     platform: 'V8 isolate',
     storage: 'D1 + R2 + Workers Rate Limiting',
-    version: c.env.APP_VERSION || '2.8.0',
+    version: c.env.APP_VERSION || '2.9.0',
     r2_bucket_name: c.env.R2_BUCKET_NAME || null,
     d1_database_name: c.env.D1_DATABASE_NAME || null,
   }))

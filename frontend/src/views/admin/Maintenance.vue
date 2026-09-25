@@ -33,10 +33,10 @@
       <el-col :xs="24" :sm="8">
         <el-card class="status-card" shadow="never">
           <div class="status-item">
-            <el-icon class="status-icon status-icon--success"><CircleCheckFilled /></el-icon>
+            <el-icon class="status-icon" :class="statusReady ? 'status-icon--success' : 'status-icon--warning'"><CircleCheckFilled v-if="statusReady" /><WarningFilled v-else /></el-icon>
             <div class="status-info">
-              <h4>{{ t('maintenance.systemStatus') }}</h4>
-              <p class="text-success">{{ t('storage.statusOk') }}</p>
+              <h4>{{ t('maintenance.dataStatus') }}</h4>
+              <p :class="statusReady ? 'text-success' : 'text-warning'">{{ statusText }}</p>
             </div>
           </div>
         </el-card>
@@ -208,11 +208,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   CircleCheckFilled,
+  WarningFilled,
   Files,
   Folder,
   Coin,
@@ -233,14 +234,20 @@ import { formatDateTime, formatFileSize } from '@/utils/format'
 
 const cleaningExpired = ref(false)
 const loadingSystemInfo = ref(false)
+const statusReady = ref(false)
+const statusChecked = ref(false)
 const isMobile = useMediaQuery('(max-width: 767px)')
 const { locale, t } = useI18n()
-const { active: cleanupSucceeded, show: showCleanupSucceeded } = useActionFeedback()
-const { active: refreshSucceeded, show: showRefreshSucceeded } = useActionFeedback()
+const statusText = computed(() => t(loadingSystemInfo.value
+  ? 'maintenance.reading'
+  : statusReady.value ? 'maintenance.readReady'
+    : statusChecked.value ? 'maintenance.readFailed' : 'maintenance.readUnknown'))
+const { active: cleanupSucceeded, reset: resetCleanupFeedback, show: showCleanupSucceeded } = useActionFeedback()
+const { active: refreshSucceeded, reset: resetRefreshFeedback, show: showRefreshSucceeded } = useActionFeedback()
 const { lastRefreshTime, markRefreshed } = useLastRefresh()
 
 const versionInfo = ref<VersionInfo>({
-  version: '2.8.0',
+  version: '2.9.0',
   commit_hash: 'dev',
   short_hash: 'dev',
   build_time: null,
@@ -269,11 +276,19 @@ const cleanExpiredFiles = async () => {
     )
 
     cleaningExpired.value = true
+    resetCleanupFeedback()
     const res = await adminApi.cleanExpiredFiles()
     if (res.code === 200) {
       await fetchSystemInfo()
-      showCleanupSucceeded()
-      ElMessage.success(t('maintenance.cleanDone', { count: res.data.deleted_count || 0 }))
+      if (res.data.failures > 0) {
+        ElMessage.warning(t('maintenance.cleanPartial', {
+          count: res.data.deleted_count || 0,
+          failures: res.data.failures,
+        }))
+      } else {
+        showCleanupSucceeded()
+        ElMessage.success(t('maintenance.cleanDone', { count: res.data.deleted_count || 0 }))
+      }
     } else {
       ElMessage.error(res.message || t('maintenance.cleanFailed'))
     }
@@ -286,8 +301,10 @@ const cleanExpiredFiles = async () => {
   }
 }
 
-const fetchSystemInfo = async () => {
+const fetchSystemInfo = async (): Promise<boolean> => {
+  if (loadingSystemInfo.value) return false
   loadingSystemInfo.value = true
+  statusReady.value = false
   try {
     const [infoResult, statsResult, versionResult] = await Promise.allSettled([
       adminApi.getSystemInfo(),
@@ -326,17 +343,23 @@ const fetchSystemInfo = async () => {
     } else {
       console.error('Failed to load deployment metadata:', versionResult.reason)
     }
-    markRefreshed()
+    statusReady.value = [infoResult, statsResult, versionResult].every(
+      (result) => result.status === 'fulfilled' && result.value.code === 200 && Boolean(result.value.data),
+    )
+    if (statusReady.value) markRefreshed()
+    return statusReady.value
   } catch (error) {
     console.error('Failed to load system info:', error)
+    return false
   } finally {
+    statusChecked.value = true
     loadingSystemInfo.value = false
   }
 }
 
 const refreshMaintenance = async () => {
-  await fetchSystemInfo()
-  showRefreshSucceeded()
+  resetRefreshFeedback()
+  if (await fetchSystemInfo()) showRefreshSucceeded()
 }
 
 onMounted(() => {
@@ -377,6 +400,7 @@ onMounted(() => {
 /* On a 12% tint over --surface-card the bright semantic hues drop under 2:1,
    so the glyphs use the ink stops; the tint still carries the hue. */
 .status-icon--success { background: var(--success-soft); color: var(--success-ink); }
+.text-warning { color: var(--warning-ink); }
 .status-icon--warning { background: var(--warning-soft); color: var(--warning-ink); }
 .status-icon--danger { background: var(--danger-soft); color: var(--danger-ink); }
 

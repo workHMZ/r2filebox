@@ -41,15 +41,15 @@ type Bindings = Env
 
 const app = new Hono<{ Bindings: Bindings }>()
 const MULTIPART_PART_SIZE = CONTENT_FINGERPRINT_PART_SIZE
-const MAX_TEXT_REQUEST_BYTES = MAX_TEXT_BYTES_LIMIT + (64 * 1024)
+// JSON can encode one control byte as six bytes (\u0000). Bound the wire
+// format separately from the decoded UTF-8 text limit checked below.
+const MAX_TEXT_REQUEST_BYTES = (MAX_TEXT_BYTES_LIMIT * 6) + (64 * 1024)
 const MAX_INIT_BODY_BYTES = 16 * 1024
 const MAX_COMPLETE_BODY_BYTES = 32 * 1024
 const MAX_RESOLVE_BODY_BYTES = 4 * 1024
 const MAX_MULTIPART_PARTS = 12
-// One hour, not fifteen minutes: the pickup slot is consumed when the page
-// resolves, so a window that lapses before the user presses download costs them
-// a pickup and answers with a bare 404. An hour also covers a full-size file on
-// a slow mobile link without a second pickup.
+// Bound pickup sessions to one hour and the share's own expiry. Repeated
+// downloads within this window do not consume another pickup slot.
 const DOWNLOAD_SESSION_TTL_SECONDS = 60 * 60
 const SHARE_CODE_ATTEMPTS = 5
 const INSTANT_UPLOAD_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60
@@ -919,7 +919,10 @@ async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string 
     if (!await db.consumeShareDownload(share.id)) {
       return c.json(error(ErrorCode.SHARE_NOT_FOUND, 404, 'Share not found or expired'), 404)
     }
-    const downloadExpiresAtSeconds = Math.floor(Date.now() / 1000) + DOWNLOAD_SESSION_TTL_SECONDS
+    const downloadExpiresAtSeconds = Math.min(
+      Math.floor(Date.now() / 1000) + DOWNLOAD_SESSION_TTL_SECONDS,
+      Math.floor(Date.parse(share.expire_at) / 1000),
+    )
     const token = await signJWT({
       purpose: 'download',
       share_id: share.id,
@@ -929,7 +932,7 @@ async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string 
     const downloadUrl = `/api/share/download/${share.id}`
     c.header(
       'Set-Cookie',
-      downloadSessionCookie(token, downloadUrl, c.req.url, DOWNLOAD_SESSION_TTL_SECONDS),
+      downloadSessionCookie(token, downloadUrl, c.req.url, Math.max(0, downloadExpiresAtSeconds - Math.floor(Date.now() / 1000))),
     )
 
     await audit(db, c, 'share_resolve_file', share.id, 'success', ipHash, {

@@ -58,7 +58,7 @@
                 <span class="tab-name">{{ t('home.tab.get') }}</span>
               </span>
             </template>
-            <GetShare />
+            <GetShare v-if="configStore.config || configStore.loadFailed || tabChosenByUser" />
           </el-tab-pane>
         </el-tabs>
       </main>
@@ -78,96 +78,34 @@
       </footer>
     </div>
 
-    <el-dialog
+    <ShareReceipt
+      v-if="shareResult"
       v-model="showShareDialog"
-      :title="t('share.success.title')"
-      width="520px"
-      :close-on-click-modal="false"
+      :result="shareResult"
       @closed="handleDialogClosed"
-    >
-      <div class="receipt">
-        <p class="receipt-lede">{{ t('share.success.subtitle') }}</p>
-
-        <div class="stub stub--perforated">
-          <div class="stub-code">
-            <span class="eyebrow stub-eyebrow">{{ t('share.code.label') }}</span>
-            <div class="stub-code-row">
-              <span class="stub-code-value" :title="t('a11y.selectShareCode')">{{ shareCode }}</span>
-              <ActionFeedbackButton
-                type="primary"
-                size="small"
-                :icon="CopyDocument"
-                :success="codeCopied"
-                @click="copyShareCode"
-              >
-                {{ t('share.code.copy') }}
-              </ActionFeedbackButton>
-            </div>
-          </div>
-
-          <dl class="stub-terms">
-            <div class="stub-term">
-              <dt>{{ t('share.success.expire') }}</dt>
-              <dd>{{ shareExpireText }}</dd>
-            </div>
-            <div class="stub-term">
-              <dt>{{ t('share.success.maxDownloads') }}</dt>
-              <dd>{{ shareMaxDownloadsText }}</dd>
-            </div>
-          </dl>
-
-          <div v-if="qrCodeDataUrl" class="receipt-qr">
-            <div class="receipt-qr-card">
-              <img :src="qrCodeDataUrl" alt="" aria-hidden="true" class="receipt-qr-image" />
-            </div>
-            <p class="receipt-qr-tip">{{ t('share.qr.tip') }}</p>
-          </div>
-        </div>
-
-        <el-input
-          v-model="shareUrl"
-          readonly
-          size="large"
-          class="receipt-link"
-          :aria-label="t('a11y.shareLink')"
-        >
-          <template #append>
-            <ActionFeedbackButton
-              type="primary"
-              :icon="CopyDocument"
-              :success="urlCopied"
-              @click="copyShareUrl"
-            >
-              {{ t('share.link.copy') }}
-            </ActionFeedbackButton>
-          </template>
-        </el-input>
-      </div>
-    </el-dialog>
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useMediaQuery } from '@vueuse/core'
-import { ElMessage } from 'element-plus'
-import { CopyDocument, Link } from '@element-plus/icons-vue'
+import { Link } from '@element-plus/icons-vue'
 
 import { useConfigStore } from '@/stores/config'
-import ActionFeedbackButton from '@/components/ActionFeedbackButton.vue'
 import AppLogo from '@/components/AppLogo.vue'
 import InterfaceControls from '@/components/InterfaceControls.vue'
-import FileUpload from '@/components/upload/FileUpload.vue'
-import TextShare from '@/components/upload/TextShare.vue'
-import GetShare from '@/components/upload/GetShare.vue'
-import { useActionFeedback } from '@/composables/useActionFeedback'
 import type { ShareCreatedResult } from '@/api/share'
-import { getLocaleTag, useI18n } from '@/i18n'
-import { formatDateTime } from '@/utils/format'
+import { useI18n } from '@/i18n'
+
+const ShareReceipt = defineAsyncComponent(() => import('@/components/ShareReceipt.vue'))
+const FileUpload = defineAsyncComponent(() => import('@/components/upload/FileUpload.vue'))
+const TextShare = defineAsyncComponent(() => import('@/components/upload/TextShare.vue'))
+const GetShare = defineAsyncComponent(() => import('@/components/upload/GetShare.vue'))
 
 const configStore = useConfigStore()
-const { locale, t } = useI18n()
+const { t } = useI18n()
 
 const fileShareEnabled = computed(() => {
   const config = configStore.config
@@ -195,23 +133,7 @@ const tabPosition = computed(() => (isCompact.value ? 'top' : 'left'))
 const activeTab = ref('get')
 const tabChosenByUser = ref(false)
 const showShareDialog = ref(false)
-const shareUrl = ref('')
-const shareCode = ref('')
-const shareExpireAt = ref('')
-const shareMaxDownloads = ref<number | null>(null)
-const qrCodeDataUrl = ref('')
-let qrGenerationVersion = 0
-
-const shareExpireText = computed(() => (
-  shareExpireAt.value
-    ? formatDateTime(shareExpireAt.value, getLocaleTag(locale.value))
-    : '—'
-))
-const shareMaxDownloadsText = computed(() => (
-  shareMaxDownloads.value === null
-    ? t('share.success.unlimited')
-    : t('share.success.times', { count: shareMaxDownloads.value })
-))
+const shareResult = ref<ShareCreatedResult | null>(null)
 
 const route = useRoute()
 
@@ -237,75 +159,13 @@ const triggerShareSuccessHaptic = () => {
   if (typeof navigator.vibrate === 'function') navigator.vibrate(35)
 }
 
-const handleShareSuccess = async (result: ShareCreatedResult) => {
-  const version = ++qrGenerationVersion
-  let url = result.full_share_url || result.share_url
-
-  if (!url.includes('#')) {
-    if (url.startsWith('/')) {
-      url = `${window.location.origin}/#${url}`
-    } else {
-      const pathIndex = url.indexOf('/share/')
-      if (pathIndex > 0) {
-        url = url.substring(0, pathIndex) + '/#' + url.substring(pathIndex)
-      }
-    }
-  }
-
-  shareUrl.value = url
-  shareCode.value = result.code
-  shareExpireAt.value = result.expire_at
-  shareMaxDownloads.value = result.max_downloads
-  qrCodeDataUrl.value = ''
+const handleShareSuccess = (result: ShareCreatedResult) => {
+  shareResult.value = result
   showShareDialog.value = true
   triggerShareSuccessHaptic()
-
-  try {
-    const { default: QRCode } = await import('qrcode')
-    const qrData = result.qr_code_data || url
-    const generatedQrCode = await QRCode.toDataURL(qrData, {
-      width: 180,
-      margin: 2,
-      // Scanners need a light quiet zone, so the code stays ink-on-paper even
-      // though it sits inside the dark receipt.
-      color: {
-        dark: '#141413',
-        light: '#faf9f5',
-      },
-    })
-    if (version === qrGenerationVersion) qrCodeDataUrl.value = generatedQrCode
-  } catch (error) {
-    console.error('生成二维码失败:', error)
-    if (version === qrGenerationVersion) qrCodeDataUrl.value = ''
-  }
-}
-
-const { active: codeCopied, reset: resetCodeCopied, show: showCodeCopied } = useActionFeedback()
-const { active: urlCopied, reset: resetUrlCopied, show: showUrlCopied } = useActionFeedback()
-
-const copyShareUrl = async () => {
-  try {
-    await navigator.clipboard.writeText(shareUrl.value)
-    ElMessage.success(t('share.link.copied'))
-    showUrlCopied()
-  } catch {
-    ElMessage.error(t('shareView.copyFailed'))
-  }
-}
-
-const copyShareCode = async () => {
-  try {
-    await navigator.clipboard.writeText(shareCode.value)
-    ElMessage.success(t('share.code.copied'))
-    showCodeCopied()
-  } catch {
-    ElMessage.error(t('shareView.copyFailed'))
-  }
 }
 
 const handleDialogClosed = () => {
-  resetCodeCopied()
-  resetUrlCopied()
   document
     .querySelector<HTMLElement>('.function-tabs .el-tabs__item[aria-selected="true"]')
     ?.focus()
@@ -313,9 +173,6 @@ const handleDialogClosed = () => {
 </script>
 
 <style scoped>
-/* viewport-fit=cover puts the page under the status bar and the home
-   indicator, so the outer padding has to clear both. env() resolves to 0px
-   everywhere else, which leaves the desktop rhythm untouched. */
 /* viewport-fit=cover puts the page under the status bar and the home
    indicator. The safe-area guard is written once here and the breakpoints
    only retune the variables — declaring `padding` again in a media query
@@ -535,122 +392,6 @@ const handleDialogClosed = () => {
   color: var(--primary-ink);
 }
 
-/* ---- Receipt dialog ---------------------------------------------------- */
-.receipt {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
-}
-
-.receipt-lede {
-  color: var(--text-secondary);
-  font-size: var(--fs-body-sm);
-}
-
-.stub {
-  /* The receipt is torn from the dialog sheet, not from the page floor. */
-  --stub-notch: var(--surface-overlay);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-  padding: var(--space-md);
-  background: var(--surface-page);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  color: var(--text-primary);
-}
-
-.stub-eyebrow {
-  color: var(--text-secondary);
-}
-
-.stub-code {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2xs);
-}
-
-.stub-code-row {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-sm);
-}
-
-.stub-code-value {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--text-primary);
-  cursor: pointer;
-  font-family: var(--font-code);
-  font-size: var(--fs-display-sm);
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  line-height: 1.1;
-  user-select: all;
-}
-
-.stub-terms {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2xs);
-  padding-top: var(--space-sm);
-  border-top: 1px dashed var(--border-subtle);
-}
-
-.stub-term {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-xs);
-}
-
-.stub-term dt {
-  color: var(--text-secondary);
-  font-size: var(--fs-caption);
-}
-
-.stub-term dd {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--text-primary);
-  font-size: var(--fs-caption);
-  font-weight: 600;
-  text-align: right;
-}
-
-.receipt-qr {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-2xs);
-  padding-top: var(--space-sm);
-  border-top: 1px dashed var(--border-subtle);
-}
-
-.receipt-qr-card {
-  display: inline-flex;
-  padding: var(--space-2xs);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: #ffffff;
-}
-
-.receipt-qr-image {
-  display: block;
-  width: 148px;
-  height: 148px;
-  border: none;
-  border-radius: var(--radius-xs);
-  background: #ffffff;
-}
-
-.receipt-qr-tip {
-  color: var(--text-secondary);
-  font-size: var(--fs-caption-up);
-}
-
 /* ---- Breakpoints ------------------------------------------------------- */
 @media (max-width: 767px) {
   .home-page {
@@ -729,10 +470,5 @@ const handleDialogClosed = () => {
     justify-content: center;
   }
 
-  .stub-code-row {
-    align-items: stretch;
-    flex-direction: column;
-    gap: var(--space-2xs);
-  }
 }
 </style>

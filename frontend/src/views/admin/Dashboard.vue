@@ -29,6 +29,8 @@
       </div>
     </div>
 
+    <el-alert v-if="loadFailed" :title="t('common.refreshFailed')" type="error" :closable="false" show-icon />
+
     <div class="stats-grid" :aria-busy="loading">
       <div class="stat-card stat-card--teal">
         <div class="stat-icon"><el-icon><Monitor /></el-icon></div>
@@ -241,9 +243,10 @@ ChartJS.register(
 )
 
 const loading = ref(false)
+const loadFailed = ref(false)
 const { t, locale } = useI18n()
 const { isDark } = useTheme()
-const { active: refreshSucceeded, show: showRefreshSucceeded } = useActionFeedback()
+const { active: refreshSucceeded, reset: resetRefreshFeedback, show: showRefreshSucceeded } = useActionFeedback()
 const { lastRefreshTime, markRefreshed } = useLastRefresh()
 const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
 let animationFrame: number | null = null
@@ -507,10 +510,12 @@ const fetchDashboardStats = async () => {
       stats.expiredShares = res.data.expired_shares || 0
 
       animateStats()
+      return true
     }
   } catch (error) {
-    console.error('获取统计信息失败:', error)
+    console.error('Failed to load dashboard statistics:', error)
   }
+  return false
 }
 
 const fetchCharts = async () => {
@@ -536,9 +541,11 @@ const fetchCharts = async () => {
       typeData.labels = typeAccessibleData.value.map((item) => item.label)
       typeData.datasets[0]!.data = typeAccessibleData.value.map((item) => item.count)
     }
+    return trendRes.code === 200 && Boolean(trendRes.data) && typeRes.code === 200 && Boolean(typeRes.data)
   } catch (error) {
-    console.error('获取图表数据失败:', error)
+    console.error('Failed to load dashboard charts:', error)
   }
+  return false
 }
 
 watch(locale, () => {
@@ -555,44 +562,37 @@ const fetchRecentFiles = async () => {
           file_size: file.size_bytes,
           created_at: file.created_at,
         }))
-      } else {
-        recentFiles.value = []
+        return true
       }
     }
   } catch (error) {
-    console.error('获取最新文件失败:', error)
-    recentFiles.value = []
+    console.error('Failed to load recent files:', error)
   }
+  return false
 }
 
-const refreshDashboard = async () => {
+const loadDashboard = async (showFeedback = false) => {
+  if (loading.value) return
   loading.value = true
+  resetRefreshFeedback()
   try {
-    await Promise.all([
+    const results = await Promise.all([
       fetchDashboardStats(),
       fetchCharts(),
       fetchRecentFiles(),
     ])
-    markRefreshed()
-    showRefreshSucceeded()
+    loadFailed.value = !results.every(Boolean)
+    if (!loadFailed.value) {
+      markRefreshed()
+      if (showFeedback) showRefreshSucceeded()
+    }
   } finally {
     loading.value = false
   }
 }
 
-onMounted(async () => {
-  loading.value = true
-  try {
-    await Promise.all([
-      fetchDashboardStats(),
-      fetchCharts(),
-      fetchRecentFiles(),
-    ])
-    markRefreshed()
-  } finally {
-    loading.value = false
-  }
-})
+const refreshDashboard = () => loadDashboard(true)
+onMounted(() => { void loadDashboard() })
 
 onBeforeUnmount(() => {
   if (animationFrame !== null) cancelAnimationFrame(animationFrame)

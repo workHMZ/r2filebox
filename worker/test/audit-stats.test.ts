@@ -140,6 +140,14 @@ describe('audit statistics', () => {
     expect(logs.status).toBe(200)
     const body = await logs.json<{ data: { stats: { completedRetrievals: number } } }>()
     expect(body.data.stats.completedRetrievals).toBe(2)
+    const page = await SELF.fetch('https://example.test/admin/logs/audit?include_stats=false&page=1', {
+      headers: { Cookie: cookie },
+    })
+    expect(page.status).toBe(200)
+    const pageBody = await page.json<{ data: { stats?: unknown; pagination: { total: number }; items: unknown[] } }>()
+    expect(pageBody.data.stats).toBeUndefined()
+    expect(pageBody.data.pagination.total).toBe(3) // Includes the admin login.
+    expect(pageBody.data.items).toHaveLength(3)
   })
 })
 

@@ -9,7 +9,7 @@
 
 **你自己的取件柜。** 丢一个文件进去，拿到一串取件码，把码发给对方——没有注册，没有登录，没有网盘客户端。
 
-跑在 Cloudflare Workers + R2 + D1 上，一键部署，个人用量基本跑不出免费额度。
+跑在 Cloudflare Workers + R2 + D1 上，支持一键部署，适合个人文件与文本分享。
 
 [中文](#中文) · [English](#english) · [日本語](#日本語)
 
@@ -34,7 +34,7 @@
 2. 拿到取件码、分享链接和二维码，随便挑一个发给对方。
 3. 对方输码、点链接、扫码都行，直接下载。两边都不用注册。
 
-发出去的每一份分享都有自己的有效期和取件次数，到期或取完就自动消失，你不用回头收拾。
+每份分享都有自己的有效期和取件次数。到期或次数用完后不能再发起新的取件；已取得的文件下载会话在其期限内仍可使用，过期内容由定时任务清理。
 
 ### 几件值得说的事
 
@@ -42,10 +42,10 @@
 第二次上传同一个文件时不用再传一遍——这是常见功能，但常见实现往往开一个「这个哈希存在吗」的接口，于是任何人都能拿一个文件去问服务器「别人传过这个吗」。这里不一样：秒传需要你**上次自己传成功时服务端签发、并存在你本地的凭证**。没有这张凭证就老老实实传。服务器不回答任何关于别人内容的问题。
 
 **大文件断了能接着传。**
-文件按 8 MiB 分片，进度存在本地。网断了、页面关了、手机切后台了，回来重选同一个文件就从断点继续。上传进度按字节走，不是一片一跳。
+文件按 8 MiB 分片，进度存在本地。网断了、页面关了、手机切后台了，在 24 小时上传会话有效期内回来重选同一个文件，就从断点继续。上传进度按字节走，不是一片一跳。
 
 **看视频不会把取件次数用光。**
-取件次数按「取件」算，不按 HTTP 请求算。输一次码换一份 1 小时的下载会话，这一小时里拖进度条、断点续传、浏览器自动重试，都不再扣次数；在同一个标签页里刷新取件页也不会再扣。
+取件次数按「取件」算，不按 HTTP 请求算。输一次码换一份最长 1 小时、且不超过分享有效期的下载会话。会话有效期间拖进度条、断点续传、浏览器自动重试都不再扣次数；浏览器允许标签页缓存时，在同一个标签页里刷新取件页也不会再扣。
 
 **同样的内容只占一份空间，但每个分享各过各的。**
 两个人分享同一个文件，R2 里只有一份对象，但两个分享的取件码、有效期、次数互不相干。删掉其中一个不会影响另一个；只有最后一个引用也消失了，实体文件才真正删除。
@@ -54,7 +54,7 @@
 有效期上限、取件次数、单文件大小、开关文本/文件分享、是否上人机验证，都在后台点一下就生效。
 
 **装到桌面，接进系统分享菜单。**
-PWA，可以装成独立应用；手机上从别的 App 点「分享」能直接分享到这里。
+支持 PWA 安装；在支持 Web Share Target 的浏览器和系统中，安装后可从其他 App 的分享菜单接收文本和链接，不接收文件。
 
 **跑起来就不用管了。**
 每小时一次的定时任务负责清过期分享、回收没人引用的物理文件、abort 掉半截的分片上传。R2 删除失败会留记录下次重试。
@@ -83,7 +83,7 @@ Deploy command: npm run deploy
 
 后两个生成一次就别再动了：换 `CODE_HASH_PEPPER` 会让所有已发出的取件码失效，换 `SESSION_SECRET` 会踢掉所有登录态和下载会话。
 
-`ADMIN_USERNAME` 可选，默认 `admin`。人机验证默认关着，想开去后台开。
+`ADMIN_USERNAME` 可选，默认 `admin`。Turnstile 默认关闭；启用前需在 Worker 配置 `TURNSTILE_SECRET_KEY` Secret，并在后台填写对应的 Site Key。
 
 #### 命令行部署
 
@@ -99,7 +99,7 @@ npm run deploy:cf
 需要 Node.js 24（`>=24.11.0 <25`，`.nvmrc` 里钉好了）。
 
 > [!WARNING]
-> **2.5.0 之后不能往回退。** `0003_instant_upload.sql` 让多个分享共用一个 R2 对象，而 2.4.x 的清理逻辑还以为「一个分享独占一个对象」，退回去会删掉别人还在用的文件。出事就先在后台关掉公开上传，然后往前修。任何时候迁移都要先于 Worker 部署。
+> **执行 2.5.0 迁移后，不能回退到 2.4.x 或更早版本。** `0003_instant_upload.sql` 让多个分享共用一个 R2 对象，而 2.4.x 的清理逻辑还以为「一个分享独占一个对象」，退回去会删掉别人还在用的文件。出事就先在后台关掉公开上传，然后往前修。任何时候迁移都要先于 Worker 部署。
 
 ### 默认值
 
@@ -148,16 +148,16 @@ Worker 必须能读到内容才能发给对方，所以它读得到。安全边�
 | 观测 | Analytics Engine + Rate Limiting | 轻量指标、边缘粗粒度限流 |
 
 - **秒传协议**：客户端算覆盖全文件的树指纹；Worker 收每个分片时流式算 SHA-256，签发一张绑定了上传会话、分片序号、分片大小和哈希的收据；完成时校验全部收据并重算树根。伪造树根、篡改收据、跨会话复用收据都会被拒。
-- **取件码**：只存 `SHA-256(pepper + code)`。随机码用拒绝采样保证字符分布无偏，字母表剔掉了 `0/O/1/l/I`。
+- **取件码**：只存 `SHA-256(pepper + ":" + code)`。随机码用拒绝采样保证字符分布无偏，字母表剔掉了 `0/O/1/l/I`。
 - **下载令牌**：Web Crypto 手写的 HMAC-SHA256 JWT，不引第三方库；作用域限定到单个分享，`HttpOnly` + `SameSite=Strict` + Path 锁死到该分享的下载路径。
-- **容量计数是 O(1)**：D1 触发器在写入时维护 `storage_usage` 汇总行，按物理 blob + 未完成上传的预留计数。后台看用量不用扫全表，重复分享同一 blob 也不重复占额度。
+- **容量计数是 O(1)**：D1 触发器在写入时维护 `storage_usage` 汇总行，统计物理 blob、文本正文、未完成上传及待清理上传的预留。容量读取本身不用扫分享表；后台其他统计仍会聚合分享记录，重复分享同一 blob 不重复占额度。
 - **限流分两层**：Workers 原生 Rate Limiting 在边缘粗筛，D1 时间窗计数器做跨节点的精确限制，主要防取件码被枚举。
 - **回收是可重试的**：删除/过期只动逻辑分享；最后一个引用消失后物理 blob 才进 orphan outbox，Cron 先删 R2 对象再删 outbox 行，删失败就留着下次重试。半截的分片上传走同一套 outbox。
 - **CSP 分路由**：API 和后台走严格策略，静态资源走宽松策略。SVG 这类能带脚本的格式一律强制下载，不做内联预览。
 - **错误码三级回退**：后端返稳定的 ErrorCode + 参数 + 英文兜底文案，前端按 ErrorCode 本地化 → 原始 message → 通用兜底依次取。
 - **CI 护栏**：`verify-config.mjs` 断言 `wrangler.toml` 里的 D1 `database_id` 还是占位符（防止真实生产库 ID 被提交）、限流 namespace 不冲突、Deploy 按钮的密钥说明和 `.dev.vars.example` 同步。
 
-关于定时清理的额度取舍：Workers 免费版每次调用只有 **10 ms CPU**（等 D1/R2 的 I/O 不算），而调用次数几乎白给（10 万次/天）。所以清理策略是「跑得勤、每次少干」——每小时一次，单次最多连跑 3 批（约 300 条）。空跑一次只有 11 行 D1 读、0 行写，一天 24 次约占读额度的 0.005%。剩下的积压交给下一个整点。付费版 CPU 是 30 秒 / 15 分钟，可以放心调高 `maxPasses`。
+定时清理每小时执行，默认最多 3 轮，每轮处理最多 100 条过期分享，并分批处理回收记录和历史数据；遇到失败或达到时间预算时可能提前结束。实际 CPU 和 D1 读写量取决于数据规模，不能把一次空跑的数字当成固定成本。[Cloudflare 的额度说明](https://developers.cloudflare.com/workers/platform/limits/#cpu-time)列明免费版单次 CPU 上限为 10 ms，付费版 Cron 间隔不足一小时为 30 秒、一小时及以上为 15 分钟。调高 `maxPasses` 前仍应检查实际 CPU、查询量和失败日志。
 
 </details>
 
@@ -173,7 +173,7 @@ Worker 必须能读到内容才能发给对方，所以它读得到。安全边�
 
 **Your own pickup locker.** Drop a file in, get a short code, send the code. No sign-up, no login, no desktop client.
 
-Runs on Cloudflare Workers + R2 + D1. One click to deploy, and personal use stays comfortably inside the free tier.
+Runs on Cloudflare Workers + R2 + D1, with one-click deployment for personal file and text sharing.
 
 ### How it works
 
@@ -181,7 +181,7 @@ Runs on Cloudflare Workers + R2 + D1. One click to deploy, and personal use stay
 2. You get a pickup code, a share link, and a QR code. Send whichever is convenient.
 3. They type the code, open the link, or scan it. Neither of you needs an account.
 
-Every share carries its own expiry and pickup budget. When it runs out, it's gone — nothing for you to clean up afterwards.
+Every share has an expiry and pickup budget. Once either is reached, new pickups stop. An existing file download session remains usable until its own deadline; the scheduled job cleans up expired content.
 
 ### Things worth pointing out
 
@@ -189,10 +189,10 @@ Every share carries its own expiry and pickup budget. When it runs out, it's gon
 Uploading the same file twice doesn't retransmit it. That part is common; the usual implementation isn't. Most of them expose a "does this hash exist?" endpoint, which lets anyone probe whether some file has been uploaded by someone else. Here, skipping the transfer requires a **capability the server signed for you on your own successful upload**, cached in your browser. No capability, no shortcut. The server never answers questions about other people's content.
 
 **Big uploads survive a dropped connection.**
-Files go up in 8 MiB parts and progress is kept locally. Lose your network, close the tab, background the app on a phone — pick the same file again and it resumes where it stopped. The progress bar moves by bytes, not one jump per part.
+Files go up in 8 MiB parts and progress is kept locally. Lose your network, close the tab, background the app on a phone — pick the same file again within the 24-hour upload session and it resumes where it stopped. The progress bar moves by bytes, not one jump per part.
 
 **Watching a video doesn't burn the pickup budget.**
-A pickup is counted once per pickup, not once per HTTP request. Entering the code opens a one-hour download session; within that hour, seeking through a video, resuming a download, or a browser retry all cost nothing extra, and neither does reloading the pickup page in the same tab.
+A pickup is counted once per pickup, not once per HTTP request. Entering the code opens a download session lasting up to one hour, capped by the share expiry. While that session is valid, seeking, resuming, and browser retries cost no extra pickups. Reloading the pickup page in the same tab also preserves the pickup when browser session storage is available.
 
 **Identical content is stored once, but shares stay independent.**
 Two people sharing the same file means one object in R2 — yet each share keeps its own code, expiry, and pickup count. The physical object is deleted only when the last reference to it goes away.
@@ -201,7 +201,7 @@ Two people sharing the same file means one object in R2 — yet each share keeps
 Expiry ceiling, pickup limit, max file size, whether text or file sharing is on, whether to require a Turnstile challenge — all of it is a click in the admin console.
 
 **Installs to your home screen, hooks into the OS share menu.**
-It's a PWA, and it registers as a Web Share Target, so sharing to it from another app just works.
+It supports PWA installation. On browsers and operating systems that support Web Share Target, the installed app can receive text and links from other apps' share menus; file share targets are not supported.
 
 **It looks after itself.**
 An hourly job clears expired shares, reclaims physical files nothing references any more, and aborts half-finished multipart uploads. Failed R2 deletions are kept and retried.
@@ -230,7 +230,7 @@ Then three secrets:
 
 Generate the last two once and leave them alone. Rotating `CODE_HASH_PEPPER` invalidates every pickup code already handed out; rotating `SESSION_SECRET` drops all admin sessions and download sessions.
 
-`ADMIN_USERNAME` is optional and defaults to `admin`. Turnstile is off until you turn it on from the console.
+`ADMIN_USERNAME` is optional and defaults to `admin`. Turnstile is off by default; before enabling it, configure the Worker secret `TURNSTILE_SECRET_KEY` and enter the matching Site Key in the console.
 
 #### From the command line
 
@@ -246,7 +246,7 @@ It walks you through creating (or reusing) the R2 bucket and D1 database, writes
 Needs Node.js 24 (`>=24.11.0 <25`, pinned in `.nvmrc`).
 
 > [!WARNING]
-> **2.5.0 is forward-only.** `0003_instant_upload.sql` lets several shares reference one R2 object, and 2.4.x cleanup still assumes one share owns one object — rolling back can delete content another share is using. If something breaks, turn off public uploads in the console and fix forward. Migrations always go before the Worker deploy.
+> **After the 2.5.0 migration, do not roll back to 2.4.x or earlier.** `0003_instant_upload.sql` lets several shares reference one R2 object, and 2.4.x cleanup still assumes one share owns one object — rolling back can delete content another share is using. If something breaks, turn off public uploads in the console and fix forward. Migrations always go before the Worker deploy.
 
 ### Defaults
 
@@ -295,16 +295,16 @@ Audit logs and rate-limit records only ever hold a one-way hash of the client IP
 | Observability | Analytics Engine + Rate Limiting | Lightweight metrics and edge throttling |
 
 - **Instant-upload protocol.** The client computes a tree fingerprint over the whole file. As each part arrives, the Worker streams it through SHA-256 and issues a receipt bound to the upload session, part number, part size, and digest. Completion verifies every receipt and recomputes the root. Forged roots, tampered receipts, and receipts replayed across sessions are all rejected.
-- **Pickup codes.** Stored as `SHA-256(pepper + code)` only. Random codes use rejection sampling for an unbiased distribution over an alphabet with `0/O/1/l/I` removed.
+- **Pickup codes.** Stored as `SHA-256(pepper + ":" + code)` only. Random codes use rejection sampling for an unbiased distribution over an alphabet with `0/O/1/l/I` removed.
 - **Download tokens.** HMAC-SHA256 JWTs written against Web Crypto — no third-party library. Scoped to a single share, `HttpOnly`, `SameSite=Strict`, with the cookie path pinned to that share's download route.
-- **O(1) storage accounting.** A D1 trigger keeps a `storage_usage` row in step on every write, counting physical blobs plus reservations for unfinished uploads. The console never scans the shares table, and repeat shares of one blob don't double-count.
+- **O(1) storage accounting.** A D1 trigger keeps a `storage_usage` row in step on every write, counting physical blobs, text bodies, and reservations for unfinished uploads and upload cleanup jobs. Reading storage usage itself does not scan shares; other dashboard statistics still aggregate share records. Repeat shares of one blob do not double-count.
 - **Two rate-limiting layers.** The native Workers Rate Limiting API sheds obvious abuse at the edge; D1 window counters enforce the exact, cross-node limit that actually matters against pickup-code enumeration.
 - **Reclamation is retryable.** Deleting or expiring a share touches only that share. When its last reference disappears the blob enters an orphan outbox; cron deletes the R2 object first, then the outbox row, and keeps failures for the next run. Half-finished multipart uploads use the same outbox.
 - **CSP is per-route.** Strict for API and admin, relaxed for the static shell. Formats that can carry script, SVG among them, are always forced to download rather than rendered inline.
 - **Errors fall back three ways.** The backend returns a stable ErrorCode plus parameters and an English fallback string; the frontend resolves localized ErrorCode → raw message → generic fallback.
 - **CI guardrails.** `verify-config.mjs` asserts that the D1 `database_id` in `wrangler.toml` is still a placeholder (so a real production ID can't be committed), that rate-limit namespaces don't collide, and that the deploy-button secret descriptions stay in sync with `.dev.vars.example`.
 
-On the cleanup schedule: the Workers Free plan gives each invocation **10 ms of CPU** (waiting on D1 and R2 doesn't count), while invocations themselves are nearly free at 100k/day. So cleanup runs often and does little each time — hourly, at most 3 batches (~300 items) per run. An idle run costs 11 D1 rows read and zero written; 24 of those a day is about 0.005% of the daily read allowance. Anything left over waits for the next hour. Paid plans get 30 s / 15 min of CPU and can raise `maxPasses` freely.
+Cleanup runs hourly with at most 3 passes by default. Each pass handles up to 100 expired shares, plus bounded cleanup queues and history batches; failures or the time budget can end the run early. CPU and D1 usage depend on the data, so one idle measurement is not a fixed cost. [Cloudflare CPU limits](https://developers.cloudflare.com/workers/platform/limits/#cpu-time) are 10 ms per invocation on Free; paid Cron invocations allow 30 seconds for intervals below one hour and 15 minutes for intervals of at least one hour. Check measured CPU, query volume, and failures before increasing `maxPasses`.
 
 </details>
 
@@ -320,7 +320,7 @@ Inspired by [FileCodeBox](https://github.com/vastsa/FileCodeBox) and parts of it
 
 **自分専用の受取ロッカー。** ファイルを放り込むと短い受取コードが出るので、それを相手に渡すだけ。登録もログインも専用クライアントも要りません。
 
-Cloudflare Workers + R2 + D1 で動きます。ワンクリックでデプロイでき、個人利用なら無料枠を使い切ることはまずありません。
+Cloudflare Workers + R2 + D1 で動きます。ワンクリックでデプロイでき、個人のファイル・テキスト共有に使えます。
 
 ### 使い方
 
@@ -328,7 +328,7 @@ Cloudflare Workers + R2 + D1 で動きます。ワンクリックでデプロイ
 2. 受取コード・共有リンク・QR コードが出るので、都合のいいものを相手に送ります。
 3. 相手はコードを入力するか、リンクを開くか、QR を読むだけ。どちらもアカウント不要です。
 
-共有ごとに有効期限と受取回数を持っていて、使い切れば自動で消えます。あとから片付ける必要はありません。
+共有ごとに有効期限と受取回数があります。期限切れや回数上限に達すると新たな受け取りはできません。取得済みのファイルのダウンロードセッションはその期限まで利用でき、期限切れのデータは定期ジョブが回収します。
 
 ### 特に見てほしいところ
 
@@ -336,10 +336,10 @@ Cloudflare Workers + R2 + D1 で動きます。ワンクリックでデプロイ
 同じファイルを二度目に送るとき再送しない——ここまではよくある機能ですが、実装はたいてい「このハッシュは存在しますか」という API を公開してしまい、誰でも任意のファイルについて「他人がアップしたか」を確かめられてしまいます。本実装が要求するのは、**前回自分のアップロードが成功したときにサーバーが署名し、ブラウザに保存された capability** です。これが無ければ普通に送信します。他人のコンテンツについてサーバーは何も答えません。
 
 **大きいファイルは切れても続きから。**
-8 MiB ごとに分割し、進捗はローカルに保存します。回線が切れても、タブを閉じても、スマホでバックグラウンドに回っても、同じファイルを選び直せば途中から再開します。進捗バーはバイト単位で動き、パートごとに飛んだりしません。
+8 MiB ごとに分割し、進捗はローカルに保存します。回線が切れても、タブを閉じても、スマホでバックグラウンドに回っても、24 時間のアップロードセッションが有効な間は、同じファイルを選び直せば途中から再開します。進捗バーはバイト単位で動き、パートごとに飛んだりしません。
 
 **動画を見ても受取回数は減りません。**
-回数は HTTP リクエストではなく「受け取り」単位です。コードを入力すると 1 時間有効なダウンロードセッションが開き、その間のシーク操作・レジューム・ブラウザの再試行は一切カウントされず、同じタブで受け取りページを再読み込みしても減りません。
+回数は HTTP リクエストではなく「受け取り」単位です。コードを入力すると、共有の有効期限を超えない最長 1 時間のダウンロードセッションが開きます。有効な間のシーク・レジューム・ブラウザの再試行では追加の回数を消費しません。ブラウザのセッションストレージが利用可能なら、同じタブでの再読み込みも追加カウントされません。
 
 **同じ内容の実体はひとつ、でも共有は独立。**
 同じファイルを二人が共有しても R2 上のオブジェクトはひとつですが、受取コード・有効期限・回数はそれぞれ別々です。最後の参照が消えて初めて実体を削除します。
@@ -348,7 +348,7 @@ Cloudflare Workers + R2 + D1 で動きます。ワンクリックでデプロイ
 有効期限の上限、受取回数、ファイルサイズ上限、テキスト／ファイル共有の可否、Turnstile の要否——すべて管理画面のクリックだけで反映されます。
 
 **ホーム画面に入り、OS の共有メニューにも出ます。**
-PWA としてインストールでき、Web Share Target に対応しているので他のアプリの「共有」から直接送れます。
+PWA としてインストールできます。Web Share Target 対応のブラウザ・OS では、インストール後に他のアプリの共有メニューからテキストとリンクを受け取れます。ファイルの受信には対応していません。
 
 **放っておいても勝手に片付きます。**
 毎時のジョブが期限切れの共有を消し、どこからも参照されなくなった実体を回収し、中断した分割アップロードを abort します。R2 の削除に失敗した分は記録を残して次回再試行します。
@@ -377,7 +377,7 @@ Deploy command: npm run deploy
 
 後ろ 2 つは一度生成したら変更しないでください。`CODE_HASH_PEPPER` を変えると発行済みの受取コードがすべて無効になり、`SESSION_SECRET` を変えるとログイン状態とダウンロードセッションが切れます。
 
-`ADMIN_USERNAME` は任意で既定は `admin` です。Turnstile は既定でオフ、管理画面から有効化できます。
+`ADMIN_USERNAME` は任意で既定は `admin` です。Turnstile は既定で無効です。有効化前に Worker の Secret に `TURNSTILE_SECRET_KEY` を設定し、管理画面に対応する Site Key を入力してください。
 
 #### コマンドラインから
 
@@ -393,7 +393,7 @@ R2 バケットと D1 データベースの作成（または再利用）、`dat
 Node.js 24（`>=24.11.0 <25`、`.nvmrc` で固定）が必要です。
 
 > [!WARNING]
-> **2.5.0 以降はロールバックできません。** `0003_instant_upload.sql` により複数の共有が同じ R2 オブジェクトを参照するようになりますが、2.4.x のクリーンアップは「1 共有 = 1 オブジェクト」を前提にしているため、他の共有が使用中の実体を削除しうるからです。障害時は管理画面で公開アップロードを止め、前方修正してください。マイグレーションは必ず Worker のデプロイより先に。
+> **2.5.0 のマイグレーション適用後は、2.4.x 以前へ戻せません。** `0003_instant_upload.sql` により複数の共有が同じ R2 オブジェクトを参照するようになりますが、2.4.x のクリーンアップは「1 共有 = 1 オブジェクト」を前提にしているため、他の共有が使用中の実体を削除しうるからです。障害時は管理画面で公開アップロードを止め、前方修正してください。マイグレーションは必ず Worker のデプロイより先に。
 
 ### 既定値
 
@@ -442,16 +442,16 @@ npm run deploy:dry-run  # ビルドしてバンドルを検証（アップロー
 | 可観測性 | Analytics Engine + Rate Limiting | 軽量メトリクスとエッジでの粗い制限 |
 
 - **瞬時アップロードの方式**：クライアントがファイル全体のツリー指紋を計算。Worker は各パート受信時に SHA-256 をストリーム計算し、アップロードセッション・パート番号・パートサイズ・ダイジェストに束ねたレシートを発行します。完了時に全レシートを検証してルートを再計算するため、偽造ルート・改ざんレシート・セッションをまたいだ再利用はいずれも拒否されます。
-- **受取コード**：`SHA-256(pepper + code)` のみ保存。乱数生成は棄却サンプリングで偏りを排除し、字母から `0/O/1/l/I` を除いています。
+- **受取コード**：`SHA-256(pepper + ":" + code)` のみ保存。乱数生成は棄却サンプリングで偏りを排除し、字母から `0/O/1/l/I` を除いています。
 - **ダウンロードトークン**：Web Crypto で自前実装した HMAC-SHA256 JWT（外部ライブラリなし）。単一の共有にスコープを限定し、`HttpOnly` / `SameSite=Strict`、Cookie のパスもその共有のダウンロード経路に固定しています。
-- **容量集計は O(1)**：D1 トリガーが書き込みのたびに `storage_usage` 行を更新し、物理 blob と未完了アップロードの予約分を数えます。管理画面が shares 全体を走査することはなく、同一 blob の重複共有も二重計上されません。
+- **容量集計は O(1)**：D1 トリガーが書き込みのたびに `storage_usage` 行を更新し、物理 blob、テキスト本体、未完了および回収待ちアップロードの予約分を数えます。容量の読み取り自体は共有テーブルを走査しませんが、管理画面の他の統計は共有レコードを集計します。同一 blob の重複共有は二重計上されません。
 - **レート制限は二層**：Workers ネイティブの Rate Limiting でエッジの粗い遮断、D1 のウィンドウカウンターでノードをまたいだ厳密な制限。後者が受取コードの総当たり対策の本体です。
 - **回収は再試行可能**：削除・期限切れは論理的な共有だけに作用します。最後の参照が消えた時点で blob を orphan outbox に入れ、Cron が R2 オブジェクト → outbox 行の順に削除、失敗分は次回に持ち越します。中断した分割アップロードも同じ outbox を通ります。
 - **CSP はルート別**：API と管理画面は厳格、静的アセットは緩め。SVG のようにスクリプトを含みうる形式はインライン表示せず必ずダウンロードさせます。
 - **エラーは三段フォールバック**：バックエンドが安定した ErrorCode・パラメータ・英語のフォールバック文言を返し、フロントエンドは ErrorCode のローカライズ → 元メッセージ → 汎用の順に解決します。
 - **CI のガードレール**：`verify-config.mjs` が `wrangler.toml` の D1 `database_id` がプレースホルダーのままであること（本番 ID の誤コミット防止）、レート制限のネームスペースが衝突しないこと、Deploy ボタン用シークレットの説明が `.dev.vars.example` と同期していることを検証します。
 
-クリーンアップの周期について：Workers 無料プランは 1 回の呼び出しあたり **CPU 10 ms**（D1 や R2 の待ち時間は含まれません）で、一方で呼び出し回数は 10 万回/日とほぼ使い放題です。そこで「短く、こまめに」を採り、毎時実行・1 回あたり最大 3 バッチ（約 300 件）としています。空振り 1 回のコストは D1 読み取り 11 行・書き込み 0 行で、1 日 24 回でも読み取り枠の約 0.005% です。残りは次の実行に回します。有料プランは CPU が 30 秒 / 15 分あるので `maxPasses` を上げても安全です。
+クリーンアップは毎時、既定で最大 3 ラウンド実行します。各ラウンドで最大 100 件の期限切れ共有に加え、回収キューと履歴を上限付きで処理し、失敗や時間予算により早期終了することがあります。CPU と D1 の使用量はデータ量に依存し、空振り時の測定値は固定コストではありません。[Cloudflare の CPU 制限](https://developers.cloudflare.com/workers/platform/limits/#cpu-time)は無料プランで 1 回 10 ms、有料の Cron は間隔が 1 時間未満なら 30 秒、1 時間以上なら 15 分です。`maxPasses` を増やす前に実測 CPU・クエリ数・失敗ログを確認してください。
 
 </details>
 

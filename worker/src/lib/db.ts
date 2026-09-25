@@ -382,6 +382,33 @@ export class DB {
     return deleted?.id === id
   }
 
+  async deleteOrphanedFileBlobs(ids: string[]): Promise<{ deleted: number; retained: number }> {
+    const uniqueIds = [...new Set(ids.filter(Boolean))]
+    if (!uniqueIds.length) return { deleted: 0, retained: 0 }
+    const idsJson = JSON.stringify(uniqueIds)
+    // Verify in the same transaction. A concurrent cleanup may already have
+    // removed some rows; absence is success, while a retained row needs retry.
+    const [deleted, remaining] = await this.db.batch([
+      this.db.prepare(`
+        DELETE FROM file_blobs
+        WHERE id IN (SELECT value FROM json_each(?)) AND status = 'orphaned'
+          AND NOT EXISTS (
+            SELECT 1 FROM shares WHERE shares.blob_id = file_blobs.id
+              AND shares.deleted_at IS NULL
+          )
+        RETURNING id
+      `).bind(idsJson),
+      this.db.prepare(`
+        SELECT COUNT(*) AS count FROM file_blobs
+        WHERE id IN (SELECT value FROM json_each(?))
+      `).bind(idsJson),
+    ])
+    return {
+      deleted: deleted.results.length,
+      retained: Number((remaining.results as Array<{ count: number }>)[0].count),
+    }
+  }
+
   private prepareCreateShare(share: Share, maxStorageBytes: number): D1PreparedStatement {
     return this.db.prepare(`
       INSERT INTO shares (
@@ -497,7 +524,9 @@ export class DB {
         SUM(CASE WHEN type = 'file' THEN 1 ELSE 0 END) AS total_files,
         SUM(CASE WHEN type = 'text' THEN 1 ELSE 0 END) AS text_shares,
         COUNT(*) AS total_shares,
-        SUM(CASE WHEN expire_at > ? THEN 1 ELSE 0 END) AS active_shares,
+        SUM(CASE WHEN expire_at > ?
+          AND (max_downloads IS NULL OR download_count < max_downloads)
+          THEN 1 ELSE 0 END) AS active_shares,
         SUM(CASE WHEN expire_at <= ? THEN 1 ELSE 0 END) AS expired_shares,
         COALESCE((SELECT active_bytes FROM storage_usage WHERE id = 1), 0) AS total_size,
         (
@@ -617,16 +646,6 @@ export class DB {
     await this.db.prepare('DELETE FROM upload_sessions WHERE id = ?').bind(id).run()
   }
 
-  async deleteUploadSessionsByIds(ids: string[]): Promise<number> {
-    if (!ids.length) return 0
-    const { results } = await this.db.prepare(`
-      DELETE FROM upload_sessions
-      WHERE id IN (SELECT value FROM json_each(?))
-      RETURNING id
-    `).bind(JSON.stringify(ids)).all<{ id: string }>()
-    return results.length
-  }
-
   async claimUploadSessionsForCleanup(
     sessions: UploadSession[],
     claimedAt: string,
@@ -711,17 +730,6 @@ export class DB {
       RETURNING id
     `).bind(JSON.stringify(uniqueIds)).all<{ id: string }>()
     return results.length
-  }
-
-  async getActiveShareKeys(ids: string[]): Promise<Array<{ id: string; r2_key: string }>> {
-    if (!ids.length) return []
-    const { results } = await this.db.prepare(`
-      SELECT id, r2_key
-      FROM shares
-      WHERE deleted_at IS NULL
-        AND id IN (SELECT value FROM json_each(?))
-    `).bind(JSON.stringify(ids)).all<{ id: string; r2_key: string }>()
-    return results
   }
 
   async getActiveR2Keys(keys: string[]): Promise<string[]> {

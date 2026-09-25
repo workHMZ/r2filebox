@@ -162,31 +162,18 @@ async function runCleanupPass(
   // the object deletion succeeds.
   const orphanedBlobs = await dbClient.getOrphanedFileBlobs(batchSize)
   let deletedBlobs = 0
-  for (let offset = 0; offset < orphanedBlobs.length; offset += 6) {
-    const chunk = orphanedBlobs.slice(offset, offset + 6)
-    const results = await Promise.all(chunk.map(async (blob) => {
-      try {
-        await r2Client.deleteObject(blob.r2_key)
-        const removed = await dbClient.deleteOrphanedFileBlob(blob.id)
-        if (!removed) {
-          const remaining = await dbClient.getFileBlobById(blob.id)
-          if (remaining) {
-            throw new Error('Orphaned blob row was retained after R2 deletion')
-          }
-        }
-        return true
-      } catch (error) {
-        console.error(`Failed to cleanup orphaned file blob ${blob.id}:`, error)
-        return false
-      }
-    }))
-    for (const removed of results) {
-      if (removed) {
-        deletedR2++
-        deletedBlobs++
-      } else {
-        failures++
-      }
+  if (orphanedBlobs.length) {
+    try {
+      // The query caps this batch at R2's 1000-key delete limit. Keep every
+      // accounting row on failure; retrying already deleted keys is safe.
+      await r2Client.deleteObjects(orphanedBlobs.map((blob) => blob.r2_key))
+      deletedR2 += orphanedBlobs.length
+      const result = await dbClient.deleteOrphanedFileBlobs(orphanedBlobs.map((blob) => blob.id))
+      deletedBlobs = result.deleted
+      failures += result.retained
+    } catch (error) {
+      failures += orphanedBlobs.length
+      console.error('Failed to batch cleanup orphaned file blobs:', error)
     }
   }
 

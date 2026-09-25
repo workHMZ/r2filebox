@@ -2,6 +2,7 @@ import { request } from '@/utils/request'
 import type { ApiResponse } from '@/types/common'
 import { t } from '@/i18n'
 import { formatApiError } from '@/utils/error'
+import { sendUploadPart } from '@/utils/upload-transport'
 
 export class UploadPartError extends Error {
   readonly status: number
@@ -20,17 +21,6 @@ export class UploadPartError extends Error {
     this.errorCode = errorCode
     this.retryAfterMs = retryAfterMs
   }
-}
-
-/**
- * The caller identifies cancellation with `instanceof DOMException` and
- * `name === 'AbortError'`, which is what fetch rejects with, so reuse the
- * signal's own reason and fall back to an equivalent DOMException.
- */
-function abortReason(signal?: AbortSignal): unknown {
-  return signal?.reason instanceof DOMException
-    ? signal.reason
-    : new DOMException('Upload cancelled', 'AbortError')
 }
 
 export interface ResolvedShare {
@@ -148,78 +138,30 @@ export const shareApi = {
   // XMLHttpRequest rather than fetch: fetch cannot report how much of a request
   // body has been sent, which left the progress bar frozen for a whole part.
   // Error, abort, and retry semantics below match the previous fetch version.
-  uploadFilePart: (
+  uploadFilePart: async (
     uploadToken: string,
     partNumber: number,
     chunk: Blob,
     signal?: AbortSignal,
     onProgress?: (sentBytes: number) => void,
   ): Promise<ApiResponse<FileUploadPartData>> => {
-    return new Promise((resolve, reject) => {
-      if (signal?.aborted) {
-        reject(abortReason(signal))
-        return
-      }
-
-      const xhr = new XMLHttpRequest()
-      let settled = false
-      const finish = (settle: () => void) => {
-        if (settled) return
-        settled = true
-        signal?.removeEventListener('abort', onAbort)
-        settle()
-      }
-      const onAbort = () => {
-        xhr.abort()
-        finish(() => reject(abortReason(signal)))
-      }
-      // A network-layer failure is surfaced as TypeError because that is what
-      // fetch threw, and the caller's retry predicate keys off that type.
-      const failNetwork = () => finish(() => reject(new TypeError(t('request.network'))))
-
-      xhr.open('PUT', '/api/share/file/part', true)
-      xhr.responseType = 'text'
-      xhr.withCredentials = true
-      xhr.setRequestHeader('Content-Type', 'application/octet-stream')
-      xhr.setRequestHeader('X-Upload-Token', uploadToken)
-      xhr.setRequestHeader('X-Part-Number', String(partNumber))
-
-      if (onProgress) {
-        xhr.upload.onprogress = (event) => onProgress(event.loaded)
-      }
-      xhr.onerror = failNetwork
-      xhr.ontimeout = failNetwork
-      xhr.onabort = onAbort
-      xhr.onload = () => finish(() => {
-        let data: ApiResponse<FileUploadPartData> | null = null
-        try {
-          data = JSON.parse(xhr.responseText) as ApiResponse<FileUploadPartData>
-        } catch {
-          data = null
-        }
-        if (xhr.status < 200 || xhr.status > 299 || data?.code !== 200) {
-          const retryAfter = xhr.getResponseHeader('Retry-After')
-          const seconds = retryAfter === null ? Number.NaN : Number(retryAfter)
-          reject(new UploadPartError(
-            data ? formatApiError(data, 'upload.failed') : t('upload.failed'),
-            xhr.status,
-            data?.error_code ?? null,
-            Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : null,
-          ))
-          return
-        }
-        resolve(data)
+    const response = await sendUploadPart(uploadToken, partNumber, chunk, signal, onProgress)
+      .catch((cause: unknown) => {
+        if (cause instanceof TypeError) throw new TypeError(t('request.network'))
+        throw cause
       })
-
-      signal?.addEventListener('abort', onAbort, { once: true })
-      try {
-        xhr.send(chunk)
-      } catch (cause) {
-        // A synchronous send() failure fires no event, so settle here or the
-        // upload would wait on a promise that can never resolve.
-        finish(() => reject(cause))
-      }
-    })
+    let data: ApiResponse<FileUploadPartData> | null = null
+    try { data = JSON.parse(response.responseText) as ApiResponse<FileUploadPartData> } catch { /* Invalid response. */ }
+    if (response.status < 200 || response.status > 299 || data?.code !== 200) {
+      const seconds = response.retryAfter === null ? Number.NaN : Number(response.retryAfter)
+      throw new UploadPartError(
+        data ? formatApiError(data, 'upload.failed') : t('upload.failed'),
+        response.status,
+        data?.error_code ?? null,
+        Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : null,
+      )
+    }
+    return data
   },
 
   completeFileUpload: (data: {

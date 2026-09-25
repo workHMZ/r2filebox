@@ -69,6 +69,7 @@
           </div>
 
           <div v-else class="pickup-file">
+            <el-alert v-if="downloadExpiryMessage" :title="downloadExpiryMessage" type="warning" :closable="false" show-icon />
             <div class="file-card">
               <!-- 音视频/图片流式在线预览区 -->
               <div v-if="downloadUrl && (isMediaVideo || isMediaAudio || isMediaImage) && !mediaPreviewFailed" class="media-preview-box">
@@ -139,6 +140,7 @@
                 class="download-btn"
                 :icon="Download"
                 :success="downloadStarted"
+                :disabled="Boolean(downloadExpiryMessage)"
                 @click="downloadFile"
               >
                 {{ t('shareView.downloadFile') }}
@@ -177,7 +179,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useEventListener } from '@vueuse/core'
+import { pickupDeadline, pickupExpiryReason } from '@/utils/pickup-expiry'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -206,6 +210,26 @@ const loading = ref(false)
 const error = ref('')
 const shareData = ref<ResolvedShare | null>(null)
 const mediaPreviewFailed = ref(false)
+const expiryNow = ref(Date.now())
+let expiryTimer: ReturnType<typeof setTimeout> | undefined
+const downloadExpiryMessage = computed(() => {
+  if (shareData.value?.type !== 'file') return ''
+  const reason = pickupExpiryReason(shareData.value, expiryNow.value)
+  return reason === 'share' ? t('shareView.shareExpired')
+    : reason === 'session' ? t('shareView.sessionExpired') : ''
+})
+const updateExpiry = () => {
+  clearTimeout(expiryTimer)
+  expiryNow.value = Date.now()
+  if (shareData.value?.type !== 'file') return
+  const remaining = pickupDeadline(shareData.value) - expiryNow.value
+  if (Number.isFinite(remaining) && remaining > 0) {
+    expiryTimer = setTimeout(updateExpiry, Math.min(remaining + 1, 2_147_483_647))
+  }
+}
+watch(shareData, updateExpiry)
+useEventListener(document, 'visibilitychange', updateExpiry)
+onBeforeUnmount(() => clearTimeout(expiryTimer))
 let requestVersion = 0
 const shareStatus = computed(() => {
   if (loading.value) return t('shareView.loading')
@@ -336,19 +360,13 @@ const downloadFile = () => {
   }
   // The pickup session is what authorises the download. Once it lapses the
   // endpoint can only answer 404 in a new tab, so say so here instead.
-  if (isDownloadSessionExpired()) {
-    ElMessage.warning(t('shareView.sessionExpired'))
+  updateExpiry()
+  if (downloadExpiryMessage.value) {
+    ElMessage.warning(downloadExpiryMessage.value)
     return
   }
   window.open(withDisposition(url, 'attachment'), '_blank', 'noopener,noreferrer')
   showDownloadStarted()
-}
-
-const isDownloadSessionExpired = () => {
-  const expiresAt = shareData.value?.download_expires_at
-  if (!expiresAt) return false
-  const expiresAtMs = Date.parse(expiresAt)
-  return Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now()
 }
 
 const handleMediaPreviewError = () => {

@@ -28,6 +28,21 @@ describe('administrator upload trend', () => {
     await env.DB.prepare('DELETE FROM shares').run()
   })
 
+  it('excludes exhausted shares from active counts and scopes pickups to retained shares', async () => {
+    for (const id of ['active', 'exhausted', 'unlimited', 'expired', 'deleted']) {
+      await insertShare(id, new Date(), id === 'deleted' ? new Date() : null)
+    }
+    await env.DB.batch([
+      env.DB.prepare("UPDATE shares SET download_count = 10 WHERE id IN ('exhausted', 'deleted')"),
+      env.DB.prepare("UPDATE shares SET max_downloads = NULL, download_count = 20 WHERE id = 'unlimited'"),
+      env.DB.prepare("UPDATE shares SET expire_at = ? WHERE id = 'expired'").bind(new Date(Date.now() - 1000).toISOString()),
+    ])
+    const stats = await new DB(env.DB).getSystemStats(TOKYO_OFFSET_MINUTES)
+    expect(stats.active_shares).toBe(2)
+    expect(stats.total_downloads).toBe(30)
+    expect(stats.total_shares).toBe(4)
+  })
+
   it('buckets by the viewer calendar, fills quiet days, and keeps cleaned-up uploads', async () => {
     const offsetMs = TOKYO_OFFSET_MINUTES * 60 * 1000
     const todayStartUtc = (Math.floor((Date.now() + offsetMs) / DAY_MS) * DAY_MS) - offsetMs

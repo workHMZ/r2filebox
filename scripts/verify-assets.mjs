@@ -62,7 +62,12 @@ if (!indexHtml.includes('<script src="/theme-init.js"></script>')) {
 // The app CSP keeps style-src and font-src at 'self'. A remote font link is
 // blocked at runtime and silently drops the whole type system to system
 // fallbacks, which is how the editorial faces went missing once already.
-if (/https?:\/\/fonts\.(googleapis|gstatic)\.com/.test(indexHtml)) {
+// Scan HTML source for forbidden references, not a URL allowlist.
+const remoteFontReferences = [
+  'http://fonts.googleapis.com', 'https://fonts.googleapis.com',
+  'http://fonts.gstatic.com', 'https://fonts.gstatic.com',
+]
+if (remoteFontReferences.some((reference) => indexHtml.includes(reference))) {
   failures.push('Fonts must be self-hosted: the CSP blocks fonts.googleapis.com and fonts.gstatic.com')
 }
 for (const font of expectedFonts) {

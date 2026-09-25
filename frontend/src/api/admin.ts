@@ -107,7 +107,7 @@ interface AdminFilesData {
 interface AuditLogsData {
   items: AuditLog[]
   pagination: { page: number; page_size: number; total: number }
-  stats: {
+  stats?: {
     total: number
     completedShares: number
     completedRetrievals: number
@@ -184,7 +184,7 @@ export const adminApi = {
     data: { config },
   }),
 
-  getAuditLogs: (params: { page?: number; page_size?: number }) => request<ApiResponse<AuditLogsData>>({
+  getAuditLogs: (params: { page?: number; page_size?: number; include_stats?: boolean }) => request<ApiResponse<AuditLogsData>>({
     url: '/admin/logs/audit',
     method: 'GET',
     params,

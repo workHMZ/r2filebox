@@ -1,6 +1,7 @@
 import { createScheduledController, env } from 'cloudflare:test'
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import worker, { requireSuccessfulCleanup } from '../src/index'
+import { DB } from '../src/lib/db'
 import { cleanupExpiredShares } from '../src/lib/cleanup'
 import type { Env } from '../src/types'
 
@@ -102,6 +103,49 @@ describe('scheduled cleanup reporting', () => {
     } as unknown as Env
 
     await expect(worker.scheduled(createScheduledController(), failingEnv)).rejects.toThrow('D1 unavailable')
+  })
+
+  it('treats already removed orphan rows as success and preserves active rows', async () => {
+    const now = new Date().toISOString()
+    await env.DB.prepare(`INSERT INTO file_blobs (
+      id, r2_key, size_bytes, status, created_at
+    ) VALUES ('active', 'active', 4, 'active', ?)`).bind(now).run()
+    const db = new DB(env.DB)
+    expect(await db.deleteOrphanedFileBlobs(['missing'])).toEqual({ deleted: 0, retained: 0 })
+    expect(await db.deleteOrphanedFileBlobs(['active', 'missing', 'active']))
+      .toEqual({ deleted: 0, retained: 1 })
+    expect(await db.getFileBlobById('active')).not.toBeNull()
+  })
+
+  it('batches orphan deletion and retains accounting when D1 fails after R2 succeeds', async () => {
+    const keys = ['batch-orphan-a', 'batch-orphan-b', 'batch-orphan-c']
+    const now = new Date().toISOString()
+    for (const key of keys) {
+      await env.BUCKET.put(key, 'body')
+      await env.DB.prepare(`INSERT INTO file_blobs (
+        id, r2_key, size_bytes, status, created_at, orphaned_at
+      ) VALUES (?, ?, 4, 'orphaned', ?, ?)`).bind(key, key, now, now).run()
+    }
+    const deleteCalls: Array<string | string[]> = []
+    const bucket = { async delete(keys: string | string[]) {
+      deleteCalls.push(keys)
+      await env.BUCKET.delete(keys)
+    } } as unknown as R2Bucket
+    const dbDelete = vi.spyOn(DB.prototype, 'deleteOrphanedFileBlobs')
+      .mockRejectedValueOnce(new Error('D1 unavailable after R2 deletion'))
+    try {
+      const failed = await cleanupExpiredShares(env.DB, bucket)
+      expect(failed.failures).toBe(3)
+      expect(deleteCalls).toHaveLength(1)
+      expect([...(deleteCalls[0] as string[])].sort()).toEqual(keys)
+      expect(await env.DB.prepare('SELECT COUNT(*) AS count FROM file_blobs').first('count')).toBe(3)
+      expect(await env.BUCKET.head(keys[0])).toBeNull()
+      const retried = await cleanupExpiredShares(env.DB, bucket)
+      expect(retried.failures).toBe(0)
+      expect(deleteCalls).toHaveLength(2)
+      expect(dbDelete).toHaveBeenCalledTimes(2)
+      expect(await env.DB.prepare('SELECT COUNT(*) AS count FROM file_blobs').first('count')).toBe(0)
+    } finally { dbDelete.mockRestore() }
   })
 
   it('retains a failed orphan deletion and retries it on the next cleanup', async () => {

@@ -192,6 +192,45 @@ describe('share download accounting', () => {
     `).bind(new Date().toISOString()).run()
   })
 
+  it.each(['\\', '\u0001'])('accepts escaped text up to the decoded byte limit (%j)', async (character) => {
+    const text = character.repeat(1024 * 1024)
+    const response = await SELF.fetch('https://example.test/api/share/text', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, expire_value: 1, expire_style: 'hour' }),
+    })
+    expect(response.status).toBe(200)
+    const row = await env.DB.prepare('SELECT r2_key, size_bytes FROM shares').first<{ r2_key: string; size_bytes: number }>()
+    expect(row?.size_bytes).toBe(1024 * 1024)
+    expect(await (await env.BUCKET.get(row!.r2_key))!.text()).toBe(text)
+  })
+
+  it('still rejects text above the decoded byte limit', async () => {
+    const response = await SELF.fetch('https://example.test/api/share/text', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: '\\'.repeat(1024 * 1024 + 1), expire_value: 1, expire_style: 'hour' }),
+    })
+    expect(response.status).toBe(413)
+    expect(await env.DB.prepare('SELECT COUNT(*) AS count FROM shares').first('count')).toBe(0)
+  })
+
+  it('caps the download cookie and reported deadline at the share lifetime', async () => {
+    const code = 'SHRT2234ABCD'
+    const { shareId } = await createFileShare(code, 'clip.mp4', 'video/mp4', 'body')
+    const expireAt = new Date(Date.now() + 30_000).toISOString()
+    await env.DB.prepare('UPDATE shares SET expire_at = ? WHERE id = ?').bind(expireAt, shareId).run()
+    const response = await SELF.fetch('https://example.test/api/share/resolve', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }),
+    })
+    expect(response.status).toBe(200)
+    const body = await response.json<{ data: { download_expires_at: string } }>()
+    const deadline = Date.parse(body.data.download_expires_at)
+    expect(deadline).toBeLessThanOrEqual(Date.parse(expireAt))
+    expect(deadline).toBeGreaterThan(Date.parse(expireAt) - 1000)
+    const maxAge = Number(/Max-Age=(\d+)/i.exec(response.headers.get('set-cookie') || '')?.[1])
+    expect(maxAge).toBeGreaterThan(0)
+    expect(maxAge).toBeLessThanOrEqual(30)
+  })
+
   it('counts one extraction while allowing repeated Range requests', async () => {
     const shareId = crypto.randomUUID()
     const code = 'ABCD2345EFGH'

@@ -18,6 +18,7 @@
             size="small"
             :icon="DocumentChecked"
             :loading="saving"
+            :disabled="loading || !configLoaded"
             :success="saveSucceeded"
             @click="saveConfig"
           >
@@ -29,10 +30,14 @@
 
     <el-card v-loading="loading" :aria-busy="loading || saving" shadow="never">
 
-      <el-tabs v-model="activeTab">
+      <el-alert v-if="loadFailed" type="error" :closable="false" show-icon>
+        <template #title>{{ t('config.loadFailed') }}</template>
+        <el-button :loading="loading" @click="fetchConfig">{{ t('common.retry') }}</el-button>
+      </el-alert>
+      <el-tabs v-else-if="configLoaded" v-model="activeTab">
         <!-- 基础配置 -->
         <el-tab-pane :label="t('config.basic')" name="basic">
-          <el-form :model="configForm.base" label-width="140px" class="config-form">
+          <el-form :disabled="saving" :model="configForm.base" label-width="140px" class="config-form">
             <el-form-item :label="t('config.siteName')">
               <el-input v-model="configForm.base.name" />
             </el-form-item>
@@ -45,7 +50,7 @@
 
         <!-- 上传配置 -->
         <el-tab-pane :label="t('config.upload')" name="upload">
-          <el-form :model="configForm" label-width="160px" class="config-form config-form--wide">
+          <el-form :disabled="saving" :model="configForm" label-width="160px" class="config-form config-form--wide">
             <el-form-item :label="t('config.fileShare')">
               <el-switch v-model="configForm.transfer.enable_file_share" :active-value="1" :inactive-value="0" />
             </el-form-item>
@@ -134,7 +139,7 @@
         </el-tab-pane>
 
         <el-tab-pane :label="t('config.security')" name="security">
-          <el-form :model="configForm.security" label-width="160px" class="config-form config-form--wide">
+          <el-form :disabled="saving" :model="configForm.security" label-width="160px" class="config-form config-form--wide">
             <el-form-item :label="t('config.auditLog')">
               <el-switch v-model="configForm.security.enable_audit_log" :active-value="1" :inactive-value="0" />
             </el-form-item>
@@ -194,18 +199,20 @@ import { computed, ref, reactive, onMounted } from 'vue'
 import type { Directive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { DocumentChecked } from '@element-plus/icons-vue'
-import { adminApi } from '@/api/admin'
+import { adminApi, type AdminConfig } from '@/api/admin'
 import ActionFeedbackButton from '@/components/ActionFeedbackButton.vue'
 import { useActionFeedback } from '@/composables/useActionFeedback'
 import { useConfigStore } from '@/stores/config'
 import { useI18n } from '@/i18n'
 
 const loading = ref(false)
+const configLoaded = ref(false)
+const loadFailed = ref(false)
 const saving = ref(false)
 const activeTab = ref('basic')
 const configStore = useConfigStore()
 const { t } = useI18n()
-const { active: saveSucceeded, show: showSaveSucceeded } = useActionFeedback()
+const { active: saveSucceeded, reset: resetSaveFeedback, show: showSaveSucceeded } = useActionFeedback()
 const BYTES_PER_MB = 1024 * 1024
 const BYTES_PER_GIB = 1024 * 1024 * 1024
 
@@ -284,26 +291,25 @@ const totalStorageGiB = computed({
   }
 })
 
+const applyConfig = (config: AdminConfig) => {
+  Object.assign(configForm.base, config.base)
+  Object.assign(configForm.storage, config.storage)
+  Object.assign(configForm.transfer, config.transfer)
+  Object.assign(configForm.security, config.security)
+}
+
 const fetchConfig = async () => {
+  if (loading.value) return
   loading.value = true
+  configLoaded.value = false
+  loadFailed.value = false
   try {
     const res = await adminApi.getConfig()
-    if (res.code === 200 && res.data) {
-      // 映射配置数据
-      if (res.data.base) {
-        Object.assign(configForm.base, res.data.base)
-      }
-      if (res.data.storage) {
-        Object.assign(configForm.storage, res.data.storage)
-      }
-      if (res.data.transfer) {
-        Object.assign(configForm.transfer, res.data.transfer)
-      }
-      if (res.data.security) {
-        Object.assign(configForm.security, res.data.security)
-      }
-    }
+    if (res.code !== 200 || !res.data) throw new Error(res.message)
+    applyConfig(res.data)
+    configLoaded.value = true
   } catch (error) {
+    loadFailed.value = true
     console.error('Failed to load config:', error)
   } finally {
     loading.value = false
@@ -311,13 +317,14 @@ const fetchConfig = async () => {
 }
 
 const saveConfig = async () => {
+  if (!configLoaded.value || loading.value || saving.value) return
   saving.value = true
+  resetSaveFeedback()
   try {
     const res = await adminApi.updateConfig(configForm)
     if (res.code === 200) {
-      // 刷新全局配置
+      applyConfig(res.data)
       await configStore.refreshConfig()
-      await fetchConfig()
       showSaveSucceeded()
       ElMessage.success(t('config.saveDone'))
     } else {

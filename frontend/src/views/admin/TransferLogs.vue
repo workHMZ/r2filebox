@@ -190,6 +190,8 @@ const getActionLabel = (action: string): string => {
     admin_delete_share: 'logs.action.adminDeleteShare',
     admin_cleanup_expired: 'logs.action.cleanupExpired',
     share_text_create: 'logs.action.textCreated',
+    instant_file_create: 'logs.action.instantFileCreated',
+    multipart_file_fingerprint_mismatch: 'logs.action.fingerprintMismatch',
     multipart_file_init: 'logs.action.fileUploadStarted',
     multipart_file_complete: 'logs.action.fileUploadCompleted',
     multipart_file_size_mismatch: 'logs.action.fileSizeMismatch',
@@ -210,6 +212,8 @@ const getActionType = (action: string): TagType => {
     admin_delete_share: 'danger',
     admin_cleanup_expired: 'warning',
     share_text_create: 'success',
+    instant_file_create: 'success',
+    multipart_file_fingerprint_mismatch: 'danger',
     multipart_file_init: 'info',
     multipart_file_complete: 'success',
     multipart_file_size_mismatch: 'danger',
@@ -236,22 +240,27 @@ const getStatusType = (status: string): TagType => {
 
 const formatHashPrefix = (prefix: string | null): string => prefix ? `${prefix}…` : '-'
 
-const fetchLogs = async (): Promise<boolean> => {
+let statsLoaded = false
+const fetchLogs = async (includeStats = true): Promise<boolean> => {
   const currentVersion = ++requestVersion
   loading.value = true
   try {
     const res = await adminApi.getAuditLogs({
       page: pagination.page,
-      page_size: pagination.pageSize
+      page_size: pagination.pageSize,
+      include_stats: includeStats || !statsLoaded,
     })
 
     if (currentVersion === requestVersion && res.code === 200) {
       logsList.value = res.data.items
       pagination.total = res.data.pagination.total
-      stats.totalEvents = res.data.stats.total
-      stats.completedShares = res.data.stats.completedShares
-      stats.completedRetrievals = res.data.stats.completedRetrievals
-      stats.activeSources = res.data.stats.activeSources
+      if (res.data.stats) {
+        statsLoaded = true
+        stats.totalEvents = res.data.stats.total
+        stats.completedShares = res.data.stats.completedShares
+        stats.completedRetrievals = res.data.stats.completedRetrievals
+        stats.activeSources = res.data.stats.activeSources
+      }
       markRefreshed()
       return true
     }
@@ -270,11 +279,11 @@ const refreshLogs = async () => {
 
 const handleSizeChange = () => {
   pagination.page = 1
-  fetchLogs()
+  void fetchLogs(false)
 }
 
 const handleCurrentChange = () => {
-  fetchLogs()
+  void fetchLogs(false)
 }
 
 onMounted(() => {

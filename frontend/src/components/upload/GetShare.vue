@@ -113,7 +113,6 @@ const handleGetShare = () => {
   font-family: var(--font-code) !important;
   font-size: var(--fs-title-md) !important;
   letter-spacing: 0.18em;
-  text-transform: uppercase;
 }
 
 /* The wide tracking is for the code itself; the placeholder is a sentence and
