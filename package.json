@@ -37,7 +37,7 @@
     "@types/node": "^26.6.2",
     "sharp": "0.35.4",
     "typescript": "~5.9.3",
-    "vitest": "4.1.11",
+    "vitest": "5.0.1",
     "wrangler": "4.136.2"
   },
   "cloudflare": {
