@@ -30,7 +30,7 @@
     "hash-password": "node worker/scripts/hash-password.mjs"
   },
   "dependencies": {
-    "hono": "^4.13.8"
+    "hono": "^4.13.9"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.22.0",
@@ -38,7 +38,7 @@
     "sharp": "0.35.4",
     "typescript": "~5.9.3",
     "vitest": "4.1.11",
-    "wrangler": "4.136.2"
+    "wrangler": "4.138.0"
   },
   "cloudflare": {
     "bindings": {
