@@ -15,6 +15,10 @@
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/workHMZ/r2filebox)
 
+**介绍视频 · Launch video · 紹介動画** — 40s · 1080p
+
+https://github.com/user-attachments/assets/59cd6dbd-3788-4404-950c-893de03bb4d9
+
 | 用户端 · 分享与取件 | 管理端 · 监控与运维 |
 |:---:|:---:|
 | [![上传文件](./docs/screenshots/home-file-share.png)](./docs/screenshots/home-file-share.png) | [![管理后台](./docs/screenshots/admin-dashboard.png)](./docs/screenshots/admin-dashboard.png) |
