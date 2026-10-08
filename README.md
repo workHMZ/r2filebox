@@ -19,10 +19,12 @@
 
 https://github.com/user-attachments/assets/59cd6dbd-3788-4404-950c-893de03bb4d9
 
+截图于 2026-10-08 使用 v2.9.0 本地演示实例重新核验；图中数据与分享链接均为本地示例。
+
 | 用户端 · 分享与取件 | 管理端 · 监控与运维 |
 |:---:|:---:|
 | [![上传文件](./docs/screenshots/home-file-share.png)](./docs/screenshots/home-file-share.png) | [![管理后台](./docs/screenshots/admin-dashboard.png)](./docs/screenshots/admin-dashboard.png) |
-| 放一个文件进去（中文 · 浅色） | 系统仪表盘（English · Light） |
+| 文件分享与有效期（中文 · 浅色） | 系统仪表盘（English · Light） |
 | [![分享已创建](./docs/screenshots/share-created.png)](./docs/screenshots/share-created.png) | [![文件管理](./docs/screenshots/admin-files.png)](./docs/screenshots/admin-files.png) |
 | 取件凭据 · 二维码（日本語 · ライト） | 文件与凭据管理（中文 · 深色） |
 | [![取件页](./docs/screenshots/pickup-file.png)](./docs/screenshots/pickup-file.png) | [![维护与存储](./docs/screenshots/admin-maintenance.png)](./docs/screenshots/admin-maintenance.png) |

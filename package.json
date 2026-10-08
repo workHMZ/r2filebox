@@ -35,7 +35,7 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.22.0",
     "@types/node": "^26.6.2",
-    "sharp": "0.35.4",
+    "sharp": "0.35.5",
     "typescript": "~5.9.3",
     "vitest": "4.1.11",
     "wrangler": "4.136.2"
@@ -57,6 +57,8 @@
     }
   },
   "overrides": {
+    "undici": "^7.29.1",
+    "source-map-js": "^1.2.2",
     "sharp": "$sharp"
   }
 }
