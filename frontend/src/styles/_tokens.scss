@@ -85,6 +85,7 @@
   --warning-color: #d4a017;
   --warning-ink: #7a5b0d;
   --warning-soft: rgba(212, 160, 23, 0.12);
+  --warning-border: rgba(212, 160, 23, 0.3);
   --danger-color: #c64545;
   --danger-ink: #8f2828;
   /* A destructive button is a fill carrying white text, so it cannot reuse
@@ -194,6 +195,7 @@ html.dark {
   --warning-color: #d4a017;
   --warning-ink: #e8bc45;
   --warning-soft: rgba(212, 160, 23, 0.14);
+  --warning-border: rgba(212, 160, 23, 0.35);
   --danger-color: #e87070;
   --danger-ink: #ff9191;
   --danger-fill: #b03838;

@@ -2,6 +2,8 @@ export const CONTENT_FINGERPRINT_ALGORITHM = 'sha256-tree-v1'
 export const CONTENT_FINGERPRINT_PART_SIZE = 8 * 1024 * 1024
 
 const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/
+const textEncoder = new TextEncoder()
+const HEX_BY_BYTE = Array.from({ length: 256 }, (_, index) => index.toString(16).padStart(2, '0'))
 
 export const isValidContentFingerprint = (value: unknown): value is string => {
   return typeof value === 'string' && SHA256_HEX_PATTERN.test(value)
@@ -29,7 +31,7 @@ export async function deriveContentFingerprint(
     throw new RangeError('Content fingerprint parts are invalid')
   }
 
-  const prefix = new TextEncoder().encode(
+  const prefix = textEncoder.encode(
     `r2filebox:${CONTENT_FINGERPRINT_ALGORITHM}:${CONTENT_FINGERPRINT_PART_SIZE}:${sizeBytes}:${partSha256.length}:`,
   )
   const manifestEntryBytes = 4 + 8 + 32
@@ -45,20 +47,22 @@ export async function deriveContentFingerprint(
     offset += 4
     view.setBigUint64(offset, BigInt(partLength))
     offset += 8
-    input.set(hexToBytes(partHash), offset)
+    writeHexToBytes(partHash, input, offset)
     offset += 32
   }
   return await sha256Bytes(input)
 }
 
-function hexToBytes(value: string): Uint8Array {
-  const bytes = new Uint8Array(value.length / 2)
+function writeHexToBytes(value: string, target: Uint8Array, targetOffset: number): void {
   for (let index = 0; index < value.length; index += 2) {
-    bytes[index / 2] = Number.parseInt(value.slice(index, index + 2), 16)
+    target[targetOffset + (index >> 1)] = Number.parseInt(value.slice(index, index + 2), 16)
   }
-  return bytes
 }
 
 export function bytesToHex(bytes: Uint8Array): string {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+  let hex = ''
+  for (let index = 0; index < bytes.length; index++) {
+    hex += HEX_BY_BYTE[bytes[index]!]
+  }
+  return hex
 }

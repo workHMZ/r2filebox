@@ -417,7 +417,10 @@ const confirmLogout = async () => {
   flex: 0 0 64px;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--space-md);
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: max(var(--space-md), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--space-md), env(safe-area-inset-right, 0px));
   border-bottom: 1px solid var(--border-subtle);
   background: var(--surface-translucent) !important;
   backdrop-filter: blur(12px);
@@ -559,8 +562,10 @@ const confirmLogout = async () => {
   --main-inset: var(--space-md);
   flex: 1 1 auto;
   min-height: 0;
-  padding: var(--main-inset);
+  padding-top: var(--main-inset);
   padding-bottom: max(var(--main-inset), env(safe-area-inset-bottom, 0px));
+  padding-left: max(var(--main-inset), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--main-inset), env(safe-area-inset-right, 0px));
   overflow-y: auto;
   scrollbar-gutter: stable;
 }
@@ -583,6 +588,7 @@ const confirmLogout = async () => {
     /* position: fixed resolves against the viewport, so this drawer never
        inherits the shell's status-bar inset and has to carry its own. */
     padding-top: env(safe-area-inset-top, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
     box-shadow: var(--shadow-raised);
     transform: translateX(-100%);
     transition: transform 0.22s ease;
@@ -612,7 +618,8 @@ const confirmLogout = async () => {
 
 @media (max-width: 767px) {
   .admin-header {
-    padding: 0 var(--space-xs);
+    padding-left: max(var(--space-xs), env(safe-area-inset-left, 0px));
+    padding-right: max(var(--space-xs), env(safe-area-inset-right, 0px));
   }
 
   .admin-main {

@@ -73,7 +73,7 @@ export interface FileUploadPartData {
   receipt: string
 }
 
-export interface CompletedUploadPart {
+interface CompletedUploadPart {
   partNumber: number
   etag: string
   sha256?: string

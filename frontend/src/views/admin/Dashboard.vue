@@ -499,7 +499,7 @@ const animateStats = () => {
 
 const fetchDashboardStats = async () => {
   try {
-    const res = await adminApi.getDashboardStats()
+    const res = await adminApi.getStats()
     if (res.code === 200 && res.data) {
       stats.activeShares = res.data.active_shares || 0
       stats.fileCount = res.data.total_files || 0

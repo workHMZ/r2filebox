@@ -172,8 +172,8 @@ app.delete('/admin/files/:id', async (c) => {
       await db.deleteShareById(id)
       try {
         const orphanedAt = new Date().toISOString()
-        await db.orphanUnreferencedFileBlobs([share.blob_id], orphanedAt)
-        const blob = await db.getFileBlobById(share.blob_id)
+        const [orphanedBlob] = await db.orphanUnreferencedFileBlobs([share.blob_id], orphanedAt)
+        const blob = orphanedBlob ?? await db.getFileBlobById(share.blob_id)
         if (blob?.status === 'orphaned') {
           await r2.deleteObject(blob.r2_key)
           const removed = await db.deleteOrphanedFileBlob(blob.id)
@@ -289,10 +289,8 @@ app.get('/admin/logs/audit', async (c) => {
     const page = parseBoundedInteger(c.req.query('page'), 1, 1, Math.floor(Number.MAX_SAFE_INTEGER / pageSize))
     const offset = (page - 1) * pageSize
     const db = new DB(c.env.DB)
-    const [logs, stats] = await Promise.all([
-      db.getAuditLogs(pageSize, offset),
-      c.req.query('include_stats') === 'false' ? Promise.resolve(undefined) : db.getAuditStats(),
-    ])
+    const includeStats = c.req.query('include_stats') !== 'false'
+    const logs = await db.getAuditLogs(pageSize, offset, includeStats)
     const items = logs.items.map((log) => ({
       id: log.id,
       action: log.action,
@@ -307,7 +305,7 @@ app.get('/admin/logs/audit', async (c) => {
     return c.json(success({
       items,
       pagination: { page, page_size: pageSize, total: logs.total },
-      stats,
+      stats: logs.stats,
     }))
   } catch (e: unknown) {
     return adminRouteFailure(c, 'get audit logs', e, 'Could not load audit logs')
@@ -319,7 +317,7 @@ app.get('/admin/maintenance/system-info', (c) => {
     runtime: 'Cloudflare Workers',
     platform: 'V8 isolate',
     storage: 'D1 + R2 + Workers Rate Limiting',
-    version: c.env.APP_VERSION || '2.9.0',
+    version: c.env.APP_VERSION || '2.9.1',
     r2_bucket_name: c.env.R2_BUCKET_NAME || null,
     d1_database_name: c.env.D1_DATABASE_NAME || null,
   }))
@@ -501,6 +499,12 @@ function settingsFromAdminConfig(config: JsonRecord): Record<string, string> {
     setNumber(settings, 'DEFAULT_MAX_DOWNLOADS', transfer.max_count)
     setNumber(settings, 'DEFAULT_EXPIRE_HOURS', transfer.expire_default)
     setNumber(settings, 'MAX_EXPIRE_HOURS', transfer.max_expire_hours)
+    if (settings.DEFAULT_EXPIRE_HOURS && settings.MAX_EXPIRE_HOURS) {
+      const maxExpire = Math.min(Math.max(Number(settings.MAX_EXPIRE_HOURS), 1), 8760)
+      const defaultExpire = Math.min(Math.max(Number(settings.DEFAULT_EXPIRE_HOURS), 1), maxExpire)
+      settings.MAX_EXPIRE_HOURS = String(maxExpire)
+      settings.DEFAULT_EXPIRE_HOURS = String(defaultExpire)
+    }
     setBoolean(settings, 'ENABLE_TEXT_SHARE', transfer.enable_text_share)
     setBoolean(settings, 'ENABLE_FILE_SHARE', transfer.enable_file_share)
     const upload = asRecord(transfer.upload)

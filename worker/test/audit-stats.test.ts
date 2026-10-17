@@ -149,6 +149,44 @@ describe('audit statistics', () => {
     expect(pageBody.data.pagination.total).toBe(3) // Includes the admin login.
     expect(pageBody.data.items).toHaveLength(3)
   })
+
+  it('fetches audit log total and page items in a single D1 batch', async () => {
+    await insertAuditRows([
+      ['share_text_create', 'success'],
+      ['share_resolve_text', 'success'],
+    ])
+
+    let batchCalls = 0
+    const trackedDb = new Proxy(env.DB, {
+      get(target, prop, receiver) {
+        if (prop === 'batch') {
+          return async (statements: D1PreparedStatement[]) => {
+            batchCalls++
+            return target.batch(statements)
+          }
+        }
+        const value = Reflect.get(target, prop, receiver)
+        return typeof value === 'function' ? value.bind(target) : value
+      },
+    })
+
+    const result = await new DB(trackedDb).getAuditLogs(10, 0)
+    expect(batchCalls).toBe(1)
+    expect(result.total).toBe(2)
+    expect(result.items).toHaveLength(2)
+    expect(result.stats).toBeUndefined()
+
+    const withStats = await new DB(trackedDb).getAuditLogs(10, 0, true)
+    expect(batchCalls).toBe(2)
+    expect(withStats.total).toBe(2)
+    expect(withStats.items).toHaveLength(2)
+    expect(withStats.stats).toEqual({
+      total: 2,
+      completedShares: 1,
+      completedRetrievals: 1,
+      activeSources: 0,
+    })
+  })
 })
 
 async function insertAuditRows(rows: Array<[action: string, status: string]>): Promise<void> {

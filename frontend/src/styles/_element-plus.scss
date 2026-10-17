@@ -73,12 +73,14 @@
 
   .el-input__wrapper {
     flex: 1;
+    min-width: 0;
     border: none !important;
     border-radius: 0 !important;
   }
 
   .el-input-group__append {
     display: flex !important;
+    flex-shrink: 0;
     align-items: stretch;
     margin: 0 !important;
     padding: 0 !important;
@@ -276,6 +278,7 @@
 .el-overlay {
   background: var(--overlay-scrim) !important;
   backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
 }
 
 /* A toast is a notice, not a surface to interact with. On a phone it spans
@@ -542,8 +545,10 @@
    at its 14px base size, so tapping into the text-share box left mobile users
    on a zoomed, side-scrolling page. Every other field in the app is already
    16px or larger; this is the one that was not. */
-@media (pointer: coarse) {
-  .el-textarea__inner {
-    font-size: 16px;
+@media (any-pointer: coarse) {
+  .el-textarea__inner,
+  .el-input__inner,
+  .el-select__input {
+    font-size: var(--fs-body-md) !important;
   }
 }

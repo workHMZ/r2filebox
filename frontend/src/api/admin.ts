@@ -5,7 +5,7 @@ import type { ApiResponse } from '@/types/common'
 // calendar, which the Worker cannot know. getTimezoneOffset is inverted.
 const localUtcOffsetMinutes = () => -new Date().getTimezoneOffset()
 
-export interface AdminStats {
+interface AdminStats {
   total_files: number
   text_shares: number
   total_shares: number
@@ -76,7 +76,7 @@ export interface AdminConfig {
   }
 }
 
-export interface AdminSystemInfo {
+interface AdminSystemInfo {
   runtime: string
   platform: string
   storage: string
@@ -142,8 +142,6 @@ export const adminApi = {
     method: 'GET',
     params: { utc_offset_minutes: localUtcOffsetMinutes() },
   }),
-
-  getDashboardStats: () => adminApi.getStats(),
 
   getFiles: (params: { page?: number; page_size?: number }) => request<ApiResponse<AdminFilesData>>({
     url: '/admin/files',

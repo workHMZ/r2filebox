@@ -141,6 +141,7 @@ import {
   type ShareCreatedResult,
 } from '@/api/share'
 import { isTerminalUploadError } from '@/utils/upload-error'
+import { currentUploadPartDisplayNumber } from '@/utils/upload-transport'
 import { ElMessage } from 'element-plus'
 import {
   UploadFilled,
@@ -403,6 +404,16 @@ const handleUpload = async () => {
   const fingerprint = selectedFingerprint.value
   const contentFingerprint = selectedContentFingerprint.value
   if (selectedFile.value !== file) return
+  const sizeLimit = maxUploadBytes.value
+  if (sizeLimit !== null && file.size > sizeLimit) {
+    const message = t('api.share.fileTooLarge', {
+      max: Math.floor(sizeLimit / BYTES_PER_MB),
+    })
+    uploadStatusText.value = ''
+    uploadAnnouncement.value = message
+    ElMessage.error(message)
+    return
+  }
   if (!fingerprint || !contentFingerprint) {
     ElMessage.error(t('upload.fingerprintFailed'))
     return
@@ -504,13 +515,20 @@ const handleUpload = async () => {
       sentBytesByPart.set(part.partNumber, partByteLength(part.partNumber))
     }
 
+    const updatePartStatusText = () => {
+      uploadStatusText.value = t('upload.part', {
+        current: currentUploadPartDisplayNumber(completedCount, state!.partCount),
+        total: state!.partCount,
+      })
+    }
+
     const uploadOnePart = async (index: number) => {
       const partNumber = index + 1
       const start = index * state!.partSize
       const end = Math.min(start + state!.partSize, file.size)
       const chunk = file.slice(start, end)
 
-      uploadStatusText.value = t('upload.part', { current: completedCount + 1, total: state!.partCount })
+      updatePartStatusText()
 
       try {
         const expectedSha256 = state!.partSize === CONTENT_FINGERPRINT_PART_SIZE
@@ -532,6 +550,9 @@ const handleUpload = async () => {
         saveUploadState(state!)
         resumableState.value = state
         completedCount++
+        if (completedCount < state!.partCount) {
+          updatePartStatusText()
+        }
         sentBytesByPart.set(partNumber, chunk.size)
         updateProgress(sentBytesByPart, file.size)
       } catch (error) {
@@ -855,11 +876,14 @@ const verifySavedParts = async (
 ): Promise<boolean> => {
   for (const part of state.parts) {
     throwIfFingerprintAborted(signal)
+    if (state.partSize === CONTENT_FINGERPRINT_PART_SIZE) {
+      const expectedSha256 = contentFingerprint.partSha256[part.partNumber - 1]
+      if (!expectedSha256 || expectedSha256 !== part.sha256) return false
+      continue
+    }
     const start = (part.partNumber - 1) * state.partSize
     const end = Math.min(start + state.partSize, file.size)
-    const expectedSha256 = state.partSize === CONTENT_FINGERPRINT_PART_SIZE
-      ? contentFingerprint.partSha256[part.partNumber - 1]
-      : await sha256Blob(file.slice(start, end), signal)
+    const expectedSha256 = await sha256Blob(file.slice(start, end), signal)
     if (!expectedSha256 || expectedSha256 !== part.sha256) return false
     await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
   }

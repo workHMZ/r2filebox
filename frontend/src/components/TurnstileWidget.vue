@@ -84,6 +84,16 @@ const renderWidget = async () => {
         statusMessage.value = t('a11y.turnstileExpired')
         emit('verify', '')
       },
+      'timeout-callback': () => {
+        if (generation !== renderGeneration) return
+        isVerified.value = false
+        if (presentationRefreshPending) {
+          void renderWidget()
+          return
+        }
+        statusMessage.value = t('a11y.turnstileExpired')
+        emit('verify', '')
+      },
       'error-callback': () => {
         if (generation !== renderGeneration) return
         isVerified.value = false

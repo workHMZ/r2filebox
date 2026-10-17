@@ -5,6 +5,7 @@ import {
   CONTENT_FINGERPRINT_ALGORITHM as frontendAlgorithm,
   CONTENT_FINGERPRINT_PART_SIZE as frontendPartSize,
   deriveContentFingerprint as deriveFrontendFingerprint,
+  fingerprintBlob,
 } from '../frontend/src/utils/content-fingerprint.ts'
 import {
   CONTENT_FINGERPRINT_ALGORITHM as workerAlgorithm,
@@ -42,4 +43,22 @@ test('rejects incomplete or malformed part manifests', async () => {
   const valid = await sha256Bytes(new TextEncoder().encode('part'))
   await assert.rejects(() => deriveWorkerFingerprint(frontendPartSize + 1, [valid]))
   await assert.rejects(() => deriveWorkerFingerprint(1, ['not-a-sha256']))
+})
+
+test('fingerprintBlob skips trailing macrotask timer for a single-part file', async (t) => {
+  let timerCalls = 0
+  const realSetTimeout = globalThis.setTimeout
+  t.mock.method(globalThis, 'setTimeout', (fn, ms, ...args) => {
+    timerCalls++
+    return realSetTimeout(fn, ms, ...args)
+  })
+
+  const singlePart = new Blob(['single part payload'])
+  const result = await fingerprintBlob(singlePart)
+  assert.equal(timerCalls, 0)
+  assert.equal(result.partSha256.length, 1)
+  assert.equal(
+    result.fingerprint,
+    await deriveWorkerFingerprint(singlePart.size, result.partSha256),
+  )
 })

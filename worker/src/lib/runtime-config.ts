@@ -53,7 +53,7 @@ export async function getRuntimeConfig(env: Env, db = new DB(env.DB)): Promise<R
   return buildRuntimeConfig(env, settings)
 }
 
-export function buildRuntimeConfig(env: Env, settings: Record<string, string> = {}): RuntimeConfig {
+function buildRuntimeConfig(env: Env, settings: Record<string, string> = {}): RuntimeConfig {
   const minUploadBytes = 1024 * 1024
   const maxExpireHours = clamp(numberValue(settings.MAX_EXPIRE_HOURS, 168), 1, 8760)
   const maxUploadBytes = clamp(

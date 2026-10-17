@@ -2,6 +2,7 @@ import { createScheduledController, env } from 'cloudflare:test'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import worker, { requireSuccessfulCleanup } from '../src/index'
 import { DB } from '../src/lib/db'
+import { R2Storage } from '../src/lib/r2'
 import { cleanupExpiredShares } from '../src/lib/cleanup'
 import type { Env } from '../src/types'
 
@@ -355,6 +356,25 @@ describe('scheduled cleanup reporting', () => {
       WHERE deleted_at IS NULL AND expire_at < ?
     `).bind(new Date().toISOString()).first<{ remaining: number }>())
       .resolves.toEqual({ remaining: backlog - 100 })
+  })
+
+  it('chunks R2 batch deletes to the 1000-key R2 limit and deduplicates keys', async () => {
+    const deleteBatches: string[][] = []
+    const bucket = {
+      async delete(keys: string | string[]) {
+        deleteBatches.push(Array.isArray(keys) ? keys : [keys])
+      },
+    } as unknown as R2Bucket
+
+    const keys = Array.from({ length: 1050 }, (_, index) => `key-${index}`)
+    const r2 = new R2Storage(bucket)
+    await r2.deleteObjects([...keys, 'key-0', 'key-999', ''])
+
+    expect(deleteBatches).toHaveLength(2)
+    expect(deleteBatches[0]).toHaveLength(1000)
+    expect(deleteBatches[1]).toHaveLength(50)
+    expect(deleteBatches[0]?.[0]).toBe('key-0')
+    expect(deleteBatches[1]?.[49]).toBe('key-1049')
   })
 })
 

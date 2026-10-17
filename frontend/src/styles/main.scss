@@ -76,12 +76,6 @@ a {
   text-transform: uppercase;
 }
 
-.mono-type {
-  font-family: var(--font-code);
-  font-variant-ligatures: none;
-  font-variant-numeric: tabular-nums lining-nums;
-}
-
 /* ---- Ledger primitives ------------------------------------------------- */
 /* The paper sheet every page sits on. The coral spine is the left binding
    edge; it is decorative, so it never carries meaning on its own.
@@ -209,17 +203,13 @@ a:focus-visible,
     color: var(--text-primary) !important;
   }
 
-  .header-title h2,
   .file-name,
-  .user-cell span,
-  .anonymous,
   .stat-value,
   .stat-label,
   .card-header h3 {
     color: inherit !important;
   }
 
-  .header-title p,
   .el-pagination,
   .el-pagination__total,
   .el-pagination__jump {
@@ -413,6 +403,7 @@ a:focus-visible,
 
     .desc-divider {
       color: var(--border-strong);
+      -webkit-user-select: none;
       user-select: none;
       flex-shrink: 0;
     }

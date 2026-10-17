@@ -226,6 +226,7 @@ watch(() => props.result, renderReceipt, { immediate: true })
   font-weight: 600;
   letter-spacing: 0.1em;
   line-height: 1.1;
+  -webkit-user-select: all;
   user-select: all;
 }
 

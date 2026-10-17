@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue'
 
-export type ResolvedTheme = 'light' | 'dark'
+type ResolvedTheme = 'light' | 'dark'
 
 const STORAGE_KEY = 'r2filebox-theme'
 const LIGHT_THEME_COLOR = '#faf9f5'
@@ -14,8 +14,7 @@ let initialized = false
 let systemThemeQuery: MediaQueryList | null = null
 let thawHandle: ReturnType<typeof setTimeout> | null = null
 
-export const resolvedTheme = computed<ResolvedTheme>(() => resolvedThemeState.value)
-export const isDark = computed(() => resolvedThemeState.value === 'dark')
+const isDark = computed(() => resolvedThemeState.value === 'dark')
 
 export function initTheme() {
   if (initialized) return
@@ -30,7 +29,7 @@ export function initTheme() {
   initialized = true
 }
 
-export function setTheme(theme: ResolvedTheme) {
+function setTheme(theme: ResolvedTheme) {
   hasManualPreference.value = true
   try {
     localStorage.setItem(STORAGE_KEY, theme)
@@ -40,15 +39,13 @@ export function setTheme(theme: ResolvedTheme) {
   applyTheme(theme)
 }
 
-export function toggleTheme() {
+function toggleTheme() {
   setTheme(isDark.value ? 'light' : 'dark')
 }
 
 export function useTheme() {
   return {
-    resolvedTheme,
     isDark,
-    setTheme,
     toggleTheme,
   }
 }

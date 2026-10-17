@@ -482,14 +482,13 @@ export class DB {
   }
 
   async deleteShareById(id: string): Promise<Share | null> {
-    const share = await this.getShareById(id)
-    if (!share) return null
-
     const now = new Date().toISOString()
-    const stmt = this.db.prepare('UPDATE shares SET deleted_at = ? WHERE id = ?')
-      .bind(now, id)
-    await stmt.run()
-    return share
+    return await this.db.prepare(`
+      UPDATE shares
+      SET deleted_at = ?
+      WHERE id = ? AND deleted_at IS NULL
+      RETURNING *
+    `).bind(now, id).first<Share>()
   }
 
   async getSharesList(limit: number, offset: number): Promise<{items: Share[], total: number}> {
@@ -841,11 +840,14 @@ export class DB {
     ).run()
   }
 
-  async getAuditLogs(limit: number, offset: number): Promise<{ items: AuditLogDetails[], total: number }> {
+  async getAuditLogs(
+    limit: number,
+    offset: number,
+    includeStats = false,
+  ): Promise<{ items: AuditLogDetails[], total: number, stats?: AuditStats }> {
     const safeLimit = Math.min(Math.max(limit, 1), 100)
     const safeOffset = Math.max(offset, 0)
-    const total = await this.db.prepare('SELECT count(*) as c FROM audit_logs').first<{ c: number }>()
-    const { results } = await this.db.prepare(`
+    const itemsStmt = this.db.prepare(`
       SELECT
         audit.id,
         audit.action,
@@ -865,14 +867,35 @@ export class DB {
       LEFT JOIN upload_sessions AS uploads ON uploads.share_id = audit.share_id
       ORDER BY audit.created_at DESC, audit.id DESC
       LIMIT ? OFFSET ?
-    `)
-      .bind(safeLimit, safeOffset)
-      .all<AuditLogDetails>()
-    return { items: results, total: total?.c || 0 }
+    `).bind(safeLimit, safeOffset)
+
+    if (includeStats) {
+      const [itemsRes, statsRes] = await this.db.batch([itemsStmt, this.prepareAuditStatsStatement()])
+      const stats = normalizeAuditStats(
+        (statsRes.results as Array<AuditStatsRow> | undefined)?.[0],
+      )
+      return {
+        items: (itemsRes.results || []) as AuditLogDetails[],
+        total: stats.total,
+        stats,
+      }
+    }
+
+    const countStmt = this.db.prepare('SELECT count(*) as c FROM audit_logs')
+    const [countRes, itemsRes] = await this.db.batch([countStmt, itemsStmt])
+    return {
+      items: (itemsRes.results || []) as AuditLogDetails[],
+      total: Number((countRes.results as Array<{ c: number }> | undefined)?.[0]?.c || 0),
+    }
   }
 
   async getAuditStats(): Promise<AuditStats> {
-    const stats = await this.db.prepare(`
+    const row = await this.prepareAuditStatsStatement().first<AuditStatsRow>()
+    return normalizeAuditStats(row)
+  }
+
+  private prepareAuditStatsStatement(): D1PreparedStatement {
+    return this.db.prepare(`
       SELECT
         count(*) AS total,
         sum(CASE
@@ -897,20 +920,7 @@ export class DB {
           THEN ip_hash
         END) AS active_sources
       FROM audit_logs
-    `)
-      .bind(new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-      .first<{
-        total: number | null
-        completed_shares: number | null
-        completed_retrievals: number | null
-        active_sources: number | null
-      }>()
-    return {
-      total: Number(stats?.total || 0),
-      completedShares: Number(stats?.completed_shares || 0),
-      completedRetrievals: Number(stats?.completed_retrievals || 0),
-      activeSources: Number(stats?.active_sources || 0),
-    }
+    `).bind(new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
   }
 
   async purgeAuditLogs(before: string, limit: number = 1000): Promise<number> {
@@ -984,4 +994,20 @@ function localDayStartUtcMs(nowMs: number, utcOffsetMinutes: number): number {
 function boundedPurgeLimit(limit: number): number {
   const normalized = Number.isFinite(limit) ? Math.trunc(limit) : 1000
   return Math.min(Math.max(normalized, 1), 1000)
+}
+
+interface AuditStatsRow {
+  total: number | null
+  completed_shares: number | null
+  completed_retrievals: number | null
+  active_sources: number | null
+}
+
+function normalizeAuditStats(stats?: AuditStatsRow | null): AuditStats {
+  return {
+    total: Number(stats?.total || 0),
+    completedShares: Number(stats?.completed_shares || 0),
+    completedRetrievals: Number(stats?.completed_retrievals || 0),
+    activeSources: Number(stats?.active_sources || 0),
+  }
 }

@@ -77,6 +77,7 @@
                   <video
                     :src="previewUrl"
                     controls
+                    playsinline
                     preload="metadata"
                     class="preview-video"
                     @error="handleMediaPreviewError"
@@ -431,6 +432,7 @@ watch(() => route.params.code, (value) => {
     calc(100% - var(--space-lg) * 2),
     calc(var(--slip-measure) + var(--space-lg) * 2)
   );
+  min-height: calc(100vh - var(--space-xl));
   min-height: calc(100dvh - var(--space-xl));
   flex-direction: column;
   gap: var(--space-sm);
@@ -531,6 +533,7 @@ watch(() => route.params.code, (value) => {
   font-family: var(--font-code);
   font-weight: 600;
   letter-spacing: 0.1em;
+  -webkit-user-select: all;
   user-select: all;
 }
 

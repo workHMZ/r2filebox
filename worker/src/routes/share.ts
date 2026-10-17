@@ -1116,16 +1116,19 @@ async function verifyTurnstileIfRequired(
   if (!token || typeof token !== 'string' || token.length > 2048) return false
 
   try {
-    const form = new FormData()
-    form.set('secret', getRequiredSecret(c.env, 'TURNSTILE_SECRET_KEY'))
-    form.set('response', token)
-    form.set('idempotency_key', crypto.randomUUID())
     const ip = getClientIp(c)
-    if (ip) form.set('remoteip', ip)
+    const payload: Record<string, string> = {
+      secret: getRequiredSecret(c.env, 'TURNSTILE_SECRET_KEY'),
+      response: token,
+    }
+    if (ip) payload.remoteip = ip
 
     const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
       method: 'POST',
-      body: form,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(5000),
     })
     if (!response.ok) return false

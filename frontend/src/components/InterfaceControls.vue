@@ -1,7 +1,7 @@
 <template>
   <div class="interface-controls">
     <ThemeSwitch />
-    <LanguageSwitch inline />
+    <LanguageSwitch />
   </div>
 </template>
 

@@ -105,7 +105,7 @@
                 <el-input-number
                   v-model="configForm.transfer.expire_default"
                   :min="1"
-                  :max="8760"
+                  :max="configForm.transfer.max_expire_hours"
                   controls-position="right"
                 />
                 <span class="config-number-unit">h</span>
@@ -195,7 +195,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted, watch } from 'vue'
 import type { Directive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { DocumentChecked } from '@element-plus/icons-vue'
@@ -291,6 +291,15 @@ const totalStorageGiB = computed({
   }
 })
 
+watch(
+  () => configForm.transfer.max_expire_hours,
+  (maxHours) => {
+    if (typeof maxHours === 'number' && configForm.transfer.expire_default > maxHours) {
+      configForm.transfer.expire_default = maxHours
+    }
+  },
+)
+
 const applyConfig = (config: AdminConfig) => {
   Object.assign(configForm.base, config.base)
   Object.assign(configForm.storage, config.storage)
@@ -345,13 +354,6 @@ onMounted(() => {
 <style scoped>
 .system-config {
   padding: 0;
-}
-
-/* Holds only the save action now: the page name is in the admin header bar. */
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
 }
 
 .config-form {

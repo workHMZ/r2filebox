@@ -1,4 +1,15 @@
 const SIZE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const
+const numberFormatters = new Map<string, Intl.NumberFormat>()
+
+function getNumberFormatter(locale?: string): Intl.NumberFormat {
+  const key = locale || ''
+  let formatter = numberFormatters.get(key)
+  if (!formatter) {
+    formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 })
+    numberFormatters.set(key, formatter)
+  }
+  return formatter
+}
 
 export const formatFileSize = (
   bytes: number | null | undefined,
@@ -9,7 +20,7 @@ export const formatFileSize = (
   if (bytes === 0) return '0 B'
   const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), SIZE_UNITS.length - 1)
   const value = bytes / 1024 ** unitIndex
-  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(value)} ${SIZE_UNITS[unitIndex]}`
+  return `${getNumberFormatter(locale).format(value)} ${SIZE_UNITS[unitIndex]}`
 }
 
 export interface DateTimeParts {
@@ -18,10 +29,12 @@ export interface DateTimeParts {
   full: string
 }
 
+const EMPTY_DATETIME_PARTS: DateTimeParts = Object.freeze({ date: '-', time: '', full: '-' })
+
 export const formatSplitDateTime = (value: string | number | Date | null | undefined): DateTimeParts => {
-  if (!value) return { date: '-', time: '', full: '-' }
+  if (!value) return EMPTY_DATETIME_PARTS
   const date = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(date.getTime())) return { date: '-', time: '', full: '-' }
+  if (Number.isNaN(date.getTime())) return EMPTY_DATETIME_PARTS
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
@@ -34,7 +47,7 @@ export const formatSplitDateTime = (value: string | number | Date | null | undef
   return {
     date: dateStr,
     time: timeStr,
-    full: `${dateStr} ${timeStr}`
+    full: `${dateStr} ${timeStr}`,
   }
 }
 

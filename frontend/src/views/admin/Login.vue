@@ -193,20 +193,23 @@ const handleLogin = async () => {
 
 <style scoped>
 .login-container {
+  position: relative;
   display: flex;
   min-height: 100vh;
   min-height: 100dvh;
   align-items: center;
   justify-content: center;
-  padding: max(var(--space-2xl), env(safe-area-inset-top, 0px)) var(--space-sm)
-    max(var(--space-lg), env(safe-area-inset-bottom, 0px));
+  padding: max(var(--space-2xl), env(safe-area-inset-top, 0px))
+    max(var(--space-sm), env(safe-area-inset-right, 0px))
+    max(var(--space-lg), env(safe-area-inset-bottom, 0px))
+    max(var(--space-sm), env(safe-area-inset-left, 0px));
   overflow-x: hidden;
 }
 
 .login-toolbar {
   position: absolute;
-  top: var(--space-md);
-  right: var(--space-md);
+  top: max(var(--space-md), env(safe-area-inset-top, 0px));
+  right: max(var(--space-md), env(safe-area-inset-right, 0px));
   z-index: 2;
 }
 
@@ -302,11 +305,12 @@ const handleLogin = async () => {
 @media (max-width: 767px) {
   .login-container {
     align-items: flex-start;
+    padding-top: calc(max(var(--space-xs), env(safe-area-inset-top, 0px)) + 52px);
   }
 
   .login-toolbar {
-    top: var(--space-xs);
-    right: var(--space-xs);
+    top: max(var(--space-xs), env(safe-area-inset-top, 0px));
+    right: max(var(--space-xs), env(safe-area-inset-right, 0px));
   }
 
   .login-card {

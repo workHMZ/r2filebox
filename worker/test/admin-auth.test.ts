@@ -135,7 +135,7 @@ describe('administrator cookie session', () => {
       runtime: 'Cloudflare Workers',
       platform: 'V8 isolate',
       storage: 'D1 + R2 + Workers Rate Limiting',
-      version: '2.9.0',
+      version: '2.9.1',
       r2_bucket_name: 'r2filebox-files',
       d1_database_name: 'r2filebox-db',
     })
@@ -221,6 +221,33 @@ describe('administrator cookie session', () => {
         { key: 'ENABLE_TEXT_SHARE', value: 'false' },
         { key: 'MAX_EXPIRE_HOURS', value: '720' },
         { key: 'MAX_TOTAL_STORAGE_BYTES', value: String(settings.storage.max_total_storage_bytes) },
+      ])
+
+      const unclampedResponse = await SELF.fetch('https://example.test/admin/config', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookiePair(login.headers.get('set-cookie') || ''),
+          Origin: 'https://example.test',
+        },
+        body: JSON.stringify({
+          ...settings,
+          transfer: {
+            ...settings.transfer,
+            expire_default: 500,
+            max_expire_hours: 72,
+          },
+        }),
+      })
+      expect(unclampedResponse.status).toBe(200)
+      const persistedExpireRows = await env.DB.prepare(`
+        SELECT key, value FROM settings
+        WHERE key IN ('DEFAULT_EXPIRE_HOURS', 'MAX_EXPIRE_HOURS')
+        ORDER BY key
+      `).all<{ key: string, value: string }>()
+      expect(persistedExpireRows.results).toEqual([
+        { key: 'DEFAULT_EXPIRE_HOURS', value: '72' },
+        { key: 'MAX_EXPIRE_HOURS', value: '72' },
       ])
     } finally {
       await env.DB.prepare('DELETE FROM settings').run()

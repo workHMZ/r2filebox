@@ -1,5 +1,5 @@
 <template>
-  <div :class="['language-switch', { inline }]">
+  <div class="language-switch">
     <el-icon class="language-icon" aria-hidden="true"><Guide /></el-icon>
     <label class="sr-only" :for="selectId">{{ t('a11y.language') }}</label>
     <el-select
@@ -23,10 +23,6 @@
 import { computed, useId } from 'vue'
 import { Guide } from '@element-plus/icons-vue'
 import { locale, languageOptions, setLocale, useI18n, type Locale } from '@/i18n'
-
-defineProps<{
-  inline?: boolean
-}>()
 
 const { t } = useI18n()
 const selectId = useId()

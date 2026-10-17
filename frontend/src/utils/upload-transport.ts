@@ -7,6 +7,16 @@ interface UploadResponse {
   retryAfter: string | null
 }
 
+/**
+ * Compute the 1-based part number shown in the progress label as concurrent
+ * workers start and finish parts.
+ */
+export function currentUploadPartDisplayNumber(completedCount: number, totalParts: number): number {
+  const safeTotal = Math.max(1, Math.trunc(totalParts))
+  const safeCompleted = Math.max(0, Math.trunc(completedCount))
+  return Math.min(safeCompleted + 1, safeTotal)
+}
+
 /** Bound stalled requests while allowing slow uploads that keep progressing. */
 export function sendUploadPart(
   uploadToken: string,

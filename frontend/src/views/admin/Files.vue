@@ -189,11 +189,8 @@ const pagination = reactive({
 
 const isExpired = (dateStr: string): boolean => {
   if (!dateStr) return false
-  try {
-    return new Date(dateStr) < new Date()
-  } catch {
-    return false
-  }
+  const timestamp = Date.parse(dateStr)
+  return Number.isFinite(timestamp) && timestamp < Date.now()
 }
 
 const iconByCategory: Record<FileCategory, Component> = {
@@ -314,24 +311,6 @@ onMounted(() => {
 .files-card {
   overflow: hidden;
 }
-
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-sm);
-}
-
-/* The page name lives once, in the admin header bar. This carries only the
-   line that bar has no room for. */
-.card-lead {
-  min-width: 0;
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--fs-body-sm);
-}
-
-
 
 .files-table {
   width: 100%;

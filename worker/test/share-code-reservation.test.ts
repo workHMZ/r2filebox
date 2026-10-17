@@ -1,5 +1,6 @@
-import { env, SELF } from 'cloudflare:test'
+import { createExecutionContext, env, SELF } from 'cloudflare:test'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import worker from '../src/index'
 import { DB } from '../src/lib/db'
 import { hashCode } from '../src/lib/code'
 
@@ -144,5 +145,64 @@ describe('share code reservation', () => {
       body: JSON.stringify({ code: body.data.code }),
     })
     expect(resolved.status).toBe(200)
+  })
+
+  it('verifies Turnstile tokens using an application/json siteverify payload', async () => {
+    const now = new Date().toISOString()
+    await env.DB.batch([
+      env.DB.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)').bind('REQUIRE_TURNSTILE', 'true', now),
+      env.DB.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)').bind('TURNSTILE_SITE_KEY', '1x00000000000000000000AA', now),
+    ])
+
+    const originalFetch = globalThis.fetch
+    let capturedContentType: string | null = null
+    let capturedBody: Record<string, unknown> | null = null
+
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify') {
+        const headers = new Headers(init?.headers)
+        capturedContentType = headers.get('Content-Type')
+        capturedBody = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
+        return Response.json({
+          success: true,
+          hostname: 'example.test',
+          action: 'text-share',
+        })
+      }
+      return originalFetch(input, init)
+    }) as typeof fetch
+
+    try {
+      const response = await worker.fetch(
+        new Request('https://example.test/api/share/text', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'CF-Connecting-IP': '203.0.113.10',
+          },
+          body: JSON.stringify({
+            text: 'turnstile verified text',
+            expire_value: 1,
+            expire_style: 'hour',
+            turnstileToken: 'valid-turnstile-token',
+          }),
+        }),
+        {
+          ...env,
+          TURNSTILE_SECRET_KEY: '1x0000000000000000000000000000000AA',
+        },
+        createExecutionContext(),
+      )
+      expect(response.status).toBe(200)
+      expect(capturedContentType).toBe('application/json')
+      expect(capturedBody).toEqual({
+        secret: '1x0000000000000000000000000000000AA',
+        response: 'valid-turnstile-token',
+        remoteip: '203.0.113.10',
+      })
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 })

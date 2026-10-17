@@ -31,7 +31,7 @@
           :tab-position="tabPosition"
           @tab-click="tabChosenByUser = true"
         >
-          <el-tab-pane v-if="fileShareEnabled" name="file" lazy>
+          <el-tab-pane v-if="fileShareEnabled" name="file">
             <template #label>
               <span class="tab-label">
                 <span class="tab-index" aria-hidden="true">{{ tabIndex('file') }}</span>
@@ -96,11 +96,11 @@ import { Link } from '@element-plus/icons-vue'
 import { useConfigStore } from '@/stores/config'
 import AppLogo from '@/components/AppLogo.vue'
 import InterfaceControls from '@/components/InterfaceControls.vue'
+import FileUpload from '@/components/upload/FileUpload.vue'
 import type { ShareCreatedResult } from '@/api/share'
 import { useI18n } from '@/i18n'
 
 const ShareReceipt = defineAsyncComponent(() => import('@/components/ShareReceipt.vue'))
-const FileUpload = defineAsyncComponent(() => import('@/components/upload/FileUpload.vue'))
 const TextShare = defineAsyncComponent(() => import('@/components/upload/TextShare.vue'))
 const GetShare = defineAsyncComponent(() => import('@/components/upload/GetShare.vue'))
 
@@ -190,6 +190,7 @@ const handleDialogClosed = () => {
 
 .ledger {
   display: flex;
+  min-height: calc(100vh - var(--space-xl));
   min-height: calc(100dvh - var(--space-xl));
   flex-direction: column;
   gap: var(--space-md);

@@ -1,3 +1,5 @@
+const R2_DELETE_BATCH_LIMIT = 1000
+
 export class R2Storage {
   constructor(private bucket: R2Bucket) {}
 
@@ -27,8 +29,11 @@ export class R2Storage {
   }
 
   async deleteObjects(keys: string[]): Promise<void> {
-    if (!keys.length) return
-    await this.bucket.delete(keys)
+    const uniqueKeys = [...new Set(keys.filter(Boolean))]
+    if (!uniqueKeys.length) return
+    for (let offset = 0; offset < uniqueKeys.length; offset += R2_DELETE_BATCH_LIMIT) {
+      await this.bucket.delete(uniqueKeys.slice(offset, offset + R2_DELETE_BATCH_LIMIT))
+    }
   }
 
   async createMultipartUpload(key: string, options?: R2MultipartOptions): Promise<R2MultipartUpload> {

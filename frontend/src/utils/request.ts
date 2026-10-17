@@ -5,7 +5,7 @@ import { t } from '@/i18n'
 import type { ApiResponse } from '@/types/common'
 import { ApiError, formatApiError } from '@/utils/error'
 
-export interface RequestConfig extends AxiosRequestConfig {
+interface RequestConfig extends AxiosRequestConfig {
   suppressErrorMessage?: boolean
   suppressAuthRedirect?: boolean
 }

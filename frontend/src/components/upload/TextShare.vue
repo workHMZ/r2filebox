@@ -184,6 +184,12 @@ const handleShare = async () => {
   line-height: var(--leading-body) !important;
 }
 
+@media (any-pointer: coarse) {
+  .text-area :deep(.el-textarea__inner) {
+    font-size: var(--fs-body-md) !important;
+  }
+}
+
 .text-size-hint {
   margin-top: var(--space-3xs);
   color: var(--text-secondary);

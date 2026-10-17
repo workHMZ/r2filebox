@@ -247,7 +247,7 @@ const { active: refreshSucceeded, reset: resetRefreshFeedback, show: showRefresh
 const { lastRefreshTime, markRefreshed } = useLastRefresh()
 
 const versionInfo = ref<VersionInfo>({
-  version: '2.9.0',
+  version: '2.9.1',
   commit_hash: 'dev',
   short_hash: 'dev',
   build_time: null,

@@ -103,6 +103,18 @@ if (!generatedBindings.includes('\tVERSION_METADATA: WorkerVersionMetadata;')) {
   failures.push('Generated bindings are stale: VERSION_METADATA is missing')
 }
 
+const staticHeaders = readFileSync(resolve(root, 'frontend/public/_headers'), 'utf8')
+const workerSecurity = readFileSync(resolve(root, 'worker/src/lib/security.ts'), 'utf8')
+const staticCsp = staticHeaders.match(/^\s*Content-Security-Policy:\s*(.+)$/m)?.[1]?.trim()
+const appCspBlock = workerSecurity.match(/const APP_CSP = \[([\s\S]*?)\]/)?.[1] ?? ''
+const workerCspParts = [...appCspBlock.matchAll(/^\s*(?:"([^"]+)"|'([^']+)'),?$/gm)].map(
+  (match) => match[1] ?? match[2],
+)
+const workerCsp = workerCspParts.join('; ')
+if (!staticCsp || staticCsp !== workerCsp) {
+  failures.push('frontend/public/_headers Content-Security-Policy must match APP_CSP in worker/src/lib/security.ts')
+}
+
 if (process.env.REQUIRE_PLACEHOLDER_BINDINGS === '1') {
   expectMatch(
     /^database_id = "00000000-0000-0000-0000-000000000000"$/m,

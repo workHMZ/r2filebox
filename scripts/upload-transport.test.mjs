@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { sendUploadPart } from '../frontend/src/utils/upload-transport.ts'
+import {
+  currentUploadPartDisplayNumber,
+  sendUploadPart,
+} from '../frontend/src/utils/upload-transport.ts'
 
 function setup(t) {
   t.mock.timers.enable({ apis: ['setTimeout'] })
@@ -89,4 +92,12 @@ test('a synchronous send failure settles and releases the timer', async t => {
   t.mock.method(XMLHttpRequest.prototype, 'send', () => { throw new Error('send failed') })
   await assert.rejects(start(), /send failed/)
   t.mock.timers.tick(120_000)
+})
+
+test('currentUploadPartDisplayNumber advances across concurrent part completions and clamps at totalParts', () => {
+  assert.equal(currentUploadPartDisplayNumber(0, 3), 1)
+  assert.equal(currentUploadPartDisplayNumber(1, 3), 2)
+  assert.equal(currentUploadPartDisplayNumber(2, 3), 3)
+  assert.equal(currentUploadPartDisplayNumber(3, 3), 3)
+  assert.equal(currentUploadPartDisplayNumber(-1, 2), 1)
 })
