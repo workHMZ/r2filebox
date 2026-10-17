@@ -3,7 +3,8 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, extname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import ts from 'typescript'
+// TypeScript 7 uses a native compiler; AST inspection still needs the stable JS API.
+import ts from '@typescript/typescript6'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const sourcePath = resolve(root, 'frontend/src/i18n/index.ts')
