@@ -9,8 +9,8 @@
  * only requirements — no browser-automation dependency enters package.json,
  * and nothing here runs in `npm run verify`.
  *
- *   npm run dev            # wrangler on :8787, serving frontend/dist
  *   npm run build          # make sure dist is current first
+ *   npm run dev            # wrangler on :8787, serving frontend/dist
  *   node scripts/capture-screenshots.mjs
  *
  * Admin credentials come from the environment or .dev.vars; they never leave
@@ -25,7 +25,8 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import sharp from 'sharp'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const outDir = resolve(root, 'docs/screenshots')
+const version = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')).version
+const outDir = resolve(root, 'docs/screenshots', `v${version}`)
 const origin = process.env.SCREENSHOT_ORIGIN || 'http://localhost:8787'
 const locale = process.env.SCREENSHOT_LOCALE || 'zh'
 const theme = process.env.SCREENSHOT_THEME || 'light'
@@ -33,7 +34,7 @@ const debugPort = Number(process.env.SCREENSHOT_CDP_PORT || 9333)
 
 // Captured wide, published at 1600px: the extra density keeps 13px UI text
 // legible after GitHub scales the image down.
-const viewport = { width: 1280, height: 940, deviceScaleFactor: 2 }
+const viewport = { width: 1280, height: 900, deviceScaleFactor: 2 }
 const publishWidth = 1600
 
 const CHROME_CANDIDATES = [
@@ -79,7 +80,7 @@ async function main() {
     shots.push(...(await captureAdmin(page, credentials)))
 
     for (const { name, data } of shots) await publish(name, data)
-    console.log(`\nWrote ${shots.length} screenshots to docs/screenshots/.`)
+    console.log(`\nWrote ${shots.length} screenshots to docs/screenshots/v${version}/.`)
   } finally {
     browser.kill()
   }
@@ -98,13 +99,6 @@ async function capturePublic(page) {
   await page.waitFor('.file-preview-card')
   await sleep(1200) // the content fingerprint has to finish before the CTA enables
   shots.push({ name: 'home-file-share.png', data: await page.shoot() })
-
-  // (Also update home-get-share.png for backwards compatibility)
-  await page.clickTab(2)
-  await page.waitFor('.code-input input')
-  await page.setFieldValue('.code-input input', 'R2BOX9K4TQ')
-  await sleep(400)
-  shots.push({ name: 'home-get-share.png', data: await page.shoot() })
 
   // 2. share-created.png: 日本語 (ja) · 白天模式 (light)
   await page.setConfig({ locale: 'ja', theme: 'light' })
@@ -182,7 +176,12 @@ async function captureAdmin(page, { username, password }) {
 
 async function publish(name, base64) {
   const target = resolve(outDir, name)
-  await sharp(Buffer.from(base64, 'base64'))
+  const source = Buffer.from(base64, 'base64')
+  const { width, height } = await sharp(source).metadata()
+  if (width / height !== viewport.width / viewport.height) {
+    throw new Error(`Unexpected screenshot dimensions for ${name}: ${width}x${height}`)
+  }
+  await sharp(source)
     .resize({ width: publishWidth, withoutEnlargement: true })
     .png({ compressionLevel: 9, effort: 10, palette: true, quality: 90 })
     .toFile(target)
@@ -365,7 +364,13 @@ async function openPage(endpoint) {
       await sleep(700)
     },
     async shoot() {
-      const { data } = await send('Page.captureScreenshot', { format: 'png' })
+      await evaluate('document.fonts.ready.then(() => true)', true)
+      await evaluate(`Promise.all([...document.images].map((image) =>
+        image.decode().catch(() => undefined))).then(() => true)`, true)
+      const { data } = await send('Page.captureScreenshot', {
+        format: 'png',
+        captureBeyondViewport: false,
+      })
       return data
     },
   }
