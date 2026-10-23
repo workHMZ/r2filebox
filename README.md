@@ -116,7 +116,7 @@ Keep the generated secrets stable: changing `CODE_HASH_PEPPER` invalidates exist
 <details>
 <summary>CLI deployment and local development</summary>
 
-Use Node.js 24 (`>=24.11.0 <25`; the pinned version is in [.nvmrc](./.nvmrc)).
+Use Node.js 24 (`>=24.22.1 <25`; the pinned version is in [.nvmrc](./.nvmrc)).
 
 ```bash
 git clone https://github.com/workHMZ/r2filebox.git
@@ -225,7 +225,7 @@ Deploy command: npm run deploy
 <details>
 <summary>命令行部署与本地开发</summary>
 
-使用 Node.js 24（`>=24.11.0 <25`；固定版本见 [.nvmrc](./.nvmrc)）。
+使用 Node.js 24（`>=24.22.1 <25`；固定版本见 [.nvmrc](./.nvmrc)）。
 
 ```bash
 git clone https://github.com/workHMZ/r2filebox.git
@@ -334,7 +334,7 @@ Deploy command: npm run deploy
 <details>
 <summary>CLI デプロイとローカル開発</summary>
 
-Node.js 24（`>=24.11.0 <25`）を使用します。固定バージョンは [.nvmrc](./.nvmrc) を参照してください。
+Node.js 24（`>=24.22.1 <25`）を使用します。固定バージョンは [.nvmrc](./.nvmrc) を参照してください。
 
 ```bash
 git clone https://github.com/workHMZ/r2filebox.git
