@@ -60,6 +60,9 @@
   "overrides": {
     "undici": "^7.30.1",
     "source-map-js": "^1.2.2",
-    "sharp": "$sharp"
+    "sharp": "$sharp",
+    "@cloudflare/vitest-plugin": {
+      "zod": "4.6.6"
+    }
   }
 }
