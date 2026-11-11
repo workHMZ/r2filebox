@@ -1,7 +1,11 @@
 const R2_DELETE_BATCH_LIMIT = 1000
 
 export class R2Storage {
-  constructor(private bucket: R2Bucket) {}
+  private readonly bucket: R2Bucket
+
+  constructor(bucket: R2Bucket) {
+    this.bucket = bucket
+  }
 
   /**
    * Upload a file to R2.

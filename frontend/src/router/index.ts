@@ -32,7 +32,7 @@ const routes: RouteRecordRaw[] = [
     path: '/admin',
     name: 'Admin',
     component: () => import('@/views/admin/index.vue'),
-    meta: { titleKey: 'nav.admin', requiresAuth: true, requiresAdmin: true },
+    meta: { titleKey: 'nav.admin', requiresAuth: true },
     children: [
       {
         path: '',

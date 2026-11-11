@@ -6,9 +6,10 @@ import { stdin as input, stdout as output } from 'node:process'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { randomBytes, webcrypto } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import { Writable } from 'node:stream'
 import { getDeployVarsArgs } from './deploy-metadata.mjs'
+import { hashPassword } from '../worker/src/lib/password.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const wranglerTomlPath = resolve(root, 'wrangler.toml')
@@ -311,29 +312,4 @@ function findDatabaseByName(databaseName) {
 
 function putSecret(name, value) {
   run('npx', ['wrangler', 'secret', 'put', name], root, { input: value })
-}
-
-async function hashPassword(password) {
-  const iterations = 100000
-  const hashBytes = 32
-  const salt = webcrypto.getRandomValues(new Uint8Array(16))
-  const encoder = new TextEncoder()
-  const keyMaterial = await webcrypto.subtle.importKey(
-    'raw',
-    encoder.encode(password),
-    { name: 'PBKDF2' },
-    false,
-    ['deriveBits'],
-  )
-  const hashBuffer = await webcrypto.subtle.deriveBits(
-    {
-      name: 'PBKDF2',
-      salt,
-      iterations,
-      hash: 'SHA-256',
-    },
-    keyMaterial,
-    hashBytes * 8,
-  )
-  return `pbkdf2$${iterations}$${Buffer.from(salt).toString('base64')}$${Buffer.from(hashBuffer).toString('base64')}`
 }

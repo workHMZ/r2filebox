@@ -61,9 +61,12 @@ export class DB {
    * serving a value from a previous request. upsertSettings clears it so a
    * writer still observes its own write.
    */
+  private readonly db: D1Database
   private settingsRead: Promise<Record<string, string>> | null = null
 
-  constructor(private db: D1Database) {}
+  constructor(db: D1Database) {
+    this.db = db
+  }
 
   async createShare(share: Share, maxStorageBytes: number): Promise<boolean> {
     const created = await this.prepareCreateShare(share, maxStorageBytes).first<{ id: string }>()

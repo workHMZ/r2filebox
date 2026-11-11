@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-import { webcrypto } from 'node:crypto'
 import { createInterface } from 'node:readline/promises'
 import { stdin, stdout } from 'node:process'
 import { Writable } from 'node:stream'
+import { hashPassword } from '../src/lib/password.ts'
 
 const password = process.argv[2] || await readPassword()
 if (password.length < 16 || password.length > 4096) {
@@ -11,36 +11,7 @@ if (password.length < 16 || password.length > 4096) {
   process.exit(1)
 }
 
-// Cloudflare Workers cap PBKDF2 at 100,000 iterations, so the Worker rejects
-// any higher count even though Node would compute it here.
-const iterations = 100000
-const hashBytes = 32
-const saltBytes = 16
-const salt = webcrypto.getRandomValues(new Uint8Array(saltBytes))
-const encoder = new TextEncoder()
-
-const keyMaterial = await webcrypto.subtle.importKey(
-  'raw',
-  encoder.encode(password),
-  { name: 'PBKDF2' },
-  false,
-  ['deriveBits'],
-)
-
-const hashBuffer = await webcrypto.subtle.deriveBits(
-  {
-    name: 'PBKDF2',
-    salt,
-    iterations,
-    hash: 'SHA-256',
-  },
-  keyMaterial,
-  hashBytes * 8,
-)
-
-const saltBase64 = Buffer.from(salt).toString('base64')
-const hashBase64 = Buffer.from(hashBuffer).toString('base64')
-console.log(`pbkdf2$${iterations}$${saltBase64}$${hashBase64}`)
+console.log(await hashPassword(password))
 
 async function readPassword() {
   if (!stdin.isTTY) {

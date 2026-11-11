@@ -8,6 +8,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
 const frontendPackageJson = JSON.parse(readFileSync(resolve(root, 'frontend/package.json'), 'utf8'))
 const wrangler = readFileSync(resolve(root, 'wrangler.toml'), 'utf8')
+const vitestConfig = readFileSync(resolve(root, 'vitest.config.mts'), 'utf8')
 const generatedBindings = readFileSync(resolve(root, 'worker/worker-configuration.d.ts'), 'utf8')
 const failures = []
 
@@ -28,7 +29,20 @@ if (frontendPackageJson.version !== packageJson.version) {
   failures.push(`Frontend package version (${frontendPackageJson.version}) must match root package version (${packageJson.version})`)
 }
 
-expectMatch(/^compatibility_date = "2026-07-20"$/m, 'compatibility_date must be 2026-07-20')
+const compatibilityDate = '2026-11-10'
+expectMatch(
+  new RegExp(`^compatibility_date = "${compatibilityDate}"$`, 'm'),
+  `compatibility_date must be ${compatibilityDate}`,
+)
+const vitestCompatibilityDate = vitestConfig.match(/\bcompatibilityDate:\s*'([^']+)'/)?.[1]
+if (vitestCompatibilityDate !== compatibilityDate) {
+  failures.push(`vitest.config.mts compatibilityDate (${vitestCompatibilityDate || 'missing'}) must match wrangler.toml (${compatibilityDate})`)
+}
+expectMatch(/^upload_source_maps = true$/m, 'upload_source_maps must be enabled for readable Worker stack traces')
+expectMatch(
+  /\[observability\][\s\S]*?^redact_query_string = true$/m,
+  'observability.redact_query_string must be enabled so Share Target query strings are not persisted in logs or traces',
+)
 expectMatch(
   /\[triggers\][\s\S]*?^crons\s*=\s*\[\s*"0 \* \* \* \*"\s*\]/m,
   'scheduled cleanup must run hourly so reclaim keeps pace with share creation',

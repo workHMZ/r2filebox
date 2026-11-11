@@ -60,10 +60,6 @@ export const formatClockTime = (value: Date | string | number = new Date()): str
   return `${hours}:${minutes}:${seconds}`
 }
 
-export const formatDateTime = (value: string | null | undefined, _locale?: string): string => {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
-  const parts = formatSplitDateTime(date)
-  return parts.full
+export const formatDateTime = (value: string | null | undefined): string => {
+  return formatSplitDateTime(value).full
 }

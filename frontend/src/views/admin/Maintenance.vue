@@ -125,7 +125,7 @@
               </el-tag>
             </el-descriptions-item>
             <el-descriptions-item :label="t('maintenance.buildTime')">
-              {{ versionInfo.build_time ? formatDateTime(versionInfo.build_time, getLocaleTag(locale)) : '—' }}
+              {{ versionInfo.build_time ? formatDateTime(versionInfo.build_time) : '—' }}
             </el-descriptions-item>
           </el-descriptions>
         </el-card>
@@ -229,7 +229,7 @@ import { publicApi, type VersionInfo } from '@/api/public'
 import ActionFeedbackButton from '@/components/ActionFeedbackButton.vue'
 import { useActionFeedback } from '@/composables/useActionFeedback'
 import { useLastRefresh } from '@/composables/useLastRefresh'
-import { getLocaleTag, useI18n } from '@/i18n'
+import { useI18n } from '@/i18n'
 import { formatDateTime, formatFileSize } from '@/utils/format'
 
 const cleaningExpired = ref(false)
@@ -237,7 +237,7 @@ const loadingSystemInfo = ref(false)
 const statusReady = ref(false)
 const statusChecked = ref(false)
 const isMobile = useMediaQuery('(max-width: 767px)')
-const { locale, t } = useI18n()
+const { t } = useI18n()
 const statusText = computed(() => t(loadingSystemInfo.value
   ? 'maintenance.reading'
   : statusReady.value ? 'maintenance.readReady'
@@ -247,7 +247,7 @@ const { active: refreshSucceeded, reset: resetRefreshFeedback, show: showRefresh
 const { lastRefreshTime, markRefreshed } = useLastRefresh()
 
 const versionInfo = ref<VersionInfo>({
-  version: '2.9.1',
+  version: '2.9.2',
   commit_hash: 'dev',
   short_hash: 'dev',
   build_time: null,

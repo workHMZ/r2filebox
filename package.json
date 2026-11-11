@@ -1,8 +1,9 @@
 {
   "name": "r2filebox",
-  "version": "2.9.1",
+  "version": "2.9.2",
   "private": true,
   "license": "LGPL-3.0-or-later",
+  "type": "module",
   "engines": {
     "node": ">=24.22.1 <25"
   },
@@ -30,16 +31,16 @@
     "hash-password": "node worker/scripts/hash-password.mjs"
   },
   "dependencies": {
-    "hono": "^4.13.13"
+    "hono": "^4.13.17"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "1.4.4",
-    "@types/node": "^26.6.5",
+    "@cloudflare/vitest-plugin": "1.7.0",
+    "@types/node": "^26.6.6",
     "@typescript/typescript6": "^6.0.2",
     "sharp": "0.35.5",
     "typescript": "~7.0.2",
-    "vitest": "5.0.5",
-    "wrangler": "4.151.1"
+    "vitest": "5.1.0",
+    "wrangler": "4.160.0"
   },
   "cloudflare": {
     "bindings": {
@@ -58,11 +59,6 @@
     }
   },
   "overrides": {
-    "undici": "^7.30.1",
-    "source-map-js": "^1.2.2",
-    "sharp": "$sharp",
-    "@cloudflare/vitest-plugin": {
-      "zod": "4.6.6"
-    }
+    "sharp": "$sharp"
   }
 }

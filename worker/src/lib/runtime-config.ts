@@ -1,6 +1,6 @@
 import type { Env } from '../types'
 import { DB } from './db'
-import { boolEnv, intEnv } from './env'
+import { boolEnv, clamp, intEnv } from './env'
 
 const DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 const MAX_UPLOAD_BYTES_LIMIT = 95 * 1024 * 1024
@@ -111,8 +111,4 @@ function booleanValue(
   if (setting !== undefined) return boolEnv(setting, effectiveFallback)
   if (typeof deploymentValueOrFallback === 'boolean') return deploymentValueOrFallback
   return boolEnv(deploymentValueOrFallback, effectiveFallback)
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max)
 }

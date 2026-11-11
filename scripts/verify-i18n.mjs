@@ -68,9 +68,18 @@ for (const key of reference.keys()) {
 }
 
 const usedKeys = new Set()
+const referencedLiterals = new Set()
+const dynamicPrefixes = new Set()
 for (const file of sourceFiles(resolve(root, 'frontend/src'))) {
+  if (file === sourcePath) continue
   const content = readFileSync(file, 'utf8')
   for (const match of content.matchAll(/\bt\(\s*['"]([^'"]+)['"]/g)) usedKeys.add(match[1])
+  for (const match of content.matchAll(/['"]([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+)['"]/g)) {
+    referencedLiterals.add(match[1])
+  }
+  for (const match of content.matchAll(/`([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*\.)\$\{/g)) {
+    dynamicPrefixes.add(match[1])
+  }
 }
 for (const key of usedKeys) {
   if (!reference.has(key)) failures.push(`Code uses missing translation key: ${key}`)
@@ -83,6 +92,17 @@ const errorCodeKeys = new Set(
 for (const key of errorCodeKeys) {
   for (const locale of expectedLocales) {
     if (!messages.get(locale)?.has(key)) failures.push(`Worker error code is missing ${locale} translation: ${key}`)
+  }
+}
+
+for (const key of reference.keys()) {
+  const isReferenced =
+    usedKeys.has(key) ||
+    referencedLiterals.has(key) ||
+    errorCodeKeys.has(key) ||
+    [...dynamicPrefixes].some((prefix) => key.startsWith(prefix))
+  if (!isReferenced) {
+    failures.push(`Unused translation key in frontend/src/i18n/index.ts: ${key}`)
   }
 }
 

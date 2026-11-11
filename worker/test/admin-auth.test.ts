@@ -135,7 +135,7 @@ describe('administrator cookie session', () => {
       runtime: 'Cloudflare Workers',
       platform: 'V8 isolate',
       storage: 'D1 + R2 + Workers Rate Limiting',
-      version: '2.9.1',
+      version: '2.9.2',
       r2_bucket_name: 'r2filebox-files',
       d1_database_name: 'r2filebox-db',
     })
@@ -484,6 +484,132 @@ describe('administrator cookie session', () => {
       .bind(id)
       .first<{ deleted_at: string | null }>()
     expect(stored?.deleted_at).toBeNull()
+  })
+
+  it('validates partial Turnstile updates against existing settings', async () => {
+    const login = await loginAt('https://example.test')
+    const cookie = cookiePair(login.headers.get('set-cookie') || '')
+    const turnstileEnv = {
+      ...env,
+      TURNSTILE_SECRET_KEY: '33333333333333333333333333333333',
+    }
+
+    try {
+      const storeKeyResponse = await worker.fetch(
+        new Request('https://example.test/admin/config', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Cookie: cookie,
+            Origin: 'https://example.test',
+          },
+          body: JSON.stringify({
+            security: {
+              require_turnstile: 0,
+              turnstile_site_key: '0x4AAAAAAATestSiteKey',
+            },
+          }),
+        }),
+        turnstileEnv,
+        createExecutionContext(),
+      )
+      expect(storeKeyResponse.status).toBe(200)
+
+      const enableOnlyResponse = await worker.fetch(
+        new Request('https://example.test/admin/config', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Cookie: cookie,
+            Origin: 'https://example.test',
+          },
+          body: JSON.stringify({
+            security: {
+              require_turnstile: 1,
+            },
+          }),
+        }),
+        turnstileEnv,
+        createExecutionContext(),
+      )
+      expect(enableOnlyResponse.status).toBe(200)
+
+      const clearActiveKeyResponse = await worker.fetch(
+        new Request('https://example.test/admin/config', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Cookie: cookie,
+            Origin: 'https://example.test',
+          },
+          body: JSON.stringify({
+            security: {
+              turnstile_site_key: '   ',
+            },
+          }),
+        }),
+        turnstileEnv,
+        createExecutionContext(),
+      )
+      expect(clearActiveKeyResponse.status).toBe(400)
+
+      const storedKey = await env.DB.prepare(
+        "SELECT value FROM settings WHERE key = 'TURNSTILE_SITE_KEY'",
+      ).first<{ value: string }>()
+      expect(storedKey?.value).toBe('0x4AAAAAAATestSiteKey')
+    } finally {
+      await env.DB.prepare('DELETE FROM settings').run()
+    }
+  })
+
+  it('clamps partial expiry updates against the stored counterpart', async () => {
+    const login = await loginAt('https://example.test')
+    const cookie = cookiePair(login.headers.get('set-cookie') || '')
+
+    try {
+      const initialResponse = await SELF.fetch('https://example.test/admin/config', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie,
+          Origin: 'https://example.test',
+        },
+        body: JSON.stringify({
+          transfer: {
+            expire_default: 48,
+            max_expire_hours: 720,
+          },
+        }),
+      })
+      expect(initialResponse.status).toBe(200)
+
+      const partialMaxResponse = await SELF.fetch('https://example.test/admin/config', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie,
+          Origin: 'https://example.test',
+        },
+        body: JSON.stringify({
+          transfer: {
+            max_expire_hours: 24,
+          },
+        }),
+      })
+      expect(partialMaxResponse.status).toBe(200)
+
+      const rows = await env.DB.prepare(`
+        SELECT key, value FROM settings
+        WHERE key IN ('DEFAULT_EXPIRE_HOURS', 'MAX_EXPIRE_HOURS')
+        ORDER BY key
+      `).all<{ key: string, value: string }>()
+      expect(rows.results).toEqual([
+        { key: 'DEFAULT_EXPIRE_HOURS', value: '24' },
+        { key: 'MAX_EXPIRE_HOURS', value: '24' },
+      ])
+    } finally {
+      await env.DB.prepare('DELETE FROM settings').run()
+    }
   })
 })
 

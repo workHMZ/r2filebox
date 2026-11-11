@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import type { Context } from 'hono'
-import type { AuditSubject, Env, FileBlob, Share, UploadSession } from '../types'
+import type { Env, FileBlob, Share, UploadSession } from '../types'
 import { success, error } from '../lib/response'
 import { ErrorCode } from '../types/errors'
 import { generateCode, hashCode, hashIp } from '../lib/code'
@@ -23,8 +23,15 @@ import {
   type RuntimeConfig,
 } from '../lib/runtime-config'
 import { checkRateLimit } from '../lib/rate-limit'
-import { BodyTooLargeError, InvalidBodyError, readStructuredBody } from '../lib/body'
+import { BodyTooLargeError, readStructuredBody } from '../lib/body'
 import { recordMetric } from '../lib/metrics'
+import {
+  readSessionCookie,
+  routeFailure,
+  setSessionCookie,
+  shareAuditSubject,
+  writeAuditLog,
+} from '../lib/route-helpers'
 import {
   CONTENT_FINGERPRINT_ALGORITHM,
   CONTENT_FINGERPRINT_PART_SIZE,
@@ -137,7 +144,7 @@ async function createTextShare(c: Context<{ Bindings: Bindings }>) {
     const shareId = crypto.randomUUID()
     const r2Key = generateR2Key(shareId)
     const expireAt = expireAtAfter(getShareLifetimeMs(config, body))
-    const maxDownloads = getMaxDownloads(config)
+    const maxDownloads = config.defaultMaxDownloads
 
     const r2 = new R2Storage(c.env.BUCKET)
     const uploaded = await r2.uploadFile(
@@ -185,7 +192,7 @@ async function createTextShare(c: Context<{ Bindings: Bindings }>) {
     }
 
     const url = `${new URL(c.req.url).origin}/#/share/${rawCode}`
-    await audit(db, c, 'share_text_create', shareId, 'success', ipHash, {
+    await writeAuditLog(db, c, 'share_text_create', shareId, 'success', ipHash, {
       config,
       subject: { type: 'text', name: 'text.txt', sizeBytes: textBytes.length },
     })
@@ -273,7 +280,7 @@ async function initMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
     const shareId = crypto.randomUUID()
     const r2Key = generateR2Key(shareId)
     const shareLifetimeMs = getShareLifetimeMs(config, body)
-    const maxDownloads = getMaxDownloads(config)
+    const maxDownloads = config.defaultMaxDownloads
 
     const r2 = new R2Storage(c.env.BUCKET)
     const nowMs = Date.now()
@@ -322,7 +329,7 @@ async function initMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
             created_at: now,
             orphaned_at: null,
           })
-          await audit(db, c, 'instant_file_create', shareId, 'success', ipHash, {
+          await writeAuditLog(db, c, 'instant_file_create', shareId, 'success', ipHash, {
             config,
             subject: { type: 'file', name: safeFilename, sizeBytes },
           })
@@ -378,7 +385,7 @@ async function initMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
 
     const uploadToken = await signUploadToken(c.env, session, shareLifetimeMs)
     const partCount = Math.ceil(sizeBytes / MULTIPART_PART_SIZE)
-    await audit(db, c, 'multipart_file_init', shareId, 'success', ipHash, {
+    await writeAuditLog(db, c, 'multipart_file_init', shareId, 'success', ipHash, {
       config,
       subject: { type: 'file', name: safeFilename, sizeBytes },
     })
@@ -432,13 +439,7 @@ async function uploadMultipartPart(c: Context<{ Bindings: Bindings }>) {
     // Maintain the D1 session read so that cancellation, cleanup, and configured expiry
     // take effect before accepting another paid R2 part operation.
     const session = await db.getUploadSession(payload.session_id)
-    if (
-      !session ||
-      session.share_id !== payload.share_id ||
-      session.upload_id !== payload.upload_id ||
-      session.r2_key !== payload.r2_key ||
-      session.code_hash !== payload.code_hash
-    ) {
+    if (!session || !matchesUploadTokenSession(session, payload)) {
       return c.json(error(ErrorCode.UPLOAD_SESSION_NOT_FOUND, 404, 'Upload session not found'), 404)
     }
     const r2 = new R2Storage(c.env.BUCKET)
@@ -571,12 +572,7 @@ async function completeMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
       }
       return c.json(error(ErrorCode.UPLOAD_SESSION_NOT_FOUND, 404, 'Upload session not found'), 404)
     }
-    if (
-      session.share_id !== payload.share_id ||
-      session.upload_id !== payload.upload_id ||
-      session.r2_key !== payload.r2_key ||
-      session.code_hash !== payload.code_hash
-    ) {
+    if (!matchesUploadTokenSession(session, payload)) {
       return c.json(error(ErrorCode.UPLOAD_SESSION_NOT_FOUND, 404, 'Upload session not found'), 404)
     }
 
@@ -612,7 +608,7 @@ async function completeMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
         verifiedFingerprint !== session.content_fingerprint
       ) {
         await abortUploadSession(r2, db, session)
-        await audit(db, c, 'multipart_file_fingerprint_mismatch', session.share_id, 'failed', requestIpHash, {
+        await writeAuditLog(db, c, 'multipart_file_fingerprint_mismatch', session.share_id, 'failed', requestIpHash, {
           subject: { type: 'file', name: session.display_name, sizeBytes: session.size_bytes },
         })
         return c.json(error(
@@ -636,7 +632,7 @@ async function completeMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
     }
     if (uploaded.size !== session.size_bytes) {
       await abortUploadSession(r2, db, session)
-      await audit(db, c, 'multipart_file_size_mismatch', session.share_id, 'failed', requestIpHash, {
+      await writeAuditLog(db, c, 'multipart_file_size_mismatch', session.share_id, 'failed', requestIpHash, {
         subject: { type: 'file', name: session.display_name, sizeBytes: session.size_bytes },
       })
       return c.json(error(ErrorCode.SIZE_MISMATCH, 400, 'File size mismatch validation failed'), 400)
@@ -740,8 +736,15 @@ async function completeMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
     }
 
     if (newlyPersisted) {
-      await audit(db, c, 'multipart_file_complete', session.share_id, 'success', requestIpHash, {
+      await writeAuditLog(db, c, 'multipart_file_complete', session.share_id, 'success', requestIpHash, {
         subject: { type: 'file', name: session.display_name, sizeBytes: session.size_bytes },
+      })
+      recordMetric(c.env, {
+        event: 'multipart_file_complete',
+        status: 'success',
+        subjectType: 'file',
+        mimeType: persistedShare.mime_type || undefined,
+        sizeBytes: persistedShare.size_bytes,
       })
     }
     const capability = completedBlob
@@ -774,6 +777,9 @@ async function abortMultipartFileShare(c: Context<{ Bindings: Bindings }>) {
         ), 500)
       }
       return c.json(success(null, 'Upload session already ended'))
+    }
+    if (!matchesUploadTokenSession(session, payload)) {
+      return c.json(error(ErrorCode.UPLOAD_SESSION_NOT_FOUND, 404, 'Upload session not found'), 404)
     }
     const r2 = new R2Storage(c.env.BUCKET)
     if (!await abortUploadSession(r2, db, session)) {
@@ -878,10 +884,17 @@ async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string 
         return c.json(error(ErrorCode.SHARE_NOT_FOUND, 404, 'Share not found or expired'), 404)
       }
       const text = await obj.text()
-      await audit(db, c, 'share_resolve_text', share.id, 'success', ipHash, {
+      await writeAuditLog(db, c, 'share_resolve_text', share.id, 'success', ipHash, {
         accessLog: true,
         config,
         subject: shareAuditSubject(share),
+      })
+      recordMetric(c.env, {
+        event: 'share_resolve_text',
+        status: 'success',
+        subjectType: 'text',
+        mimeType: 'text/plain',
+        sizeBytes: share.size_bytes,
       })
       return c.json(success({
         code: rawCode,
@@ -930,12 +943,15 @@ async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string 
       nonce: crypto.randomUUID(),
     }, sessionSecret)
     const downloadUrl = `/api/share/download/${share.id}`
-    c.header(
-      'Set-Cookie',
-      downloadSessionCookie(token, downloadUrl, c.req.url, Math.max(0, downloadExpiresAtSeconds - Math.floor(Date.now() / 1000))),
+    setSessionCookie(
+      c,
+      'download_session',
+      token,
+      downloadUrl,
+      Math.max(0, downloadExpiresAtSeconds - Math.floor(Date.now() / 1000)),
     )
 
-    await audit(db, c, 'share_resolve_file', share.id, 'success', ipHash, {
+    await writeAuditLog(db, c, 'share_resolve_file', share.id, 'success', ipHash, {
       accessLog: true,
       config,
       subject: shareAuditSubject(share),
@@ -970,7 +986,7 @@ async function resolveShare(c: Context<{ Bindings: Bindings }>, rawCode: string 
 async function downloadWithSession(c: Context<{ Bindings: Bindings }>) {
   try {
     const shareId = c.req.param('shareId')
-    const token = getCookieValue(c.req.header('Cookie') || '', 'download_session')
+    const token = readSessionCookie(c, 'download_session')
     if (!shareId || !token || !/^[0-9a-f-]{36}$/i.test(shareId)) {
       return new Response('Share code invalid or file unavailable', { status: 404 })
     }
@@ -1086,24 +1102,6 @@ async function downloadWithSession(c: Context<{ Bindings: Bindings }>) {
   }
 }
 
-function getCookieValue(cookieHeader: string, name: string): string | null {
-  const match = cookieHeader
-    .split(';')
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${name}=`))
-  if (!match) return null
-  try {
-    return decodeURIComponent(match.slice(name.length + 1))
-  } catch {
-    return null
-  }
-}
-
-function downloadSessionCookie(token: string, path: string, requestUrl: string, maxAge: number): string {
-  const secure = new URL(requestUrl).protocol === 'https:' ? '; Secure' : ''
-  return `download_session=${encodeURIComponent(token)}; HttpOnly${secure}; SameSite=Strict; Path=${path}; Max-Age=${maxAge}`
-}
-
 async function verifyTurnstileIfRequired(
   c: Context<{ Bindings: Bindings }>,
   body: Record<string, unknown>,
@@ -1191,6 +1189,15 @@ async function verifyUploadToken(c: Context<{ Bindings: Bindings }>, tokenOverri
     return null
   }
   return payload as UploadTokenPayload
+}
+
+function matchesUploadTokenSession(session: UploadSession, payload: UploadTokenPayload): boolean {
+  return (
+    session.share_id === payload.share_id &&
+    session.upload_id === payload.upload_id &&
+    session.r2_key === payload.r2_key &&
+    session.code_hash === payload.code_hash
+  )
 }
 
 async function signPartReceipt(
@@ -1393,12 +1400,6 @@ function isValidShareLifetimeMs(value: unknown): value is number {
     value <= MAX_SHARE_LIFETIME_MS
 }
 
-function getMaxDownloads(config: RuntimeConfig): number | null {
-  return config.defaultMaxDownloads > 0
-    ? Math.min(config.defaultMaxDownloads, 1_000_000)
-    : null
-}
-
 function getContentLength(c: Context): number | null {
   const raw = c.req.header('Content-Length')
   if (!raw) return null
@@ -1572,63 +1573,6 @@ function isDownloadSessionShareAvailable(share: Share | null): share is Share {
   if (!share) return false
   if (share.deleted_at) return false
   return new Date(share.expire_at) > new Date()
-}
-
-function routeFailure(c: Context, operation: string, cause: unknown, message: string) {
-  if (cause instanceof BodyTooLargeError) {
-    return c.json(error(ErrorCode.PAYLOAD_TOO_LARGE, 413, 'Payload too large'), 413)
-  }
-  if (cause instanceof InvalidBodyError) {
-    return c.json(error(ErrorCode.INVALID_FORMAT, 400, 'Invalid request format'), 400)
-  }
-  if (cause instanceof RuntimeConfigUnavailableError) {
-    console.error(`${operation} failed:`, cause)
-    return c.json(error(ErrorCode.SERVICE_UNAVAILABLE, 503, 'Service temporarily unavailable, please try again later'), 503)
-  }
-  console.error(`${operation} failed:`, cause)
-  return c.json(error(ErrorCode.INTERNAL_SERVER_ERROR, 500, message), 500)
-}
-
-function shareAuditSubject(share: Share): AuditSubject {
-  return {
-    type: share.type,
-    name: share.display_name,
-    sizeBytes: share.size_bytes,
-  }
-}
-
-async function audit(
-  db: DB,
-  c: Context,
-  action: string,
-  shareId: string | null,
-  status: string,
-  ipHash: string | null,
-  options: {
-    accessLog?: boolean
-    config?: RuntimeConfig
-    subject?: AuditSubject
-  } = {},
-): Promise<void> {
-  try {
-    const config = options.config || await getRuntimeConfig(c.env, db)
-    if (!config.enableAuditLog) return
-    if (options.accessLog && !config.enableAccessLog) return
-    await db.createAuditLog({
-      id: crypto.randomUUID(),
-      action,
-      share_id: shareId,
-      subject_type: options.subject?.type || null,
-      subject_name: options.subject?.name || null,
-      size_bytes: options.subject?.sizeBytes ?? null,
-      ip_hash: ipHash,
-      user_agent_hash: null,
-      status,
-      created_at: new Date().toISOString(),
-    })
-  } catch (cause) {
-    console.error('Failed to write share audit log:', cause)
-  }
 }
 
 export default app

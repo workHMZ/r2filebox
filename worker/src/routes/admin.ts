@@ -1,23 +1,29 @@
 import { Hono } from 'hono'
 import type { Context, Next } from 'hono'
-import type { AuditSubject, Env, Share } from '../types'
+import type { Env, Share } from '../types'
 import { success, error } from '../lib/response'
 import { ErrorCode } from '../types/errors'
 import { signJWT, verifyJWT } from '../lib/auth'
 import { verifyPassword, verifyPlainPassword } from '../lib/password'
 import { DB } from '../lib/db'
 import { R2Storage } from '../lib/r2'
-import { getRequiredSecret } from '../lib/env'
+import { clamp, getRequiredSecret } from '../lib/env'
 import { getClientIp } from '../lib/security'
 import { hashIp } from '../lib/code'
 import { cleanupExpiredShares } from '../lib/cleanup'
 import {
   getRuntimeConfig,
-  RuntimeConfigUnavailableError,
   type RuntimeConfig,
 } from '../lib/runtime-config'
 import { checkRateLimit } from '../lib/rate-limit'
-import { BodyTooLargeError, InvalidBodyError, readStructuredBody } from '../lib/body'
+import { readStructuredBody } from '../lib/body'
+import {
+  readSessionCookie,
+  routeFailure,
+  setSessionCookie,
+  shareAuditSubject,
+  writeAuditLog,
+} from '../lib/route-helpers'
 
 type Bindings = Env
 type JsonRecord = Record<string, unknown>
@@ -91,17 +97,17 @@ app.post('/admin/login', async (c) => {
       exp: Math.floor(Date.now() / 1000) + (12 * 60 * 60),
     }, sessionSecret)
 
-    await audit(db, c, 'admin_login', null, 'success', ipHash, {
+    await writeAuditLog(db, c, 'admin_login', null, 'success', ipHash, {
       config,
       subject: { type: 'admin', name: adminUser, sizeBytes: null },
     })
-    c.header('Set-Cookie', adminSessionCookie(token, c.req.url, 12 * 60 * 60))
+    setSessionCookie(c, 'admin_session', token, '/admin', 12 * 60 * 60)
 
     return c.json(success({
       user: adminUserDto(adminUser),
     }, 'Login successful'))
   } catch (e: unknown) {
-    return adminRouteFailure(c, 'admin login', e, 'Login failed')
+    return routeFailure(c, 'admin login', e, 'Login failed')
   }
 })
 
@@ -115,13 +121,13 @@ app.post('/admin/logout', async (c) => {
   try {
     const db = new DB(c.env.DB)
     const pepper = getRequiredSecret(c.env, 'CODE_HASH_PEPPER')
-    await audit(db, c, 'admin_logout', null, 'success', await hashIp(getClientIp(c), pepper), {
+    await writeAuditLog(db, c, 'admin_logout', null, 'success', await hashIp(getClientIp(c), pepper), {
       subject: { type: 'admin', name: c.get('user').username, sizeBytes: null },
     })
   } catch (cause) {
     console.error('Failed to write admin logout audit log:', cause)
   }
-  c.header('Set-Cookie', adminSessionCookie('', c.req.url, 0))
+  setSessionCookie(c, 'admin_session', '', '/admin', 0)
   return c.json(success(null, 'Logout successful'))
 })
 
@@ -131,7 +137,7 @@ app.get('/admin/stats', async (c) => {
     const stats = await db.getSystemStats(parseUtcOffsetMinutes(c.req.query('utc_offset_minutes')))
     return c.json(success(stats))
   } catch (e: unknown) {
-    return adminRouteFailure(c, 'get admin stats', e, 'Could not load statistics')
+    return routeFailure(c, 'get admin stats', e, 'Could not load statistics')
   }
 })
 
@@ -150,7 +156,7 @@ app.get('/admin/files', async (c) => {
       page_size: pageSize,
     }))
   } catch (e: unknown) {
-    return adminRouteFailure(c, 'get admin files', e, 'Could not load files')
+    return routeFailure(c, 'get admin files', e, 'Could not load files')
   }
 })
 
@@ -193,12 +199,12 @@ app.delete('/admin/files/:id', async (c) => {
     }
 
     const pepper = getRequiredSecret(c.env, 'CODE_HASH_PEPPER')
-    await audit(db, c, 'admin_delete_share', id, 'success', await hashIp(getClientIp(c), pepper), {
+    await writeAuditLog(db, c, 'admin_delete_share', id, 'success', await hashIp(getClientIp(c), pepper), {
       subject: shareAuditSubject(share),
     })
     return c.json(success(null, 'Deleted successfully'))
   } catch (e: unknown) {
-    return adminRouteFailure(c, 'delete admin share', e, 'Delete failed')
+    return routeFailure(c, 'delete admin share', e, 'Delete failed')
   }
 })
 
@@ -208,7 +214,7 @@ app.get('/admin/config', async (c) => {
     const config = await getRuntimeConfig(c.env, db)
     return c.json(success(adminConfigDto(config)))
   } catch (e: unknown) {
-    return adminRouteFailure(c, 'get admin config', e, 'Could not load configuration')
+    return routeFailure(c, 'get admin config', e, 'Could not load configuration')
   }
 })
 
@@ -220,30 +226,34 @@ app.put('/admin/config', async (c) => {
       return c.json(error(ErrorCode.INVALID_CONFIG, 400, 'Invalid configuration format'), 400)
     }
     const configRecord = configBody as JsonRecord
-    const security = asRecord(configRecord.security)
-    const enablingTurnstile = security?.require_turnstile === true ||
-      security?.require_turnstile === 1 ||
-      security?.require_turnstile === '1' ||
-      security?.require_turnstile === 'true'
+    const db = new DB(c.env.DB)
+    const previousConfig = await getRuntimeConfig(c.env, db)
+    const settings = settingsFromAdminConfig(configRecord, previousConfig)
+    const turnstileConfigTouched =
+      settings.REQUIRE_TURNSTILE !== undefined ||
+      settings.TURNSTILE_SITE_KEY !== undefined
+    const nextRequireTurnstile = settings.REQUIRE_TURNSTILE !== undefined
+      ? settings.REQUIRE_TURNSTILE === 'true'
+      : previousConfig.requireTurnstile
+    const nextTurnstileSiteKey = settings.TURNSTILE_SITE_KEY !== undefined
+      ? settings.TURNSTILE_SITE_KEY
+      : (previousConfig.turnstileSiteKey || '')
     if (
-      enablingTurnstile &&
+      turnstileConfigTouched &&
+      nextRequireTurnstile &&
       (
-        typeof security?.turnstile_site_key !== 'string' ||
-        !security.turnstile_site_key.trim() ||
+        !nextTurnstileSiteKey ||
         typeof c.env.TURNSTILE_SECRET_KEY !== 'string' ||
         c.env.TURNSTILE_SECRET_KEY.length < 16
       )
     ) {
       return c.json(error(ErrorCode.TURNSTILE_CONFIG_MISSING, 400, 'Turnstile Site Key and TURNSTILE_SECRET_KEY are required'), 400)
     }
-    const db = new DB(c.env.DB)
-    const previousConfig = await getRuntimeConfig(c.env, db)
-    const settings = settingsFromAdminConfig(configRecord)
     const pepper = getRequiredSecret(c.env, 'CODE_HASH_PEPPER')
     const ipHash = await hashIp(getClientIp(c), pepper)
     await db.upsertSettings(settings)
     const config = await getRuntimeConfig(c.env, db)
-    await audit(
+    await writeAuditLog(
       db,
       c,
       'admin_update_config',
@@ -258,7 +268,7 @@ app.put('/admin/config', async (c) => {
     )
     return c.json(success(adminConfigDto(config), 'Configuration saved'))
   } catch (e: unknown) {
-    return adminRouteFailure(c, 'save admin config', e, 'Could not save configuration')
+    return routeFailure(c, 'save admin config', e, 'Could not save configuration')
   }
 })
 
@@ -269,7 +279,7 @@ app.get('/admin/stats/trend', async (c) => {
     const trend = await db.getUploadTrend(days, parseUtcOffsetMinutes(c.req.query('utc_offset_minutes')))
     return c.json(success(trend))
   } catch (e: unknown) {
-    return adminRouteFailure(c, 'get upload trend', e, 'Could not load upload trend')
+    return routeFailure(c, 'get upload trend', e, 'Could not load upload trend')
   }
 })
 
@@ -279,7 +289,7 @@ app.get('/admin/stats/file-types', async (c) => {
     const distribution = await db.getFileTypeDistribution()
     return c.json(success(distribution))
   } catch (e: unknown) {
-    return adminRouteFailure(c, 'get file type distribution', e, 'Could not load file type distribution')
+    return routeFailure(c, 'get file type distribution', e, 'Could not load file type distribution')
   }
 })
 
@@ -308,7 +318,7 @@ app.get('/admin/logs/audit', async (c) => {
       stats: logs.stats,
     }))
   } catch (e: unknown) {
-    return adminRouteFailure(c, 'get audit logs', e, 'Could not load audit logs')
+    return routeFailure(c, 'get audit logs', e, 'Could not load audit logs')
   }
 })
 
@@ -317,7 +327,7 @@ app.get('/admin/maintenance/system-info', (c) => {
     runtime: 'Cloudflare Workers',
     platform: 'V8 isolate',
     storage: 'D1 + R2 + Workers Rate Limiting',
-    version: c.env.APP_VERSION || '2.9.1',
+    version: c.env.APP_VERSION || '2.9.2',
     r2_bucket_name: c.env.R2_BUCKET_NAME || null,
     d1_database_name: c.env.D1_DATABASE_NAME || null,
   }))
@@ -339,7 +349,7 @@ app.post('/admin/maintenance/clean-expired', async (c) => {
       config.cleanupBatchSize,
       { maxPasses: 2, budgetMs: 5_000 },
     )
-    await audit(db, c, 'admin_cleanup_expired', null, result.failures ? 'partial' : 'success', ipHash, {
+    await writeAuditLog(db, c, 'admin_cleanup_expired', null, result.failures ? 'partial' : 'success', ipHash, {
       config,
       subject: { type: 'system', name: 'expired-content', sizeBytes: null },
     })
@@ -353,7 +363,7 @@ app.post('/admin/maintenance/clean-expired', async (c) => {
       failures: result.failures,
     }, 'Cleanup completed'))
   } catch (e: unknown) {
-    return adminRouteFailure(c, 'cleanup expired shares', e, 'Cleanup failed')
+    return routeFailure(c, 'cleanup expired shares', e, 'Cleanup failed')
   }
 })
 
@@ -362,7 +372,7 @@ async function adminAuth(c: Context<{ Bindings: Bindings, Variables: { user: Adm
     return next()
   }
 
-  const cookieToken = getCookie(c.req.header('Cookie') || '', 'admin_session')
+  const cookieToken = readSessionCookie(c, 'admin_session')
   if (cookieToken && !isSafeMethod(c.req.method) && !isSameOrigin(c)) {
     return c.json(error(ErrorCode.FORBIDDEN, 403, 'Invalid request origin'), 403)
   }
@@ -382,21 +392,6 @@ async function adminAuth(c: Context<{ Bindings: Bindings, Variables: { user: Adm
 
   c.set('user', payload as AdminSession)
   await next()
-}
-
-function getCookie(cookieHeader: string, name: string): string | null {
-  const match = cookieHeader.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))
-  if (!match) return null
-  try {
-    return decodeURIComponent(match.slice(name.length + 1))
-  } catch {
-    return null
-  }
-}
-
-function adminSessionCookie(token: string, requestUrl: string, maxAge: number): string {
-  const secure = new URL(requestUrl).protocol === 'https:' ? '; Secure' : ''
-  return `admin_session=${encodeURIComponent(token)}; HttpOnly${secure}; SameSite=Strict; Path=/admin; Max-Age=${maxAge}`
 }
 
 function adminUserDto(username: string) {
@@ -433,14 +428,6 @@ function adminShareDto(share: Share) {
     max_downloads: share.max_downloads,
     created_at: share.created_at,
     expire_at: share.expire_at,
-  }
-}
-
-function shareAuditSubject(share: Share): AuditSubject {
-  return {
-    type: share.type,
-    name: share.display_name,
-    sizeBytes: share.size_bytes,
   }
 }
 
@@ -483,7 +470,7 @@ function adminConfigDto(config: RuntimeConfig) {
   }
 }
 
-function settingsFromAdminConfig(config: JsonRecord): Record<string, string> {
+function settingsFromAdminConfig(config: JsonRecord, previousConfig: RuntimeConfig): Record<string, string> {
   const settings: Record<string, string> = {}
   const base = asRecord(config.base)
   if (base) {
@@ -499,11 +486,23 @@ function settingsFromAdminConfig(config: JsonRecord): Record<string, string> {
     setNumber(settings, 'DEFAULT_MAX_DOWNLOADS', transfer.max_count)
     setNumber(settings, 'DEFAULT_EXPIRE_HOURS', transfer.expire_default)
     setNumber(settings, 'MAX_EXPIRE_HOURS', transfer.max_expire_hours)
-    if (settings.DEFAULT_EXPIRE_HOURS && settings.MAX_EXPIRE_HOURS) {
-      const maxExpire = Math.min(Math.max(Number(settings.MAX_EXPIRE_HOURS), 1), 8760)
-      const defaultExpire = Math.min(Math.max(Number(settings.DEFAULT_EXPIRE_HOURS), 1), maxExpire)
-      settings.MAX_EXPIRE_HOURS = String(maxExpire)
-      settings.DEFAULT_EXPIRE_HOURS = String(defaultExpire)
+    if (settings.DEFAULT_EXPIRE_HOURS !== undefined || settings.MAX_EXPIRE_HOURS !== undefined) {
+      const maxExpire = clamp(
+        Number(settings.MAX_EXPIRE_HOURS ?? previousConfig.maxExpireHours),
+        1,
+        8760,
+      )
+      const defaultExpire = clamp(
+        Number(settings.DEFAULT_EXPIRE_HOURS ?? previousConfig.defaultExpireHours),
+        1,
+        maxExpire,
+      )
+      if (settings.MAX_EXPIRE_HOURS !== undefined) {
+        settings.MAX_EXPIRE_HOURS = String(maxExpire)
+      }
+      if (settings.DEFAULT_EXPIRE_HOURS !== undefined || defaultExpire !== previousConfig.defaultExpireHours) {
+        settings.DEFAULT_EXPIRE_HOURS = String(defaultExpire)
+      }
     }
     setBoolean(settings, 'ENABLE_TEXT_SHARE', transfer.enable_text_share)
     setBoolean(settings, 'ENABLE_FILE_SHARE', transfer.enable_file_share)
@@ -527,7 +526,9 @@ function settingsFromAdminConfig(config: JsonRecord): Record<string, string> {
     setBoolean(settings, 'ENABLE_AUDIT_LOG', security.enable_audit_log)
     setBoolean(settings, 'ENABLE_ACCESS_LOG', security.enable_access_log)
     setBoolean(settings, 'REQUIRE_TURNSTILE', security.require_turnstile)
-    setString(settings, 'TURNSTILE_SITE_KEY', security.turnstile_site_key)
+    if (typeof security.turnstile_site_key === 'string') {
+      settings.TURNSTILE_SITE_KEY = security.turnstile_site_key.trim()
+    }
   }
   return settings
 }
@@ -544,60 +545,12 @@ function setString(settings: Record<string, string>, key: string, value: unknown
 
 function setNumber(settings: Record<string, string>, key: string, value: unknown) {
   const parsed = Number.parseInt(String(value ?? ''), 10)
-  if (Number.isFinite(parsed) && parsed >= 0) settings[key] = String(parsed)
+  if (Number.isFinite(parsed) && parsed >= 1) settings[key] = String(parsed)
 }
 
 function setBoolean(settings: Record<string, string>, key: string, value: unknown) {
   if (value === undefined || value === null) return
   settings[key] = value === true || value === 1 || value === '1' || value === 'true' ? 'true' : 'false'
-}
-
-function adminRouteFailure(c: Context, operation: string, cause: unknown, defaultMessage: string) {
-  if (cause instanceof BodyTooLargeError) {
-    return c.json(error(ErrorCode.PAYLOAD_TOO_LARGE, 413, 'Payload too large'), 413)
-  }
-  if (cause instanceof InvalidBodyError) {
-    return c.json(error(ErrorCode.INVALID_FORMAT, 400, 'Invalid request format'), 400)
-  }
-  if (cause instanceof RuntimeConfigUnavailableError) {
-    console.error(`${operation} failed:`, cause)
-    return c.json(error(ErrorCode.SERVICE_UNAVAILABLE, 503, 'Service temporarily unavailable, please try again later'), 503)
-  }
-  console.error(`${operation} failed:`, cause)
-  return c.json(error(ErrorCode.INTERNAL_SERVER_ERROR, 500, defaultMessage), 500)
-}
-
-async function audit(
-  db: DB,
-  c: Context,
-  action: string,
-  shareId: string | null,
-  status: string,
-  ipHash: string | null,
-  options: {
-    force?: boolean
-    config?: RuntimeConfig
-    subject?: AuditSubject
-  } = {},
-): Promise<void> {
-  try {
-    const config = options.config || await getRuntimeConfig(c.env as Env, db)
-    if (!config.enableAuditLog && !options.force) return
-    await db.createAuditLog({
-      id: crypto.randomUUID(),
-      action,
-      share_id: shareId,
-      subject_type: options.subject?.type || null,
-      subject_name: options.subject?.name || null,
-      size_bytes: options.subject?.sizeBytes ?? null,
-      ip_hash: ipHash,
-      user_agent_hash: null,
-      status,
-      created_at: new Date().toISOString(),
-    })
-  } catch (cause) {
-    console.error('Failed to write admin audit log:', cause)
-  }
 }
 
 // Real offsets run from UTC-12:00 to UTC+14:00.
@@ -612,7 +565,7 @@ function parseBoundedInteger(
   max: number,
 ): number {
   const parsed = Number.parseInt(value || '', 10)
-  return Number.isFinite(parsed) ? Math.min(Math.max(parsed, min), max) : fallback
+  return Number.isFinite(parsed) ? clamp(parsed, min, max) : fallback
 }
 
 export default app

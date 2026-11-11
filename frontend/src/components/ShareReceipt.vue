@@ -74,13 +74,13 @@ import { CopyDocument } from '@element-plus/icons-vue'
 import ActionFeedbackButton from '@/components/ActionFeedbackButton.vue'
 import { useActionFeedback } from '@/composables/useActionFeedback'
 import type { ShareCreatedResult } from '@/api/share'
-import { getLocaleTag, useI18n } from '@/i18n'
+import { useI18n } from '@/i18n'
 import { formatDateTime } from '@/utils/format'
 
 const props = defineProps<{ result: ShareCreatedResult }>()
 const emit = defineEmits<{ closed: [] }>()
 const showShareDialog = defineModel<boolean>({ default: false })
-const { locale, t } = useI18n()
+const { t } = useI18n()
 const shareUrl = ref('')
 const shareCode = ref('')
 const shareExpireAt = ref('')
@@ -90,7 +90,7 @@ let qrGenerationVersion = 0
 
 const shareExpireText = computed(() => (
   shareExpireAt.value
-    ? formatDateTime(shareExpireAt.value, getLocaleTag(locale.value))
+    ? formatDateTime(shareExpireAt.value)
     : '—'
 ))
 const shareMaxDownloadsText = computed(() => (

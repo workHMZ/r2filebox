@@ -584,6 +584,85 @@ describe('verified instant upload', () => {
     const { data } = await completed.json<{ data: { expire_at: string } }>()
     expect(data.expire_at).toBe(legacyExpireAt)
   })
+
+  it('rejects abort tokens whose session claims do not match the stored session', async () => {
+    const content = new TextEncoder().encode('guarded abort session')
+    const manifest = await contentManifest(content)
+    const init = await initUpload('abort-guard.bin', content.byteLength, manifest)
+
+    const [, encodedPayload] = (init.uploadToken || '').split('.')
+    const mismatchedPayload = JSON.parse(
+      new TextDecoder().decode(Buffer.from(encodedPayload, 'base64url')),
+    ) as Record<string, unknown>
+    mismatchedPayload.r2_key = 'shares/1999/01/mismatched'
+    const mismatchedToken = await signJWT(
+      mismatchedPayload,
+      '2222222222222222222222222222222222222222222222222222222222222222',
+    )
+
+    const abortResponse = await SELF.fetch('https://example.test/api/share/file/abort', {
+      method: 'POST',
+      headers: { 'X-Upload-Token': mismatchedToken },
+    })
+    expect(abortResponse.status).toBe(404)
+
+    const remainingSessions = await env.DB.prepare('SELECT COUNT(*) AS count FROM upload_sessions')
+      .first<{ count: number }>()
+    expect(remainingSessions?.count).toBe(1)
+  })
+
+  it('records Analytics Engine metrics for multipart completion and text extraction', async () => {
+    const writeDataPoint = vi.fn()
+    const trackedEnv = {
+      ...env,
+      ANALYTICS: { writeDataPoint },
+    }
+    const content = new TextEncoder().encode('analytics-tracked bytes')
+    const manifest = await contentManifest(content)
+    const init = await initUpload('tracked.txt', content.byteLength, manifest)
+    const part = await uploadPart(init, content)
+
+    const completeResponse = await worker.fetch(
+      completeRequestObject(init, [part]),
+      trackedEnv,
+      createExecutionContext(),
+    )
+    expect(completeResponse.status).toBe(200)
+    expect(writeDataPoint).toHaveBeenCalledWith({
+      blobs: ['multipart_file_complete', 'success', 'file', 'text/plain'],
+      doubles: [content.byteLength, 0],
+      indexes: ['multipart_file_complete'],
+    })
+
+    writeDataPoint.mockClear()
+    const createdText = await worker.fetch(
+      new Request('https://example.test/api/share/text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'tracked note', expire_value: 1, expire_style: 'hour' }),
+      }),
+      trackedEnv,
+      createExecutionContext(),
+    )
+    expect(createdText.status).toBe(200)
+    const { data: textShare } = await createdText.json<{ data: { code: string } }>()
+
+    const resolvedText = await worker.fetch(
+      new Request('https://example.test/api/share/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: textShare.code }),
+      }),
+      trackedEnv,
+      createExecutionContext(),
+    )
+    expect(resolvedText.status).toBe(200)
+    expect(writeDataPoint).toHaveBeenCalledWith({
+      blobs: ['share_resolve_text', 'success', 'text', 'text/plain'],
+      doubles: [12, 0],
+      indexes: ['share_resolve_text'],
+    })
+  })
 })
 
 async function contentManifest(content: Uint8Array) {

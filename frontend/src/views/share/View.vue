@@ -165,7 +165,7 @@
               </div>
               <div class="info-row" v-if="shareData.expire_at">
                 <span class="info-key">{{ t('shareView.expire') }}</span>
-                <span class="info-val expire-time">{{ formatDateTime(shareData.expire_at, getLocaleTag(locale)) }}</span>
+                <span class="info-val expire-time">{{ formatDateTime(shareData.expire_at) }}</span>
               </div>
               <div class="info-row">
                 <span class="info-key">{{ t('shareView.remaining') }}</span>

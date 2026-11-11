@@ -7,7 +7,7 @@ export default defineConfig({
       main: './worker/src/index.ts',
       miniflare: {
         // Keep runtime behavior aligned with the production Worker configuration.
-        compatibilityDate: '2026-07-20',
+        compatibilityDate: '2026-11-10',
         compatibilityFlags: ['nodejs_compat'],
         d1Databases: ['DB'],
         r2Buckets: ['BUCKET'],
@@ -17,7 +17,7 @@ export default defineConfig({
           ADMIN_PASSWORD: 'local-test-password',
           CODE_HASH_PEPPER: '1111111111111111111111111111111111111111111111111111111111111111',
           SESSION_SECRET: '2222222222222222222222222222222222222222222222222222222222222222',
-          APP_VERSION: '2.9.1',
+          APP_VERSION: '2.9.2',
           R2_BUCKET_NAME: 'r2filebox-files',
           D1_DATABASE_NAME: 'r2filebox-db',
         },

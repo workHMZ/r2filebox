@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer'
+import { timingSafeEqual as cryptoTimingSafeEqual } from 'node:crypto'
 
 const ITERATIONS = 100000
 // Production Workers reject PBKDF2 above 100,000 iterations with
@@ -8,6 +9,36 @@ const ITERATIONS = 100000
 export const MAX_WORKERS_PBKDF2_ITERATIONS = 100000
 const HASH_BYTES = 32
 const SALT_BYTES = 16
+
+/**
+ * Derive a Workers-compatible PBKDF2-SHA256 administrator password hash.
+ */
+export async function hashPassword(
+  password: string,
+  iterations = MAX_WORKERS_PBKDF2_ITERATIONS,
+): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES))
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(password),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveBits'],
+  )
+  const hashBuffer = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt,
+      iterations,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    HASH_BYTES * 8,
+  )
+  const saltBase64 = Buffer.from(salt).toString('base64')
+  const hashBase64 = Buffer.from(hashBuffer).toString('base64')
+  return `pbkdf2$${iterations}$${saltBase64}$${hashBase64}`
+}
 
 /**
  * Verify a password against a hash.
@@ -68,12 +99,8 @@ export async function verifyPlainPassword(password: string, expectedPassword: st
 }
 
 function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false
-  let diff = 0
-  for (let i = 0; i < a.length; i++) {
-    diff |= a[i] ^ b[i]
-  }
-  return diff === 0
+  if (a.byteLength !== b.byteLength) return false
+  return cryptoTimingSafeEqual(a, b)
 }
 
 function decodeBase64(value: string): Uint8Array {

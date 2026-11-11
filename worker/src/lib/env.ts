@@ -10,6 +10,10 @@ export function intEnv(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
+export function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
+}
+
 export function getRequiredSecret(env: Env, key: keyof Env): string {
   const value = env[key]
   if (typeof value !== 'string' || value.length < 16) {

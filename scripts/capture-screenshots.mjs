@@ -349,16 +349,6 @@ async function openPage(endpoint) {
       await send('DOM.setFileInputFiles', { files: [filePath], nodeId })
       await sleep(600)
     },
-    // Vue only reacts to a native setter call plus a dispatched input event.
-    async setFieldValue(selector, value) {
-      await evaluate(`(() => {
-        const el = document.querySelector(${JSON.stringify(selector)});
-        const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement : HTMLInputElement;
-        Object.getOwnPropertyDescriptor(proto.prototype, 'value').set.call(el, ${JSON.stringify(value)});
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-      })()`)
-      await sleep(400)
-    },
     async clickTab(index) {
       await evaluate(`document.querySelectorAll('.el-tabs__item')[${index}].click()`)
       await sleep(700)

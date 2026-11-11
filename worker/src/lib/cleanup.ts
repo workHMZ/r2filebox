@@ -1,4 +1,5 @@
 import { DB } from './db'
+import { clamp } from './env'
 import { R2Storage } from './r2'
 import { reconcileUploadCleanupJob } from './upload-cleanup'
 
@@ -265,8 +266,4 @@ async function runCleanupPass(
     failures,
     moreWorkLikely,
   }
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max)
 }
