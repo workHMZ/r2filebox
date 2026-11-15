@@ -17,7 +17,7 @@ Cloudflare Workers + R2 + D1 · English / 简体中文 / 日本語 · Light & da
 
 ## Preview
 
-https://github.com/user-attachments/assets/1117cc2e-2c63-4de9-aacf-498f77c3822a
+https://github.com/user-attachments/assets/35883525-d30d-4ae3-82a3-83c0535fd696
 
 <table>
   <thead>
