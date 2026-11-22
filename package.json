@@ -31,16 +31,16 @@
     "hash-password": "node worker/scripts/hash-password.mjs"
   },
   "dependencies": {
-    "hono": "^4.13.17"
+    "hono": "^4.13.19"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "1.7.0",
+    "@cloudflare/vitest-plugin": "1.8.5",
     "@types/node": "^26.6.6",
     "@typescript/typescript6": "^6.0.2",
     "sharp": "0.35.5",
     "typescript": "~7.0.2",
-    "vitest": "5.1.0",
-    "wrangler": "4.160.0"
+    "vitest": "5.1.1",
+    "wrangler": "4.165.0"
   },
   "cloudflare": {
     "bindings": {
